@@ -1174,4 +1174,41 @@ class ProjektControllerTest {
                                 .andExpect(status().isNotFound())
                                 .andExpect(jsonPath("$.message").value("Diese Materialkosten gibt es in diesem Projekt nicht mehr."));
         }
+
+        // --- Briefanrede in der Dokumentliste (Vorbelegung für Dokument-Mails) ---
+
+        private void dokumentVonKunde(org.example.kalkulationsprogramm.domain.Anrede anrede, String ansprechpartner) {
+                org.example.kalkulationsprogramm.domain.Kunde kunde = new org.example.kalkulationsprogramm.domain.Kunde();
+                kunde.setName("Landkreis Musterstadt");
+                kunde.setAnrede(anrede);
+                kunde.setAnsprechspartner(ansprechpartner);
+                Projekt projekt = new Projekt();
+                projekt.setId(42L);
+                projekt.setKundenId(kunde);
+                org.example.kalkulationsprogramm.domain.ProjektDokument dokument =
+                                new org.example.kalkulationsprogramm.domain.ProjektDokument();
+                dokument.setId(7L);
+                dokument.setOriginalDateiname("angebot.pdf");
+                dokument.setGespeicherterDateiname("abc.pdf");
+                dokument.setProjekt(projekt);
+                when(dateiSpeicherService.holeDokumenteZuProjekt(42L)).thenReturn(List.of(dokument));
+        }
+
+        @Test
+        void listeDokumente_firmaMitAnsprechpartnerBekommtDamenUndHerren() throws Exception {
+                dokumentVonKunde(org.example.kalkulationsprogramm.domain.Anrede.FIRMA, "Max Mustermann");
+
+                mockMvc.perform(get("/api/projekte/42/dokumente"))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$[0].anrede").value("Sehr geehrte Damen und Herren"));
+        }
+
+        @Test
+        void listeDokumente_herrMitAnsprechpartnerBekommtBriefanrede() throws Exception {
+                dokumentVonKunde(org.example.kalkulationsprogramm.domain.Anrede.HERR, "Herr Max Mustermann");
+
+                mockMvc.perform(get("/api/projekte/42/dokumente"))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$[0].anrede").value("Sehr geehrter Herr Max Mustermann"));
+        }
 }

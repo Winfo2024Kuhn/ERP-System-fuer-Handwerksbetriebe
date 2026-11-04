@@ -37,9 +37,11 @@ import org.example.kalkulationsprogramm.service.RechnungPdfService.KopfdatenDto;
 import org.example.kalkulationsprogramm.service.RechnungPdfService.LayoutDto;
 import org.example.kalkulationsprogramm.service.RechnungPdfService.RechnungDto;
 import org.example.kalkulationsprogramm.service.mail.SentMailArchiver;
+import org.example.kalkulationsprogramm.util.Briefanrede;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.util.HtmlUtils;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -806,9 +808,9 @@ public class AutoMahnVersandService
 
     private static String buildAnredeBlock(Map<String, String> ctx)
     {
-        String anrede = ctx.getOrDefault("ANREDE", "Sehr geehrte Damen und Herren");
-        String name = ctx.getOrDefault("KUNDENNAME", "");
-        return "<p>" + anrede + (name.isBlank() ? "" : " " + name) + ",</p>";
+        // Der Kundenname ist Klartext: maskieren, bevor er ins PDF-HTML geht.
+        String briefanrede = Briefanrede.briefanrede(Briefanrede.artAus(ctx), ctx.get("KUNDENNAME"));
+        return "<p>" + HtmlUtils.htmlEscape(briefanrede, "UTF-8") + ",</p>";
     }
 
     private static String buildEinleitungsBlock(String typLabel,
@@ -946,8 +948,6 @@ public class AutoMahnVersandService
             ctx.put("KUNDENNUMMER", nullSafe(kunde.getKundennummer()));
             ctx.put("KUNDENADRESSE", nullSafe(baueAdresseAusKunde(kunde)));
             ctx.put("ANSPRECHPARTNER", nullSafe(kunde.getAnsprechspartner()));
-            ctx.put("ANREDE", kunde.getAnrede() != null
-                    ? kunde.getAnrede().toAnredeText() : "Sehr geehrte Damen und Herren");
         }
         else
         {
@@ -955,8 +955,9 @@ public class AutoMahnVersandService
             ctx.put("KUNDENNUMMER", "");
             ctx.put("KUNDENADRESSE", "");
             ctx.put("ANSPRECHPARTNER", "");
-            ctx.put("ANREDE", "Sehr geehrte Damen und Herren");
         }
+        // ANREDE + Anrede-Art: "{{ANREDE}} {{KUNDENNAME}}" wird in Mail und Textbausteinen zur Briefanrede.
+        Briefanrede.inKontext(ctx, kunde != null ? kunde.getAnrede() : null);
         Objects.requireNonNull(stufe); // wird im Logging genutzt
         return ctx;
     }

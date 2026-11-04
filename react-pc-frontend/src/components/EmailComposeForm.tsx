@@ -221,20 +221,6 @@ const getCurrentFrontendUser = (): FrontendUserSelection | null => {
     return null;
 };
 
-// Anrede-Enum in korrekten Anredetext umwandeln (ohne Name - wird vom Backend separat hinzugefügt)
-export const anredeEnumToText = (anrede: string | undefined): string => {
-    if (!anrede) return 'Sehr geehrte Damen und Herren';
-    const upper = anrede.toUpperCase();
-    switch (upper) {
-        case 'HERR': return 'Sehr geehrter Herr';
-        case 'FRAU': return 'Sehr geehrte Frau';
-        case 'FAMILIE': return 'Sehr geehrte Familie';
-        case 'FIRMA': return 'Sehr geehrte Damen und Herren';
-        case 'DAMEN_HERREN': return 'Sehr geehrte Damen und Herren';
-        default: return 'Sehr geehrte Damen und Herren';
-    }
-};
-
 export function EmailComposeForm({
     onClose,
     onBeforeLeave,

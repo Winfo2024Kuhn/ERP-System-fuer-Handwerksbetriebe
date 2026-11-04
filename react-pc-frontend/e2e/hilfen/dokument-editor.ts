@@ -38,6 +38,8 @@ export interface AusgangsDokumentStand {
     storniert: boolean;
     digitalAngenommen?: boolean;
     zahlungszielTage: number;
+    /** Dokument haengt direkt am Kunden (kein Projekt): Editor laedt /api/kunden/{id}. */
+    kundeId?: number;
 }
 
 const HEUTE_ISO = new Date().toISOString().split('T')[0];

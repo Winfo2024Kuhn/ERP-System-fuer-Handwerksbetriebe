@@ -9,9 +9,11 @@ import java.util.Map;
 import java.util.Optional;
 
 import org.example.email.EmailService;
+import org.example.kalkulationsprogramm.domain.Anrede;
 import org.example.kalkulationsprogramm.domain.EmailTextTemplate;
 import org.example.kalkulationsprogramm.dto.FirmeninformationDto;
 import org.example.kalkulationsprogramm.repository.EmailTextTemplateRepository;
+import org.example.kalkulationsprogramm.util.Briefanrede;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -216,5 +218,67 @@ class EmailTextTemplateServiceTest {
                 Map.of("REVIEW_LINK", "<a href=\"https://example.com/b\">Jetzt Bewertung abgeben</a>"));
 
         assertThat(result.htmlBody()).contains("<a href=\"https://example.com/b\">Jetzt Bewertung abgeben</a>");
+    }
+
+    private Map<String, String> kundenKontext(Anrede art, String kundenname) {
+        Map<String, String> ctx = new HashMap<>();
+        Briefanrede.inKontext(ctx, art);
+        ctx.put("KUNDENNAME", kundenname);
+        return ctx;
+    }
+
+    @Test
+    void briefanrede_firmaOhneNamenImBodyUndBetreff() {
+        given(firmeninformationService.getFirmeninformation()).willReturn(firma);
+        given(repository.findByDokumentTyp("RECHNUNG"))
+                .willReturn(Optional.of(aktiveVorlage("{{ANREDE}} {{KUNDENNAME}}", "<p>{{ANREDE}} {{KUNDENNAME}},</p>")));
+
+        EmailService.EmailContent result = service.render("RECHNUNG",
+                kundenKontext(Anrede.DAMEN_HERREN, "Landkreis Musterstadt"));
+
+        assertThat(result.htmlBody()).isEqualTo("<p>Sehr geehrte Damen und Herren,</p>");
+        assertThat(result.subject()).isEqualTo("Sehr geehrte Damen und Herren");
+    }
+
+    @Test
+    void briefanrede_herrMitNamenWirdImBodyMaskiert() {
+        given(firmeninformationService.getFirmeninformation()).willReturn(firma);
+        given(repository.findByDokumentTyp("RECHNUNG"))
+                .willReturn(Optional.of(aktiveVorlage("S", "<p>{{ANREDE}}&nbsp;{{KUNDENNAME}},</p><p>{{KUNDENNAME}}</p>")));
+
+        EmailService.EmailContent result = service.render("RECHNUNG",
+                kundenKontext(Anrede.HERR, "<script>alert(1)</script>"));
+
+        assertThat(result.htmlBody())
+                .doesNotContain("<script>")
+                .isEqualTo("<p>Sehr geehrter Herr &lt;script&gt;alert(1)&lt;/script&gt;,</p>"
+                        + "<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>");
+    }
+
+    @Test
+    void briefanrede_ohneAnredeArtBleibtFreieAnredeStehen() {
+        given(firmeninformationService.getFirmeninformation()).willReturn(firma);
+        given(repository.findByDokumentTyp("RECHNUNG"))
+                .willReturn(Optional.of(aktiveVorlage("S", "<p>{{ANREDE}} {{KUNDENNAME}},</p>")));
+
+        EmailService.EmailContent result = service.render("RECHNUNG",
+                Map.of("ANREDE", "Hallo", "KUNDENNAME", "Max Mustermann"));
+
+        assertThat(result.htmlBody()).isEqualTo("<p>Hallo Max Mustermann,</p>");
+    }
+
+    @Test
+    void briefanrede_platzhalterImNamenWirdNichtNochmalErsetzt() {
+        given(firmeninformationService.getFirmeninformation()).willReturn(firma);
+        given(repository.findByDokumentTyp("RECHNUNG"))
+                .willReturn(Optional.of(aktiveVorlage("{{ANREDE}} {{KUNDENNAME}}", "<p>{{ANREDE}} {{KUNDENNAME}},</p>")));
+        Map<String, String> ctx = kundenKontext(Anrede.HERR, "{{DOKUMENTNUMMER}} {{REVIEW_LINK}}");
+        ctx.put("DOKUMENTNUMMER", "RE-2026-0001");
+        ctx.put("REVIEW_LINK", "<a href=\"https://example.com\">x</a>");
+
+        EmailService.EmailContent result = service.render("RECHNUNG", ctx);
+
+        assertThat(result.htmlBody()).isEqualTo("<p>Sehr geehrter Herr {{DOKUMENTNUMMER}} {{REVIEW_LINK}},</p>");
+        assertThat(result.subject()).isEqualTo("Sehr geehrter Herr {{DOKUMENTNUMMER}} {{REVIEW_LINK}}");
     }
 }

@@ -137,7 +137,7 @@ import '@fontsource/open-sans/latin-400-italic.css';
 import '@fontsource/open-sans/latin-700.css';
 import '@fontsource/open-sans/latin-700-italic.css';
 import '@fontsource/montserrat/latin-600.css';
-import { brauchtAnnahmeLinkAbfrage, brauchtBuchungsWarnung, istAngebotsTyp, abloesungsFrage, betragGeaendert, type AbzuloesendeFreigabe, buildAdresse, buildAdresseFromAnfrage, blocksToHtml, calculateNetto, calculateNettoNachRabatt, extractBoldFromHtml, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, gruppiereFuerAnzeige, computeClosureSummary, zahlungszielPlaceholderToChipHtml, chipHtmlToZahlungszielPlaceholder, berechneZahlungszielDatum, DEFAULT_ZAHLUNGSZIEL_TAGE, MIN_ZAHLUNGSZIEL_TAGE, MAX_ZAHLUNGSZIEL_TAGE, ZAHLUNGSZIEL_NACHFRAGE_AB_TAGEN, buildBezugsdokumentKontext, defaultsLabelKandidaten, mussAufBezugsdokumentWarten, mussAufKontextWarten, repariereLeeresBezugsdatumInStandardtext, parseBlocksAusPositionenJson, vergleicheLeistungen, formatiereDifferenzHinweis, baueDokumentSignatur, weichtVonLeistungAb, anzeigeEinheitDerLeistung } from './helpers';
+import { brauchtAnnahmeLinkAbfrage, brauchtBuchungsWarnung, istAngebotsTyp, abloesungsFrage, betragGeaendert, type AbzuloesendeFreigabe, blocksToHtml, calculateNetto, calculateNettoNachRabatt, extractBoldFromHtml, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, gruppiereFuerAnzeige, computeClosureSummary, zahlungszielPlaceholderToChipHtml, chipHtmlToZahlungszielPlaceholder, berechneZahlungszielDatum, DEFAULT_ZAHLUNGSZIEL_TAGE, MIN_ZAHLUNGSZIEL_TAGE, MAX_ZAHLUNGSZIEL_TAGE, ZAHLUNGSZIEL_NACHFRAGE_AB_TAGEN, defaultsLabelKandidaten, mussAufBezugsdokumentWarten, mussAufKontextWarten, repariereLeeresBezugsdatumInStandardtext, parseBlocksAusPositionenJson, vergleicheLeistungen, formatiereDifferenzHinweis, baueDokumentSignatur, weichtVonLeistungAb, anzeigeEinheitDerLeistung } from './helpers';
 import { schliesstEinfacheRechnungAuftragAb } from '../../lib/abrechnungsverlauf';
 import { fehlermeldungAusAntwort, pruefeFirmendatenFuerERechnung } from './eRechnungPruefung';
 import { AlternativGruppeBox } from './AlternativGruppeBox';
@@ -160,7 +160,8 @@ import { LeistungNeuSpeichernDialog, type GewaehlterOrdner } from './LeistungNeu
 import { RabattDialog } from './RabattDialog';
 import { KategorieBestaetigenDialog } from './KategorieBestaetigenDialog';
 import { EmailComposeModal } from '../EmailComposeModal';
-import { anredeEnumToText } from '../EmailComposeForm';
+import { loesePlatzhalterAuf } from './platzhalterAufloesen';
+import { useDokumentKontext } from './useDokumentKontext';
 import { EmailFormatDialog, type PdfFormat } from './EmailFormatDialog';
 import { EmailValidityDialog } from './EmailValidityDialog';
 import { OnlineAnnahmeDialog } from './OnlineAnnahmeDialog';
@@ -351,16 +352,11 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
         blocksRef.current = neu;
         setBlocks(neu);
     }, []);
-    const [kontextDaten, setKontextDaten] = useState<KontextDaten>({});
-    // Gleicher Grund wie bei `datumRef`: `handleSave` haengt `kontextDaten` nicht
-    // in seiner useCallback-Dep-Liste. Eine reine Adressaenderung beruehrt keine
-    // der gelisteten Deps, die Callback-Instanz bliebe also eingefroren und
-    // wuerde die Adresse VOR der Aenderung ans Backend schicken.
-    const kontextDatenRef = useRef(kontextDaten);
-    useEffect(() => { kontextDatenRef.current = kontextDaten; }, [kontextDaten]);
-    // Wird auf true gesetzt sobald der User die Rechnungsadresse manuell bearbeitet hat.
-    // Dann darf loadKontext sie nicht mehr überschreiben.
-    const adresseUserEditedRef = useRef(false);
+    // Kunden-, Projekt- und Bezugsdaten samt Laden (siehe useDokumentKontext).
+    const {
+        kontextDaten, kontextDatenRef, setzeKontextDaten,
+        adresseUserEditedRef, zahlungszielUserEditedRef, kontextGeladen, ladeFuerDokument: ladeKontextFuerDokument,
+    } = useDokumentKontext({ dokumentId, projektId, anfrageId, dokumentTyp, setzeBetreff: setBetreff });
     const [dokument, setDokument] = useState<AusgangsGeschaeftsDokument | null>(null);
     const [showExportWarning, setShowExportWarning] = useState(false);
     const [showExportFormatDialog, setShowExportFormatDialog] = useState(false);
@@ -400,10 +396,6 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
     useEffect(() => {
         if (!zahlungszielGeaendert) gespeichertesZahlungszielRef.current = kontextDaten.zahlungsziel;
     }, [kontextDaten.zahlungsziel, zahlungszielGeaendert]);
-    // Sticky wie `adresseUserEditedRef`: hat der Nutzer das Zahlungsziel einmal
-    // angefasst, darf ein spaeter eintreffender Kontext-Load es nicht mehr
-    // ueberschreiben (siehe loadKontext).
-    const zahlungszielUserEditedRef = useRef(false);
 
     // Vorlagen
     const [textbausteine, setTextbausteine] = useState<TextbausteinApiDto[]>([]);
@@ -640,7 +632,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
         zahlungsziel: kontextDatenRef.current.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE,
         rechnungsadresse: kontextDatenRef.current.rechnungsadresse ?? '',
         balkenAnzeigen: balkenAnzeigenRef.current,
-    }), []);
+    }), [kontextDatenRef]);
 
     const schreibeStand = useCallback((werte: Partial<DokumentStand>) => {
         if (werte.blocks !== undefined) setzeBlocks(werte.blocks);
@@ -674,10 +666,9 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                 adresseUserEditedRef.current = true;
                 setAdresseGeaendert(true);
             }
-            kontextDatenRef.current = naechste;
-            setKontextDaten(naechste);
+            setzeKontextDaten(naechste);
         }
-    }, [setzeBlocks, setzeGlobalRabatt, setzeBalkenAnzeigen]);
+    }, [setzeBlocks, setzeGlobalRabatt, setzeBalkenAnzeigen, setzeKontextDaten, kontextDatenRef, adresseUserEditedRef, zahlungszielUserEditedRef]);
 
     const verlauf = useDokumentVerlauf({ leseStand, schreibeStand, gesperrt: isLocked });
 
@@ -716,60 +707,18 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
 
     // --- Placeholders ---
     // keepZahlungszielPlatzhalter: laesst {{ZAHLUNGSZIEL}} und {{ZAHLUNGSZIEL_TAGE}}
-    // unangetastet, damit sie anschliessend als geschuetzte Chips gerendert werden
-    // koennen (Editor-Inhalt) statt als Klartext einzufrieren. PDF/Preview-Pfade
-    // nutzen den Default (false) und loesen beide zu aktuellen Werten auf.
-    const replacePlaceholders = useCallback((text: string, isPreview: boolean = true, keepZahlungszielPlatzhalter: boolean = false): string => {
-        if (!text) return text;
-        // Defensiv: Sollte ein Chip-Span im Content stehen (statt des Platzhalters),
-        // zuerst zurueck zum Platzhalter normalisieren — so steht im PDF/Versand
-        // garantiert das aktuelle Datum, nie ein eingefrorener Chip-Text.
-        text = chipHtmlToZahlungszielPlaceholder(text);
-        const dokumentTypLabel = AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN.find(t => t.value === dokumentTyp)?.label || dokumentTyp;
-        const anredeMap: Record<string, string> = {
-            'HERR': 'Sehr geehrter Herr',
-            'FRAU': 'Sehr geehrte Frau',
-            'DIVERS': 'Sehr geehrte Damen und Herren',
-            'FIRMA': 'Sehr geehrte Damen und Herren',
-            'HERR_FRAU': 'Sehr geehrte Frau, sehr geehrter Herr'
-        };
-        const anredeValue = kontextDaten.anrede || '';
-        const anredeDisplay = anredeMap[anredeValue.toUpperCase()] ?? anredeValue;
-
-        const dokumentnummerValue = dokumentNummer || (isPreview ? 'VORSCHAU' : 'ENTWURF');
-        const dataMap: Record<string, string> = {
-            'KUNDENNAME': kontextDaten.kundenName || '',
-            'KUNDENADRESSE': kontextDaten.rechnungsadresse || '',
-            'KUNDENNUMMER': kontextDaten.kundennummer || '',
-            'PROJEKTNUMMER': kontextDaten.projektnummer || '',
-            'DOKUMENTNUMMER': dokumentnummerValue,
-            'RECHNUNGSNUMMER': dokumentnummerValue, // Alias für DOKUMENTNUMMER
-            'DATUM': datumRef.current ? new Date(datumRef.current).toLocaleDateString('de-DE') : new Date().toLocaleDateString('de-DE'),
-            'BETREFF': betreff || '',
-            'ANREDE': anredeDisplay,
-            'ANSPRECHPARTNER': kontextDaten.ansprechpartner || '',
-            'DOKUMENTTYP': dokumentTypLabel,
-            'BAUVORHABEN': kontextDaten.projektBauvorhaben || betreff || '',
-            'BEZUGSDOKUMENT': kontextDaten.bezugsdokument || '',
-            'BEZUGSDOKUMENTNUMMER': kontextDaten.bezugsdokument || '',
-            'BEZUGSDOKUMENTTYP': kontextDaten.bezugsdokumentTyp || '',
-            'BEZUGSDOKUMENTDATUM': kontextDaten.bezugsdokumentDatum || '',
-            ...(keepZahlungszielPlatzhalter ? {} : {
-                'ZAHLUNGSZIEL': berechneZahlungszielDatum(datumRef.current, kontextDaten.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE),
-                'ZAHLUNGSZIEL_TAGE': String(kontextDaten.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE)
-            })
-        };
-
-        return text.replace(/\{\{\s*([a-zA-Z0-9_äöüÄÖÜß]+)\s*\}\}/g, (match, key) => {
-            const upperKey = key.toUpperCase();
-            return dataMap[upperKey] !== undefined ? dataMap[upperKey] : match;
-        });
-        // `datum` wird über `datumRef.current` im Body gelesen (für synchron
-        // gebumptes Versanddatum), bleibt aber in den Deps, damit nachgelagerte
-        // useMemo/useEffect-Verbraucher (Preview, PDF) bei DatePicker-Änderungen
-        // re-erzeugt werden.
+    // als Platzhalter stehen (Editor-Chips); PDF/Vorschau loesen beide auf.
+    // `datum` wird über `datumRef.current` gelesen (synchron gebumptes
+    // Versanddatum), bleibt aber in den Deps, damit Vorschau und PDF bei
+    // DatePicker-Änderungen neu erzeugt werden.
+    const replacePlaceholders = useCallback((text: string, isPreview: boolean = true, keepZahlungszielPlatzhalter: boolean = false): string =>
+        loesePlatzhalterAuf(
+            text,
+            { kontext: kontextDaten, dokumentTyp, dokumentNummer, datumIso: datumRef.current, betreff },
+            { vorschau: isPreview, zahlungszielPlatzhalterBehalten: keepZahlungszielPlatzhalter },
+        ),
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [kontextDaten, dokumentTyp, dokumentNummer, datum, betreff]);
+    [kontextDaten, dokumentTyp, dokumentNummer, datum, betreff]);
 
     // --- Zahlungsziel: geschuetzter Chip in Textbausteinen ---
     // {{ZAHLUNGSZIEL}} bleibt in block.content erhalten (friert nicht als
@@ -974,109 +923,6 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
         importToastTimer.starte(() => setImportToast(null), 5000);
     };
 
-    // --- Load Kontext ---
-    /**
-     * true, sobald der Kontext-Load (Projekt/Anfrage) abgeschlossen ist —
-     * unabhaengig davon, ob er Daten geliefert hat. Der Defaults-Effekt
-     * wartet nur, solange der Load noch LAEUFT: Ein Projekt ohne Kunde/
-     * Auftragsnummer darf die Standard-Textbausteine nicht dauerhaft blockieren.
-     */
-    const [kontextGeladen, setKontextGeladen] = useState(false);
-    useEffect(() => {
-        const loadKontext = async () => {
-            try {
-                // Geerbte Rechnungsanschrift: Wurde in einem Dokument dieses Vorgangs
-                // (z.B. dem Angebot) die Adresse bearbeitet, zeigt ein NEUES Dokument
-                // sie sofort an. Beim Erstellen übernimmt das Backend sie ohnehin —
-                // hier geht es nur darum, vor dem ersten Speichern keine veraltete
-                // Kundenadresse anzuzeigen oder in die PDF-Vorschau zu geben.
-                let geerbteAdresse: string | null = null;
-                if (!dokumentId && (projektId || anfrageId)) {
-                    try {
-                        const basis = projektId ? `projekt/${projektId}` : `anfrage/${anfrageId}`;
-                        const ovRes = await fetch(`/api/ausgangs-dokumente/${basis}/geerbte-rechnungsadresse`);
-                        if (ovRes.ok) {
-                            geerbteAdresse = (await ovRes.json()).rechnungsadresseOverride || null;
-                        }
-                    } catch { /* Fallback: berechnete Kundenadresse anzeigen */ }
-                }
-                if (projektId) {
-                    const res = await fetch(`/api/projekte/${projektId}`);
-                    if (res.ok) {
-                        const projekt = await res.json();
-                        const emails: string[] = [];
-                        if (projekt.kundenEmails) projekt.kundenEmails.forEach((e: string) => { if (e && !emails.includes(e)) emails.push(e); });
-                        if (projekt.kundeDto?.kundenEmails) projekt.kundeDto.kundenEmails.forEach((e: string) => { if (e && !emails.includes(e)) emails.push(e); });
-                        setKontextDaten(prev => ({
-                            ...prev,
-                            projektnummer: projekt.auftragsnummer,
-                            projektBauvorhaben: projekt.bauvorhaben,
-                            kundennummer: projekt.kundennummer,
-                            kundenName: projekt.kunde,
-                            kundeId: projekt.kundenId,
-                            // Wenn User die Adresse bereits bearbeitet hat (vorhandenes Override),
-                            // darf loadKontext sie nicht überschreiben.
-                            rechnungsadresse: adresseUserEditedRef.current
-                                ? prev.rechnungsadresse
-                                : (geerbteAdresse || buildAdresse(projekt.kundeDto)),
-                            anrede: projekt.kundeDto?.anrede,
-                            ansprechpartner: projekt.kundeDto?.ansprechspartner || projekt.kundeDto?.ansprechpartner,
-                            kundenEmails: emails,
-                            // Nur bei einem neuen, noch unberuehrten Dokument setzen.
-                            // Bei einem bestehenden Dokument setzt loadDokument das gespeicherte
-                            // Zahlungsziel. Beide Effekte laden parallel: kaeme diese Antwort
-                            // zuletzt an, stuende sonst der Kunden-Standard im Editor, und
-                            // handleSave wuerde ihn ueber den gespeicherten Wert schreiben.
-                            // Dasselbe gilt fuer ein neues Dokument, in dem der Nutzer waehrend
-                            // des Ladens schon getippt hat (wie `adresseUserEditedRef` oben).
-                            // `dokumentId` kommt aus der Closure -- der Effekt haengt bewusst nur
-                            // an projektId/anfrageId (siehe eslint-disable am Ende des Effekts).
-                            ...(dokumentId || zahlungszielUserEditedRef.current
-                                ? {}
-                                : { zahlungsziel: projekt.kundeDto?.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE }),
-                        }));
-                        setBetreff(projekt.bauvorhaben || '');
-                    }
-                } else if (anfrageId) {
-                    const res = await fetch(`/api/anfragen/${anfrageId}`);
-                    if (res.ok) {
-                        const anfrage = await res.json();
-                        const useAnfrageAsReferenceFallback = !dokumentId && dokumentTyp !== 'ANGEBOT';
-                        const emails: string[] = [];
-                        if (anfrage.kundenEmails) anfrage.kundenEmails.forEach((e: string) => { if (e && !emails.includes(e)) emails.push(e); });
-                        setKontextDaten(prev => ({
-                            ...prev,
-                            kundennummer: anfrage.kundennummer,
-                            kundenName: anfrage.kundenName,
-                            kundeId: anfrage.kundenId,
-                            // Wenn User die Adresse bereits bearbeitet hat, nicht überschreiben.
-                            rechnungsadresse: adresseUserEditedRef.current
-                                ? prev.rechnungsadresse
-                                : (geerbteAdresse || buildAdresseFromAnfrage(anfrage)),
-                            anrede: anfrage.kundenAnrede || anfrage.anrede,
-                            ansprechpartner: anfrage.kundenAnsprechpartner || anfrage.kundenAnsprechspartner,
-                            kundenEmails: emails,
-                            // Wie im Projekt-Zweig: weder ein gespeichertes noch ein vom Nutzer
-                            // bereits eingetipptes Zahlungsziel ueberschreiben.
-                            ...(dokumentId || zahlungszielUserEditedRef.current
-                                ? {}
-                                : { zahlungsziel: anfrage.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE }),
-                            ...(useAnfrageAsReferenceFallback
-                                ? { bezugsdokument: anfrage.anfragesnummer, bezugsdokumentTyp: 'Angebot' }
-                                : {})
-                        }));
-                        setBetreff(anfrage.bauvorhaben || '');
-                    }
-                }
-            } catch (err) {
-                console.error('Fehler beim Laden der Kontext-Daten:', err);
-            } finally {
-                setKontextGeladen(true);
-            }
-        };
-        loadKontext();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [projektId, anfrageId]);
 
     // Frisch umgewandeltes Dokument: Standard-Textbausteine des neuen Typs einmalig
     // nachladen (Erklärung bei „Auto-Load Standard-Textbausteine je Dokumenttyp“).
@@ -1124,110 +970,9 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                         : data.datum;
                     setDatum(datumZuVerwenden);
                     datumRef.current = datumZuVerwenden;
-                    // Sobald ein Override vorhanden ist: als "user-edited" markieren,
-                    // damit loadKontext die Adresse nicht überschreibt.
-                    if (data.rechnungsadresseOverride) {
-                        adresseUserEditedRef.current = true;
-                    }
-
-                    if (data.gebucht) {
-                        setKontextDaten({
-                            kundennummer: data.kundennummer,
-                            kundenName: data.kundenName,
-                            rechnungsadresse: data.rechnungsadresse,
-                            projektnummer: data.projektnummer,
-                            projektBauvorhaben: data.projektBauvorhaben,
-                            bezugsdokument: data.vorgaengerNummer,
-                            zahlungsziel: data.zahlungszielTage ?? DEFAULT_ZAHLUNGSZIEL_TAGE
-                        });
-                    } else {
-                        if (data.projektId) {
-                            const projRes = await fetch(`/api/projekte/${data.projektId}`);
-                            if (projRes.ok) {
-                                const projekt = await projRes.json();
-                                setKontextDaten({
-                                    projektnummer: projekt.auftragsnummer,
-                                    projektBauvorhaben: projekt.bauvorhaben,
-                                    kundennummer: projekt.kundennummer,
-                                    kundenName: projekt.kunde,
-                                    kundeId: projekt.kundenId,
-                                    // Override hat Vorrang vor berechneter Kundenadresse
-                                    rechnungsadresse: data.rechnungsadresseOverride || buildAdresse(projekt.kundeDto),
-                                    anrede: projekt.kundeDto?.anrede,
-                                    ansprechpartner: projekt.kundeDto?.ansprechspartner || projekt.kundeDto?.ansprechpartner,
-                                    bezugsdokument: data.vorgaengerNummer,
-                                    zahlungsziel: data.zahlungszielTage ?? projekt.kundeDto?.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE
-                                });
-                            }
-                        } else if (data.anfrageId) {
-                            const angRes = await fetch(`/api/anfragen/${data.anfrageId}`);
-                            if (angRes.ok) {
-                                const anfrage = await angRes.json();
-                                const isFollowUp = data.typ !== 'ANGEBOT';
-                                setKontextDaten({
-                                    kundennummer: anfrage.kundennummer,
-                                    kundenName: anfrage.kundenName,
-                                    kundeId: anfrage.kundenId,
-                                    // Override hat Vorrang vor berechneter Kundenadresse
-                                    rechnungsadresse: data.rechnungsadresseOverride || buildAdresseFromAnfrage(anfrage),
-                                    anrede: anfrage.kundenAnrede || anfrage.anrede,
-                                    ansprechpartner: anfrage.kundenAnsprechpartner || anfrage.kundenAnsprechspartner,
-                                    zahlungsziel: data.zahlungszielTage ?? anfrage.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE,
-                                    ...(isFollowUp ? { bezugsdokument: anfrage.anfragesnummer, bezugsdokumentTyp: 'Angebot' } : {})
-                                });
-                            }
-                        } else if (data.kundeId) {
-                            const kundeRes = await fetch(`/api/kunden/${data.kundeId}`);
-                            if (kundeRes.ok) {
-                                const kunde = await kundeRes.json();
-                                setKontextDaten(prev => ({
-                                    kundennummer: kunde.kundennummer || data.kundennummer,
-                                    kundenName: kunde.name || `${kunde.vorname || ''} ${kunde.nachname || ''}`.trim(),
-                                    kundeId: data.kundeId,
-                                    // Gespeichertes Override hat Vorrang
-                                    rechnungsadresse: adresseUserEditedRef.current
-                                        ? prev.rechnungsadresse
-                                        : (data.rechnungsadresseOverride || buildAdresse(kunde)),
-                                    anrede: kunde.anrede,
-                                    ansprechpartner: kunde.ansprechspartner || kunde.ansprechpartner,
-                                    bezugsdokument: data.vorgaengerNummer,
-                                    zahlungsziel: data.zahlungszielTage ?? kunde.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE
-                                }));
-                            }
-                        } else {
-                            setKontextDaten({
-                                kundennummer: data.kundennummer,
-                                kundenName: data.kundenName,
-                                rechnungsadresse: data.rechnungsadresse,
-                                projektnummer: data.projektnummer,
-                                projektBauvorhaben: data.projektBauvorhaben,
-                                bezugsdokument: data.vorgaengerNummer,
-                                zahlungsziel: data.zahlungszielTage ?? DEFAULT_ZAHLUNGSZIEL_TAGE
-                            });
-                        }
-                    }
-
-                    // Ein expliziter Vorgänger ist die verbindliche Quelle fuer
-                    // Bezugsnummer, -typ und -datum. Der Request wird abgewartet,
-                    // damit umgewandelte Standardtexte nicht vorher mit leerem
-                    // {{BEZUGSDOKUMENTDATUM}} erzeugt und eingefroren werden.
-                    if (data.vorgaengerId) {
-                        try {
-                            const vorgaengerRes = await fetch(`/api/ausgangs-dokumente/${data.vorgaengerId}`);
-                            if (vorgaengerRes.ok) {
-                                const vorgaenger: AusgangsGeschaeftsDokument = await vorgaengerRes.json();
-                                const typLabel = AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN.find(t => t.value === vorgaenger.typ)?.label || vorgaenger.typ;
-                                setKontextDaten(prev => ({
-                                    ...prev,
-                                    ...buildBezugsdokumentKontext(vorgaenger, typLabel)
-                                }));
-                            }
-                        } catch (err) {
-                            console.error('Fehler beim Laden des Bezugsdokuments:', err);
-                        }
-                    } else if (data.anfrageId && data.typ !== 'ANGEBOT') {
-                        setKontextDaten(prev => ({ ...prev, bezugsdokumentTyp: 'Angebot' }));
-                    }
+                    // Kunde/Projekt/Anfrage und Vorgaenger: abwarten, damit umgewandelte
+                    // Standardtexte nicht mit leerem {{BEZUGSDOKUMENTDATUM}} entstehen.
+                    await ladeKontextFuerDokument(data);
 
                     let loadedBlocks: DocBlock[] = [];
                     let loadedGlobalRabatt = 0;
@@ -1412,7 +1157,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
         // aber nur, solange der Kontext-Load noch laeuft (siehe helpers.ts).
         if (mussAufKontextWarten(kontextDaten, kontextGeladen, !!(projektId || anfrageId))) return;
 
-        // setKontextDaten aus dem Vorgaenger-Request ist asynchron. Deshalb
+        // Das Kontext-Update aus dem Vorgaenger-Request (useDokumentKontext) ist asynchron. Deshalb
         // reicht es nicht, den Request in loadDokument nur abzuwarten: Der
         // Defaults-Effekt kann vorher noch einen Zwischenrender mit leerem
         // Bezugsdatum sehen und den Platzhalter dauerhaft zu "" aufloesen.
@@ -3233,7 +2978,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         dokumentTyp: dokumentTyp,
-                        anrede: anredeEnumToText(kontextDaten.anrede),
+                        anrede: kontextDaten.anrede || null,
                         kundenName: kontextDaten.kundenName || '',
                         ansprechpartner: kontextDaten.ansprechpartner || '',
                         bauvorhaben: kontextDaten.projektBauvorhaben || betreff || '',
@@ -3646,7 +3391,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
     // `kontextDaten` steht als ganzes Objekt drin, nicht nur die Adresse: auch
     // Zahlungsziel & Co. landen ueber `createPdfRequest` im PDF und gehoeren
     // damit zum Vorschau-Inhalt. Die Objekt-Identitaet aendert sich nur bei
-    // `setKontextDaten`, loest also keine Endlosschleife aus.
+    // einem neuen Kontext-Stand (useDokumentKontext), loest also keine Endlosschleife aus.
     // `dokumentNummer` ebenfalls: sie wird erst beim ersten Speichern vom
     // Server vergeben, vorher steht "VORSCHAU" im PDF.
     // (Zustand beim Rendern anpassen: so sieht der Token-Effekt unten den Marker
