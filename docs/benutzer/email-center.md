@@ -21,7 +21,7 @@ Oben in der Liste (**Kommunikation → E-Mail Center**):
 
 ## E-Mail lesen und Anhänge öffnen
 
-Ein Klick auf eine E-Mail zeigt rechts den ganzen Verlauf. Unter „Gehört zu“ steht, zu welchem Projekt, welcher Anfrage oder welchem Lieferanten sie gehört; ein Klick darauf öffnet den Vorgang. Ältere zitierte Teile sind eingeklappt („Zitierten Verlauf anzeigen“).
+Ein Klick auf eine E-Mail zeigt rechts den ganzen Verlauf. Unter „Gehört zu“ steht, zu welchem Projekt, welcher Anfrage oder welchem Lieferanten sie gehört; ein Klick darauf öffnet den Vorgang. Ältere zitierte Teile sind eingeklappt („Zitierten Verlauf anzeigen“). Bei Weiterleitungen bleibt die weitergeleitete Mail sichtbar, älterer Verlauf darunter wird eingeklappt.
 
 Anhänge stehen unter der E-Mail. PDFs öffnen sich in einer Vorschau mit „Download“, Bilder in einem Bildbetrachter, andere Dateien werden heruntergeladen. Bei mehreren Anhängen lädt „Alle Anhänge herunterladen“ (im Menü „…“) alle als ZIP-Datei.
 
