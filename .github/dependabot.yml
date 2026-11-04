@@ -39,6 +39,12 @@ updates:
         update-types: [minor, patch]
       backend-gross:
         update-types: [major]
+    ignore:
+      # 2.1.15 liefert ein Test-Zertifikat ohne Hostnamen (SAN): die
+      # IMAPS/SMTPS-Integrationstests scheitern an der Hostpruefung.
+      # Die naechste Version wird wieder vorgeschlagen.
+      - dependency-name: "com.icegreen:greenmail-junit5"
+        versions: ["2.1.15"]
 
   - package-ecosystem: npm
     directories:
@@ -54,6 +60,15 @@ updates:
         update-types: [minor, patch]
       frontend-gross:
         update-types: [major]
+    ignore:
+      # TypeScript 7 erst, wenn typescript-eslint es unterstuetzt
+      # (Peer-Bereich bis < 6.1, npm ci bricht sonst ab).
+      - dependency-name: "typescript"
+        versions: [">=7"]
+      # Tailwind 4 ist eine eigene Umstellung (CSS-Konfiguration statt
+      # tailwind.config), kein automatisches Update.
+      - dependency-name: "tailwindcss"
+        versions: [">=4"]
 
   # Basis-Images der Dockerfiles. Major-Spruenge (Java 23 -> 25, Node 24 -> 26)
   # nicht automatisch: Die Java-Version haengt an pom.xml, Node an der CI.
