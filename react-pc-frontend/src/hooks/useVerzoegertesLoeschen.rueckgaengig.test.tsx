@@ -7,7 +7,7 @@ import { RUECKGAENGIG_MS, useVerzoegertesLoeschen } from './useVerzoegertesLoesc
 const toastApi = vi.hoisted(() => ({
     success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn(), schliessen: vi.fn(),
 }));
-vi.mock('../../components/ui/toast', () => ({ useToast: () => toastApi }));
+vi.mock('../components/ui/toast', () => ({ useToast: () => toastApi }));
 
 function Probe() {
     const { planen } = useVerzoegertesLoeschen();

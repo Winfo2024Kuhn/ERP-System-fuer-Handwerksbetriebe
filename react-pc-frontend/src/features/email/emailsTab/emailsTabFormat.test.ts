@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { formatEmailDate } from './emailsTabFormat';
+import { formatEmailDate, verlaufAnzahl } from './emailsTabFormat';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -20,5 +20,18 @@ describe('formatEmailDate', () => {
     it('zeigt den Rohwert, wenn das Formatieren scheitert', () => {
         vi.spyOn(Date.prototype, 'toLocaleDateString').mockImplementation(() => { throw new RangeError('x'); });
         expect(formatEmailDate({ sentAt: 'irgendwas' })).toBe('irgendwas');
+    });
+});
+
+describe('verlaufAnzahl', () => {
+    const mail = { isDraft: false };
+    const entwurf = { isDraft: true };
+
+    it('zählt Nachrichten und Entwürfe getrennt, Einzahl und Mehrzahl', () => {
+        expect(verlaufAnzahl([mail])).toBe('1 Nachricht im Verlauf');
+        expect(verlaufAnzahl([mail, mail, mail])).toBe('3 Nachrichten im Verlauf');
+        expect(verlaufAnzahl([mail, entwurf])).toBe('1 Nachricht im Verlauf, 1 Entwurf');
+        expect(verlaufAnzahl([mail, mail, entwurf, entwurf])).toBe('2 Nachrichten im Verlauf, 2 Entwürfe');
+        expect(verlaufAnzahl([])).toBe('0 Nachrichten im Verlauf');
     });
 });

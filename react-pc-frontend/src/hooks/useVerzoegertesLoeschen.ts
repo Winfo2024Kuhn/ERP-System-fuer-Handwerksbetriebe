@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useToast } from '../../components/ui/toast';
-import { leseFehlermeldung } from '../../lib/apiFehler';
-import { loescheSofort } from './api';
+import { useToast } from '../components/ui/toast';
+import { apiAnfrage, leseFehlermeldung } from '../lib/apiFehler';
 
 /** So lange lässt sich ein Löschen ohne Rückfrage rückgängig machen. */
 export const RUECKGAENGIG_MS = 6000;
@@ -25,6 +24,8 @@ interface Eintrag {
 
 /**
  * Löschen mit „Rückgängig“ statt Rückfrage (für Dinge ohne Bezüge).
+ * Genutzt von „Leistungen & Kategorien“ (Ordner, Leistungen) und im E-Mail-Reiter
+ * (Entwürfe im Verlauf).
  *
  * Das Objekt verschwindet sofort aus der Ansicht, eine Meldung bietet
  * „Rückgängig“ an. Erst nach {@link RUECKGAENGIG_MS} geht das DELETE raus.
@@ -68,7 +69,8 @@ export function useVerzoegertesLoeschen() {
         if (!eintrag) return;
         ausstehend.current.delete(schluessel);
         toast.schliessen(eintrag.auftrag.schluessel);
-        await auswerten(loescheSofort(eintrag.auftrag.url, eintrag.auftrag.fehlerText), eintrag.auftrag);
+        const anfrage = apiAnfrage(eintrag.auftrag.url, { method: 'DELETE' }, eintrag.auftrag.fehlerText).then(() => undefined);
+        await auswerten(anfrage, eintrag.auftrag);
     }, [auswerten, toast]);
 
     const rueckgaengig = useCallback((schluessel: string, name: string) => {

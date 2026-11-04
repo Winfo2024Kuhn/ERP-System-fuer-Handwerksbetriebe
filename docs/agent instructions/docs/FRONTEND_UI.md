@@ -14,7 +14,8 @@ Jede UI-Entscheidung wird an diesen zwei Fragen gemessen. Beide MÜSSEN mit Ja b
 - Icon-only-Buttons **immer** mit sichtbarem Tooltip/`aria-label` — nie ein Icon ohne Erklärung raten lassen.
 - Deaktivierte Buttons/Felder erklären per Tooltip **warum** sie deaktiviert sind, statt einfach grau und stumm zu sein.
 - Destruktive Aktionen (Löschen, Stornieren, unwiderrufliches Versenden) verlangen eine Bestätigung per Dialog (`useConfirm` aus `components/ui/confirm-dialog.tsx`, `variant: 'danger'`) — nie ein einzelner Klick, der sofort unwiderruflich ausführt.
-  - Ausnahme (Nutzervorgabe 23.10.2026, Seite „Leistungen & Kategorien“): Hängt an einem Ordner oder einer Leistung nichts, wird ohne Dialog gelöscht – mit Toast „Rückgängig“ und erst danach gesendetem DELETE (`pages/leistungen/useVerzoegertesLoeschen.ts`). Hängt etwas daran, fragt ein Dialog nach und nennt die Bezüge.
+  - Ausnahme (Nutzervorgabe 23.10.2026, Seite „Leistungen & Kategorien“): Hängt an einem Ordner oder einer Leistung nichts, wird ohne Dialog gelöscht – mit Toast „Rückgängig“ und erst danach gesendetem DELETE (`hooks/useVerzoegertesLoeschen.ts`). Hängt etwas daran, fragt ein Dialog nach und nennt die Bezüge.
+  - Genauso löscht der E-Mail-Reiter Entwürfe im Verlauf (Nutzerentscheid 04.11.2026): sofort ausgeblendet, „Rückgängig“ für 6 s, danach DELETE; schließt der Verlauf vorher, geht das DELETE sofort raus.
 - Formulare zeigen Pflichtfelder, Format-Hinweise (z. B. Datumsformat, Mengeneinheit) und Platzhalter **bevor** der Nutzer den Fehler macht, nicht erst danach in einer Fehlermeldung.
 
 ### Gulf of Evaluation — "Sieht der Nutzer sofort, WAS passiert ist?"
@@ -74,7 +75,7 @@ Baue Komponenten **nicht von Hand nach**, wenn ein MCP-Server sie liefern kann. 
   - `src/components/ui/`: Atome
   - `src/components/`: geteilte Fach-Bausteine
   - `src/features/{name}/`: Domänenlogik
-  - `src/hooks/`: geteilte React-Hooks (z. B. `useHakenSpeichern` für Haken in Listen: Zeile sperren, Fehler-Toast, neu laden)
+  - `src/hooks/`: geteilte React-Hooks (z. B. `useHakenSpeichern` für Haken in Listen: Zeile sperren, Fehler-Toast, neu laden; `useVerzoegertesLoeschen` für Löschen mit „Rückgängig“)
   - `src/pages/`: Seiten
   - `src/lib/`: reine Hilfsfunktionen
 
@@ -105,7 +106,7 @@ PC-Frontend (`react-pc-frontend/src`):
 - `useToast()` -> `src/components/ui/toast.tsx` (siehe Toast-Pflicht)
 - `<ImageViewer>` -> `src/components/ui/image-viewer.tsx`
 - `<DetailLayout>` -> `src/components/DetailLayout.tsx` (2-Spalten-Layout)
-- `<EmailsTab>` -> `src/components/EmailsTab.tsx` (E-Mail-Verlauf in Kunde, Projekt, Anfrage, Lieferant). Teile und Logik liegen in `src/features/email/emailsTab/` (Listenzeile, Kopfleiste, Verlaufs-Dialog, Anhang-Vorschau, Hooks für Verlauf und Antwort, reine Funktionen für Verläufe und Filter); dort erweitern, nicht in `EmailsTab.tsx`.
+- `<EmailsTab>` -> `src/components/EmailsTab.tsx` (E-Mail-Verlauf in Kunde, Projekt, Anfrage, Lieferant). Teile und Logik liegen in `src/features/email/emailsTab/` (Listenzeile als echter Knopf, Kopfleiste mit `SegmentAuswahl` als Filter, Verlaufs-Dialog auf Basis von `Dialog`, Hooks für Verlauf, Antwort und Entwurf löschen, reine Funktionen für Verläufe, Filter und Anzeige); dort erweitern, nicht in `EmailsTab.tsx`. Anhänge zeigt der Verlauf über `ImageViewer` (Bilder) und `DocumentPreviewModal` (PDF), im Dialog eingehängt, damit Escape nur die Vorschau schließt. Späte Antworten (Verlauf neu laden, Antwort öffnen) werden über eine laufende Nummer verworfen.
 - `<GoogleMapsEmbed>` -> `src/components/GoogleMapsEmbed.tsx`
 - `<DocumentPreviewModal>` -> `src/components/DocumentPreviewModal.tsx` (für PDFs)
 - `<InfoButton>` -> `src/components/ui/info-button.tsx` (Erklärungen an komplexen Stellen, siehe unten)

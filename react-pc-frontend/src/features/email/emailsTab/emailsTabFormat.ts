@@ -11,3 +11,11 @@ export function formatEmailDate(email: Pick<GenericEmail, 'sentAt' | 'receivedDa
         });
     } catch { return dateStr; }
 }
+
+/** Untertitel des Verlaufs, z. B. „2 Nachrichten im Verlauf, 1 Entwurf“. Entwürfe zählen nicht als Nachricht. */
+export function verlaufAnzahl(eintraege: ReadonlyArray<{ isDraft?: boolean }>): string {
+    const entwuerfe = eintraege.filter(e => e.isDraft).length;
+    const nachrichten = eintraege.length - entwuerfe;
+    const text = `${nachrichten} ${nachrichten === 1 ? 'Nachricht' : 'Nachrichten'} im Verlauf`;
+    return entwuerfe ? `${text}, ${entwuerfe} ${entwuerfe === 1 ? 'Entwurf' : 'Entwürfe'}` : text;
+}

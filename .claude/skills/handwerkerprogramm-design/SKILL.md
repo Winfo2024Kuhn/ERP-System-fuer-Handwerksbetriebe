@@ -98,7 +98,7 @@ Das Programm wächst, also bleibt alles klein, wiederverwendbar und testbar. Vol
 - Keine neuen Farben und keine Verläufe. Fremde Vorschläge aus Skills oder MCP-Bausteinen (blue/indigo/violet) werden auf Rose/Slate umgestellt.
 
 **Löschen und Unwiderrufliches:**
-- Rückgängig vor Nachfragen: wo es geht, sofort löschen mit Toast „Rückgängig“ und erst danach das echte DELETE senden (Muster `useVerzoegertesLoeschen`). Wo nicht (hängt etwas daran, Versand, Storno), fragt `useConfirm` mit `variant: 'danger'`.
+- Rückgängig vor Nachfragen: wo es geht, sofort löschen mit Toast „Rückgängig“ und erst danach das echte DELETE senden (Muster `hooks/useVerzoegertesLoeschen.ts`, genutzt bei Leistungen und Entwürfen im E-Mail-Reiter). Wo nicht (hängt etwas daran, Versand, Storno), fragt `useConfirm` mit `variant: 'danger'`.
 - Der Dialog sagt **was** gelöscht wird (Name/Nummer), **was daran hängt** („3 Rechnungen betroffen“) und **ob es rückgängig geht**. Knopf trägt das Verb („Rechnung löschen“), nicht „Ja“. Der sichere Weg („Abbrechen“) ist vorbelegt, der Gefahrenknopf rot und nie der Standardfokus.
 - Gesperrtes Löschen erklärt den Grund und was der Nutzer stattdessen tun kann (z. B. „Erst die Rechnung stornieren“).
 - Nach dem Löschen: Fokus und Liste springen sinnvoll weiter, kein leerer Bildschirm ohne Hinweis.

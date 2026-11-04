@@ -11,7 +11,6 @@ import { useEmailsTabReply } from '../features/email/emailsTab/useEmailsTabReply
 import { EmailsTabToolbar } from '../features/email/emailsTab/EmailsTabToolbar';
 import { EmailsTabListItem } from '../features/email/emailsTab/EmailsTabListItem';
 import { EmailsTabThreadDialog } from '../features/email/emailsTab/EmailsTabThreadDialog';
-import { EmailsTabAttachmentPreview, type EmailsTabAttachment } from '../features/email/emailsTab/EmailsTabAttachmentPreview';
 import type { EmailsTabFilter, GenericEmail } from '../features/email/emailsTab/emailsTabTypes';
 
 export type { GenericEmail };
@@ -20,15 +19,9 @@ export interface EmailsTabProps {
     // Required
     emails: GenericEmail[];
 
-    // Entity context - exactly one should be provided
+    // Kontext für „Neue E-Mail“ und Antworten (Projekt oder Anfrage)
     projektId?: number;
     anfrageId?: number;
-    kundeId?: number;
-    lieferantId?: number;
-
-    // Optional context for compose/reply
-    entityName?: string; // e.g. "Bauvorhaben XYZ" for email context
-    kundenEmail?: string; // First customer email for replies
 
     // Optional: Projekt detail object for compose modal
     projekt?: {
@@ -61,7 +54,8 @@ export interface EmailsTabProps {
 
 /**
  * E-Mail-Reiter in Kunde, Projekt, Anfrage und Lieferant: Mailliste nach Verläufen,
- * Suche und Filter, Verlauf im Vollbild mit Antwort, neue E-Mail.
+ * Suche und Filter, Verlauf im Dialog mit Antwort, Anhang-Vorschau und Entwurf löschen
+ * (mit „Rückgängig“), neue E-Mail.
  * Bausteine und Logik liegen unter `features/email/emailsTab/`.
  */
 export const EmailsTab: React.FC<EmailsTabProps> = ({
@@ -80,7 +74,6 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
     const [emailSearch, setEmailSearch] = useState('');
     const [showComposeModal, setShowComposeModal] = useState(false);
     const [selectedEmailId, setSelectedEmailId] = useState<number | null>(null);
-    const [previewAttachment, setPreviewAttachment] = useState<EmailsTabAttachment | null>(null);
 
     const { thread, threadLoading, reloadThread } = useEmailsTabThread(selectedEmailId);
     const reply = useEmailsTabReply();
@@ -121,14 +114,6 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
         }
     };
 
-    const handleDeleteDraft = async (draftId: number) => {
-        try {
-            await fetch(`/api/emails/drafts/${draftId}`, { method: 'DELETE' });
-            // Reload thread to reflect deletion
-            reloadThread();
-        } catch { /* ignore */ }
-    };
-
     const handleComposeSent = () => {
         setShowComposeModal(false);
         if (onEmailSent) onEmailSent();
@@ -147,13 +132,10 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
                     anfrageId={anfrageId}
                     onClose={closeThreadView}
                     onReplySuccess={handleReplySuccess}
-                    onPreview={(url, type, name) => setPreviewAttachment({ url, type, name })}
+                    onReloadThread={reloadThread}
                     onOpenDraft={handleOpenDraft}
-                    onDeleteDraft={handleDeleteDraft}
                 />
             )}
-
-            <EmailsTabAttachmentPreview attachment={previewAttachment} onClose={() => setPreviewAttachment(null)} />
 
             <EmailsTabToolbar
                 search={emailSearch}

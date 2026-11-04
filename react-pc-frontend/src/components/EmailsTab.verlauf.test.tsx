@@ -1,25 +1,37 @@
+import { useEffect } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import EmailsTab, { type GenericEmail } from './EmailsTab';
 import type { EmailThread } from './EmailThreadView';
+import { ToastProvider } from './ui/toast';
 
 /**
- * Verhalten des E-Mail-Reiters rund um den geöffneten Verlauf: laden, antworten,
- * Entwurf löschen, schließen. Das Formular selbst ist ersetzt, es geht um die Verdrahtung.
+ * Verhalten des E-Mail-Reiters rund um den geöffneten Verlauf: per Tastatur öffnen,
+ * laden, antworten, schließen. Das Formular selbst ist ersetzt, es geht um die Verdrahtung.
  * Dummy-Daten (DSGVO): Max Mustermann, max@example.com.
  */
+const formular = vi.hoisted(() => ({ speichernGelingt: true, gespeichert: 0 }));
 vi.mock('./EmailComposeForm', () => ({
     EmailComposeForm: (props: {
         initialSubject?: string; initialRecipient?: string; replyEmailId?: number;
         onSuccess: () => void; onClose: () => void;
-    }) => (
-        <div data-testid="antwort-formular">
-            <span>{`${props.initialSubject}|${props.initialRecipient}|${props.replyEmailId}`}</span>
-            <button onClick={props.onSuccess}>Formular gesendet</button>
-            <button onClick={props.onClose}>Formular abbrechen</button>
-        </div>
-    ),
+        onBeforeLeave?: (save: (() => Promise<boolean>) | null) => void;
+    }) => {
+        const { onBeforeLeave } = props;
+        useEffect(() => {
+            onBeforeLeave?.(() => { formular.gespeichert++; return Promise.resolve(formular.speichernGelingt); });
+            return () => onBeforeLeave?.(null);
+        }, [onBeforeLeave]);
+        return (
+            <div data-testid="antwort-formular">
+                <span>{`${props.initialSubject}|${props.initialRecipient}|${props.replyEmailId}`}</span>
+                <button onClick={props.onSuccess}>Formular gesendet</button>
+                <button onClick={props.onClose}>Formular abbrechen</button>
+            </div>
+        );
+    },
 }));
 
 const mail: GenericEmail = {
@@ -27,34 +39,40 @@ const mail: GenericEmail = {
     direction: 'IN', sentAt: '2026-10-09T10:05:00', bodyHtml: '<p>Bitte um Angebot</p>',
 };
 
-function verlauf(mitEntwurf = false): EmailThread {
-    const emails: EmailThread['emails'] = [{
-        id: 7, subject: 'Anfrage Geländer', fromAddress: 'Max Mustermann <max@example.com>',
-        direction: 'IN', sentAt: '2026-10-09T10:05:00', htmlBody: '<p>Bitte um Angebot</p>', attachments: [],
-    }];
-    if (mitEntwurf) {
-        emails.push({ id: 8, direction: 'OUT', isDraft: true, draftId: 99, snippet: 'Entwurf Antwort', sentAt: '2026-10-09T11:00:00', attachments: [] });
-    }
-    return { rootEmailId: 7, focusedEmailId: 7, emails };
+function verlauf(): EmailThread {
+    return {
+        rootEmailId: 7, focusedEmailId: 7, emails: [{
+            id: 7, subject: 'Anfrage Geländer', fromAddress: 'Max Mustermann <max@example.com>',
+            direction: 'IN', sentAt: '2026-10-09T10:05:00', htmlBody: '<p>Bitte um Angebot</p>', attachments: [],
+        }],
+    };
 }
 
 function json(body: unknown, ok = true) {
     return Promise.resolve({ ok, json: () => Promise.resolve(body) } as Response);
 }
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+    vi.unstubAllGlobals();
+    formular.speichernGelingt = true;
+    formular.gespeichert = 0;
+});
 
 function rendere(onEmailSent = vi.fn()) {
     render(
         <MemoryRouter>
-            <EmailsTab emails={[mail]} projektId={3} onEmailSent={onEmailSent} />
+            <ToastProvider>
+                <EmailsTab emails={[mail]} projektId={3} onEmailSent={onEmailSent} />
+            </ToastProvider>
         </MemoryRouter>
     );
     return onEmailSent;
 }
 
+const zeile = () => screen.getByRole('button', { name: 'Anfrage Geländer' });
+
 describe('EmailsTab – geöffneter Verlauf', () => {
-    it('lädt den Verlauf, antwortet und lädt danach neu', async () => {
+    it('öffnet per Tastatur, antwortet und lädt danach neu', async () => {
         const fetchMock = vi.fn((url: string) => {
             if (url === '/api/emails/7/thread') return json(verlauf());
             if (url === '/api/emails/7') return json({ ...mail, subject: 'Anfrage Geländer' });
@@ -62,9 +80,13 @@ describe('EmailsTab – geöffneter Verlauf', () => {
         });
         vi.stubGlobal('fetch', fetchMock);
         const onEmailSent = rendere();
+        const nutzer = userEvent.setup();
 
-        fireEvent.click(screen.getByText('Anfrage Geländer'));
-        expect(await screen.findByText('1 Nachricht im Thread')).toBeInTheDocument();
+        zeile().focus();
+        await nutzer.keyboard('{Enter}');
+        const dialog = await screen.findByRole('dialog', { name: 'Anfrage Geländer' });
+        expect(await screen.findByText('1 Nachricht im Verlauf')).toBeInTheDocument();
+        expect(dialog).toHaveAccessibleDescription('1 Nachricht im Verlauf');
 
         // Erster Knopf „Antworten“ ist der im Kopf des Verlaufs (antwortet auf die letzte Nachricht)
         fireEvent.click(screen.getAllByRole('button', { name: /Antworten/ })[0]);
@@ -81,50 +103,62 @@ describe('EmailsTab – geöffneter Verlauf', () => {
     it('bricht die Antwort ab und zeigt wieder den Verlauf', async () => {
         vi.stubGlobal('fetch', vi.fn((url: string) => url.endsWith('/thread') ? json(verlauf()) : json(null, false)));
         rendere();
-        fireEvent.click(screen.getByText('Anfrage Geländer'));
+        fireEvent.click(zeile());
         fireEvent.click((await screen.findAllByRole('button', { name: /Antworten/ }))[0]);
         fireEvent.click(await screen.findByText('Formular abbrechen'));
         expect(screen.queryByTestId('antwort-formular')).not.toBeInTheDocument();
-        expect(screen.getByText('1 Nachricht im Thread')).toBeInTheDocument();
+        expect(screen.getByText('1 Nachricht im Verlauf')).toBeInTheDocument();
     });
 
-    it('löscht einen Entwurf und lädt den Verlauf neu', async () => {
-        const fetchMock = vi.fn((url: string, init?: RequestInit) => {
-            if (url === '/api/emails/drafts/99' && init?.method === 'DELETE') return json(null);
-            if (url === '/api/emails/7/thread') {
-                const schonGeloescht = fetchMock.mock.calls.some(c => c[0] === '/api/emails/drafts/99');
-                return json(verlauf(!schonGeloescht));
-            }
-            return json(null, false);
-        });
-        vi.stubGlobal('fetch', fetchMock);
+    it('schließt per Escape und gibt den Fokus an die Zeile zurück', async () => {
+        vi.stubGlobal('fetch', vi.fn(() => json(verlauf())));
         rendere();
-        fireEvent.click(screen.getByText('Anfrage Geländer'));
-        expect(await screen.findByText('2 Nachrichten im Thread')).toBeInTheDocument();
+        const nutzer = userEvent.setup();
+        zeile().focus();
+        await nutzer.keyboard('{Enter}');
+        await screen.findByText('1 Nachricht im Verlauf');
 
-        fireEvent.click(screen.getByTitle('Entwurf löschen'));
-        expect(await screen.findByText('1 Nachricht im Thread')).toBeInTheDocument();
-        expect(fetchMock).toHaveBeenCalledWith('/api/emails/drafts/99', { method: 'DELETE' });
+        await nutzer.keyboard('{Escape}');
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+        await waitFor(() => expect(zeile()).toHaveFocus());
     });
 
-    it('meldet einen Verlauf, der nicht geladen werden kann, und schließt per Zurück', async () => {
+    it('speichert beim Schließen erst die angefangene Antwort und bleibt offen, wenn das scheitert', async () => {
+        vi.stubGlobal('fetch', vi.fn((url: string) => url.endsWith('/thread') ? json(verlauf()) : json(null, false)));
+        rendere();
+        const nutzer = userEvent.setup();
+        fireEvent.click(zeile());
+        fireEvent.click((await screen.findAllByRole('button', { name: /Antworten/ }))[0]);
+        await screen.findByTestId('antwort-formular');
+
+        formular.speichernGelingt = false;
+        await nutzer.keyboard('{Escape}');
+        expect(formular.gespeichert).toBe(1);
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+        formular.speichernGelingt = true;
+        fireEvent.click(screen.getByRole('button', { name: 'Fenster schließen' }));
+        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+        expect(formular.gespeichert).toBe(2);
+    });
+
+    it('meldet einen Verlauf, der nicht geladen werden kann, und schließt per Knopf', async () => {
         vi.stubGlobal('fetch', vi.fn(() => json(null, false)));
         rendere();
-        fireEvent.click(screen.getByText('Anfrage Geländer'));
-        expect(await screen.findByText('Thread konnte nicht geladen werden.')).toBeInTheDocument();
+        fireEvent.click(zeile());
+        expect(await screen.findByText('Der Verlauf konnte nicht geladen werden.')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /Zurück/ })).not.toBeInTheDocument();
 
-        // Zurück-Pfeil ist der erste Knopf im Kopf des Verlaufs
-        const kopf = screen.getByText('Thread konnte nicht geladen werden.').closest('.rounded-2xl')!;
-        fireEvent.click(kopf.querySelector('button')!);
-        expect(screen.queryByText('Thread konnte nicht geladen werden.')).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Fenster schließen' }));
+        expect(screen.queryByText('Der Verlauf konnte nicht geladen werden.')).not.toBeInTheDocument();
     });
 
     it('filtert nach Ausgang und meldet „Keine E-Mails gefunden.“', () => {
         rendere();
-        fireEvent.click(screen.getByRole('button', { name: 'Ausgang' }));
+        fireEvent.click(screen.getByRole('radio', { name: 'Ausgang' }));
         expect(screen.getByText('Keine E-Mails gefunden.')).toBeInTheDocument();
-        fireEvent.click(screen.getByRole('button', { name: 'Alle' }));
-        fireEvent.change(screen.getByPlaceholderText('E-Mails durchsuchen...'), { target: { value: 'geländer' } });
-        expect(screen.getByText('Anfrage Geländer')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('radio', { name: 'Alle' }));
+        fireEvent.change(screen.getByRole('textbox', { name: 'E-Mails durchsuchen' }), { target: { value: 'geländer' } });
+        expect(zeile()).toBeInTheDocument();
     });
 });
