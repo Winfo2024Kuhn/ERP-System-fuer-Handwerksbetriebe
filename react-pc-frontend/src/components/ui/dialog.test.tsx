@@ -49,6 +49,18 @@ describe('Dialog', () => {
         expect(screen.getByText('Fenster schließen')).toBeInTheDocument();
     });
 
+    it('zeigt am X einen Tooltip und animiert weder X noch Panel mit transition-all', () => {
+        render(
+            <Dialog open={true}>
+                <DialogContent>Inhalt</DialogContent>
+            </Dialog>
+        );
+        const x = screen.getByRole('button', { name: 'Fenster schließen' });
+        expect(x).toHaveAttribute('title', 'Schließen');
+        expect(x.className).not.toMatch(/transition-all/);
+        expect(screen.getByRole('dialog').className).not.toMatch(/transition-all/);
+    });
+
     it('ruft onOpenChange beim Klick auf X auf', async () => {
         const handleOpenChange = vi.fn();
         const user = userEvent.setup();

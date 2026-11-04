@@ -6,7 +6,8 @@ import { designPruefung } from './hilfen/design';
  * E-Mail-Reiter (`EmailsTab`) in der Anfrage: Filter in Rose über die gemeinsame
  * Segment-Auswahl, Verlauf per Tastatur öffnen und per Escape schließen,
  * Bild-Anhang (Escape schließt nur die Vorschau), Entwurf löschen mit „Rückgängig“,
- * Antworten. Die Rückgängig-Frist läuft über `page.clock`, nicht über Warten.
+ * Antworten (ein Kopf „Antwort“, genau ein X, Pfeil zurück zum Verlauf sichert den
+ * Entwurf). Die Rückgängig-Frist läuft über `page.clock`, nicht über Warten.
  *
  * /api ist gestubbt, kein Backend; nur Dummy-Daten (DSGVO): Max Mustermann.
  */
@@ -63,7 +64,7 @@ function json(route: Route, body: unknown, status = 200) {
 }
 
 async function stubbeApi(page: Page) {
-    const stand = { entwurfGeloescht: false, loeschAufrufe: 0 };
+    const stand = { entwurfGeloescht: false, loeschAufrufe: 0, entwurfGespeichert: 0 };
     await page.route('**/api/**', (route) => {
         const request = route.request();
         const pfad = new URL(request.url()).pathname;
@@ -82,6 +83,10 @@ async function stubbeApi(page: Page) {
         if (pfad === '/api/emails/8') return json(route, { ...MAILS[1], bodyHtml: '<p>Vielen Dank, wir melden uns.</p>' });
         if (pfad === '/api/emails/7/attachments/3') return route.fulfill({ status: 200, contentType: 'image/png', body: PIXEL_PNG });
         if (pfad === '/api/emails/7/attachments/4') return route.fulfill({ status: 200, contentType: 'application/pdf', body: '%PDF-1.4\n%%EOF\n' });
+        if ((pfad === '/api/emails/drafts' && methode === 'POST') || (pfad === '/api/emails/drafts/101' && methode === 'PUT')) {
+            stand.entwurfGespeichert++;
+            return json(route, { id: 101 });
+        }
         if (pfad === '/api/emails/drafts/99' && methode === 'DELETE') {
             stand.loeschAufrufe++;
             stand.entwurfGeloescht = true;
@@ -176,16 +181,30 @@ test.describe('E-Mail-Reiter in der Anfrage', () => {
         await expect(page.getByRole('button', { name: 'Rückgängig' })).toBeHidden();
         await expect(entwurf).toBeHidden();
 
-        // Antworten öffnet das Formular im Verlauf
+        // Antworten öffnet das Formular im Verlauf: ein Kopf „Antwort“ mit Betreff, genau ein X
         await antwortenImKopf.click();
-        const senden = dialog.getByRole('button', { name: 'E-Mail senden' });
+        const antwortDialog = page.getByRole('dialog', { name: 'Antwort', exact: true });
+        const senden = antwortDialog.getByRole('button', { name: 'E-Mail senden' });
         await expect(senden).toBeVisible();
+        await expect(antwortDialog.getByText(`AW: ${BETREFF}`, { exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Fenster schließen' })).toHaveCount(1);
+        await expect(antwortDialog.getByRole('button', { name: 'Fenster schließen' })).toHaveAttribute('title', 'Schließen');
+        await expect(antwortDialog.getByText('Neue E-Mail')).toHaveCount(0);
+        const pfeil = antwortDialog.getByTitle('Zurück zum Verlauf');
+        await expect(pfeil).toBeVisible();
+        await expect(antwortDialog.getByRole('button', { name: 'Zurück zum Verlauf' })).toHaveCount(2);
+        await expect(antwortDialog.getByRole('button', { name: 'Schließen', exact: true })).toHaveCount(0);
+        // Pfeil und X sitzen in derselben Kopfzeile: links der Pfeil, rechts das X
+        const pfeilBox = await pfeil.boundingBox();
+        const xBox = await antwortDialog.getByRole('button', { name: 'Fenster schließen' }).boundingBox();
+        expect(pfeilBox && xBox && Math.abs((pfeilBox.y + pfeilBox.height / 2) - (xBox.y + xBox.height / 2)) < 8).toBe(true);
+        expect(pfeilBox!.x).toBeLessThan(xBox!.x);
         await designPruefung(page, testInfo, 'emails-tab-antwort', { primaerAktion: senden });
 
         // Escape im Empfängerfeld (bei Antworten steht „An“ fest, also die Kopie) schließt
         // nur die Vorschlagsliste, der Verlauf bleibt offen
-        await dialog.getByRole('button', { name: /CC hinzufügen/ }).click();
-        const empfaenger = dialog.getByRole('textbox', { name: 'Kopie (CC)' });
+        await antwortDialog.getByRole('button', { name: /CC hinzufügen/ }).click();
+        const empfaenger = antwortDialog.getByRole('textbox', { name: 'Kopie (CC)' });
         await empfaenger.fill('mu');
         await page.clock.runFor(400);
         // Die Vorschlagsliste hängt per Portal am body, nicht im Dialog
@@ -193,7 +212,17 @@ test.describe('E-Mail-Reiter in der Anfrage', () => {
         await expect(vorschlaege).toBeVisible();
         await page.keyboard.press('Escape');
         await expect(vorschlaege).toBeHidden();
-        await expect(dialog).toBeVisible();
+        await expect(antwortDialog).toBeVisible();
         await expect(senden).toBeVisible();
+
+        // Pfeil „Zurück zum Verlauf“: Entwurf sichern, dann wieder der Verlauf
+        await antwortDialog.getByRole('textbox', { name: 'Betreff' }).fill(`AW: ${BETREFF} – Termin`);
+        const gespeichert = page.waitForResponse(r => r.url().endsWith('/api/emails/drafts') && r.request().method() === 'POST');
+        await pfeil.click();
+        await gespeichert;
+        await expect(dialog).toBeVisible();
+        await expect(dialog.getByText('2 Nachrichten im Verlauf', { exact: true })).toBeVisible();
+        await expect(senden).toBeHidden();
+        expect(stand.entwurfGespeichert).toBe(1);
     });
 });

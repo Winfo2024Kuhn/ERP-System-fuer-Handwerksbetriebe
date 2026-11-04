@@ -18,6 +18,7 @@ vi.mock('./EmailComposeForm', () => ({
         initialSubject?: string; initialRecipient?: string; replyEmailId?: number;
         onSuccess: () => void; onClose: () => void;
         onBeforeLeave?: (save: (() => Promise<boolean>) | null) => void;
+        kopf?: string; schliessenText?: string;
     }) => {
         const { onBeforeLeave } = props;
         useEffect(() => {
@@ -25,7 +26,7 @@ vi.mock('./EmailComposeForm', () => ({
             return () => onBeforeLeave?.(null);
         }, [onBeforeLeave]);
         return (
-            <div data-testid="antwort-formular">
+            <div data-testid="antwort-formular" data-kopf={props.kopf} data-schliessen={props.schliessenText}>
                 <span>{`${props.initialSubject}|${props.initialRecipient}|${props.replyEmailId}`}</span>
                 <button onClick={props.onSuccess}>Formular gesendet</button>
                 <button onClick={props.onClose}>Formular abbrechen</button>
@@ -140,6 +141,42 @@ describe('EmailsTab – geöffneter Verlauf', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Fenster schließen' }));
         await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
         expect(formular.gespeichert).toBe(2);
+    });
+
+    it('zeigt beim Antworten einen Kopf „Antwort“ mit Betreff, genau ein X und führt per Pfeil zurück', async () => {
+        vi.stubGlobal('fetch', vi.fn((url: string) => url.endsWith('/thread') ? json(verlauf()) : json(null, false)));
+        rendere();
+        fireEvent.click(zeile());
+        fireEvent.click((await screen.findAllByRole('button', { name: /Antworten/ }))[0]);
+        await screen.findByTestId('antwort-formular');
+
+        const dialog = screen.getByRole('dialog', { name: 'Antwort' });
+        expect(dialog).toHaveAccessibleDescription('AW: Anfrage Geländer');
+        expect(screen.getAllByRole('button', { name: 'Fenster schließen' })).toHaveLength(1);
+        const zurueck = screen.getByRole('button', { name: 'Zurück zum Verlauf' });
+        expect(zurueck).toHaveAttribute('title', 'Zurück zum Verlauf');
+
+        // Speichern scheitert: die Antwort bleibt offen
+        formular.speichernGelingt = false;
+        fireEvent.click(zurueck);
+        await waitFor(() => expect(formular.gespeichert).toBe(1));
+        expect(screen.getByTestId('antwort-formular')).toBeInTheDocument();
+
+        formular.speichernGelingt = true;
+        fireEvent.click(zurueck);
+        await waitFor(() => expect(screen.queryByTestId('antwort-formular')).not.toBeInTheDocument());
+        expect(formular.gespeichert).toBe(2);
+        expect(screen.getByRole('dialog', { name: 'Anfrage Geländer' })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Zurück zum Verlauf' })).not.toBeInTheDocument();
+    });
+
+    it('gibt dem Formular im Verlauf keinen eigenen Kopf und „Zurück zum Verlauf“ als Knopf', async () => {
+        vi.stubGlobal('fetch', vi.fn((url: string) => url.endsWith('/thread') ? json(verlauf()) : json(null, false)));
+        rendere();
+        fireEvent.click(zeile());
+        fireEvent.click((await screen.findAllByRole('button', { name: /Antworten/ }))[0]);
+        expect(await screen.findByTestId('antwort-formular')).toHaveAttribute('data-kopf', 'ohne');
+        expect(screen.getByTestId('antwort-formular')).toHaveAttribute('data-schliessen', 'Zurück zum Verlauf');
     });
 
     it('lädt einen Verlauf nach einem Fehler per „Erneut laden“', async () => {

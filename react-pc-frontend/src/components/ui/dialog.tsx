@@ -153,7 +153,6 @@ const Dialog = React.forwardRef<
                     aria-modal="true"
                     className={cn(
                         "relative z-50 bg-white p-6 shadow-2xl rounded-2xl border border-slate-200",
-                        "transition-all duration-700 ease-[cubic-bezier(0.32,0.72,0,1)]",
                         "max-h-[calc(100vh-2rem)] flex flex-col",
                         className
                     )}
@@ -162,10 +161,11 @@ const Dialog = React.forwardRef<
                     <DialogDepth.Provider value={depth + 1}>{children}</DialogDepth.Provider>
                     <button
                         type="button"
-                        className="absolute right-4 top-4 p-1.5 rounded-full bg-slate-100 opacity-70 transition-all hover:opacity-100 hover:bg-rose-100 hover:text-rose-600 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                        title="Schließen"
+                        className="absolute right-4 top-4 p-1.5 rounded-full bg-slate-100 opacity-70 transition-[color,background-color,opacity] hover:opacity-100 hover:bg-rose-100 hover:text-rose-600 focus:outline-none focus:ring-2 focus:ring-rose-500"
                         onClick={() => onOpenChange?.(false)}
                     >
-                        <X className="h-4 w-4" />
+                        <X aria-hidden="true" className="h-4 w-4" />
                         <span className="sr-only">Fenster schließen</span>
                     </button>
                 </div>

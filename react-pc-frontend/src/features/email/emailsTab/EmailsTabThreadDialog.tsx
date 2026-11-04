@@ -1,5 +1,5 @@
 import { useCallback, useId, useRef, useState } from 'react';
-import { Loader2, RefreshCw, Reply } from 'lucide-react';
+import { ArrowLeft, Loader2, RefreshCw, Reply } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../../../components/ui/dialog';
 import { useToast } from '../../../components/ui/toast';
@@ -9,6 +9,7 @@ import { EmailComposeForm } from '../../../components/EmailComposeForm';
 import { EmailThreadView } from '../../../components/EmailThreadView';
 import type { EmailThread, EmailThreadEntry } from '../../../components/EmailThreadView';
 import { toSafeResourceUrl } from '../../../lib/htmlSanitizer';
+import { emailComposeTitel } from '../compose/emailComposeAnzeige';
 import { verlaufAnzahl } from './emailsTabFormat';
 import { useEmailsTabEntwurfLoeschen } from './useEmailsTabEntwurfLoeschen';
 import type { EmailsTabReply } from './useEmailsTabReply';
@@ -36,12 +37,18 @@ interface Anhang { url: string; type: 'image' | 'pdf'; name: string }
  * Die Vorschau hängt im Dialog, damit Fokusfalle und Escape sie einschließen: Escape
  * schließt dann nur die Vorschau. Beim Schließen während einer Antwort wird der Entwurf
  * erst gespeichert; scheitert das, bleibt der Verlauf offen.
+ *
+ * Während einer Antwort stellt der Dialog den einzigen Kopf: Pfeil „Zurück zum Verlauf“,
+ * Titel „Antwort“, Betreff darunter, rechts nur das X des Dialogs. Das Formular läuft
+ * ohne eigenen Kopf (`kopf="ohne"`), damit nie zwei X übereinander stehen. Pfeil und X
+ * sichern den Entwurf über dieselbe vom Formular registrierte Funktion.
  */
 export function EmailsTabThreadDialog(props: EmailsTabThreadDialogProps) {
-    const { subject, thread, showReplyButton, reply, onClose, onReloadThread } = props;
+    const { thread, reply, onClose, onReloadThread } = props;
     const titelId = useId();
     const [anhang, setAnhang] = useState<Anhang | null>(null);
     const speichernVorDemSchliessen = useRef<(() => Promise<boolean>) | null>(null);
+    const verlassenLaeuft = useRef(false);
     const merkeSpeichern = useCallback((speichern: (() => Promise<boolean>) | null) => {
         speichernVorDemSchliessen.current = speichern;
     }, []);
@@ -58,49 +65,39 @@ export function EmailsTabThreadDialog(props: EmailsTabThreadDialogProps) {
         setAnhang({ url: sichereUrl, type, name });
     };
 
+    /** Während einer Antwort erst den Entwurf sichern; scheitert das (oder ist es gesperrt), passiert nichts. */
+    const nachDemSpeichern = (weiter: () => void) => {
+        const speichern = reply.isReplying ? speichernVorDemSchliessen.current : null;
+        if (!speichern) { weiter(); return; }
+        if (verlassenLaeuft.current) return;
+        verlassenLaeuft.current = true;
+        void speichern()
+            .then(gespeichert => { if (gespeichert) weiter(); })
+            .finally(() => { verlassenLaeuft.current = false; });
+    };
+
     const schliessenWollen = () => {
         if (anhang) { setAnhang(null); return; }
-        const speichern = reply.isReplying ? speichernVorDemSchliessen.current : null;
-        if (!speichern) { onClose(); return; }
-        void speichern().then(gespeichert => { if (gespeichert) onClose(); });
+        nachDemSpeichern(onClose);
     };
+    const zurueckZumVerlauf = () => nachDemSpeichern(reply.cancelReply);
+    const antwortet = reply.isReplying && !!reply.replyToEmail;
+    const beschreibungId = antwortet ? `${titelId}-betreff` : sichtbarerVerlauf ? `${titelId}-anzahl` : undefined;
 
     return (
         <Dialog
             open
             onOpenChange={offen => { if (!offen) schliessenWollen(); }}
             aria-labelledby={titelId}
-            aria-describedby={sichtbarerVerlauf ? `${titelId}-anzahl` : undefined}
+            aria-describedby={beschreibungId}
             className="p-0 overflow-hidden w-[75vw] max-w-5xl h-[90vh]"
         >
             <DialogContent className="gap-0">
-                {/* Rechts Platz für den Schließen-Knopf des Dialogs */}
-                <div className="flex items-center justify-between gap-3 pl-5 pr-14 py-3 border-b border-slate-200 bg-slate-50 shrink-0">
-                    <div className="min-w-0">
-                        <DialogTitle id={titelId} className="text-sm leading-normal text-slate-900 truncate">{subject}</DialogTitle>
-                        {sichtbarerVerlauf && (
-                            <DialogDescription id={`${titelId}-anzahl`} className="text-xs">
-                                {verlaufAnzahl(sichtbarerVerlauf.emails)}
-                            </DialogDescription>
-                        )}
-                    </div>
-                    {showReplyButton && !reply.isReplying && sichtbarerVerlauf && sichtbarerVerlauf.emails.length > 0 && (
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={reply.replyLaedt}
-                            aria-busy={reply.replyLaedt || undefined}
-                            title={reply.replyLaedt ? 'Mail wird geladen…' : undefined}
-                            onClick={() => { void reply.startReply(sichtbarerVerlauf.emails[sichtbarerVerlauf.emails.length - 1]); }}
-                            className="gap-1.5 shrink-0 text-slate-700 border-slate-300 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
-                        >
-                            {reply.replyLaedt
-                                ? <Loader2 aria-hidden="true" className="w-4 h-4 motion-safe:animate-spin" />
-                                : <Reply aria-hidden="true" className="w-4 h-4" />}
-                            Antworten
-                        </Button>
-                    )}
-                </div>
+                {antwortet ? (
+                    <AntwortKopf titelId={titelId} betreff={reply.replyInitialSubject} onZurueck={zurueckZumVerlauf} />
+                ) : (
+                    <VerlaufKopf titelId={titelId} {...props} thread={sichtbarerVerlauf} />
+                )}
 
                 <EmailsTabThreadContent
                     {...props}
@@ -112,6 +109,62 @@ export function EmailsTabThreadDialog(props: EmailsTabThreadDialogProps) {
                 <EmailsTabAnhangVorschau anhang={anhang} onClose={() => setAnhang(null)} />
             </DialogContent>
         </Dialog>
+    );
+}
+
+/** Kopf während einer Antwort; rechts bleibt Platz für das X des Dialogs. */
+function AntwortKopf({ titelId, betreff, onZurueck }: { titelId: string; betreff: string; onZurueck: () => void }) {
+    return (
+        <div className="flex items-center gap-2 pl-2 pr-14 py-3 border-b border-slate-200 bg-slate-50 shrink-0">
+            <Button
+                variant="ghost"
+                size="sm"
+                onClick={onZurueck}
+                aria-label="Zurück zum Verlauf"
+                title="Zurück zum Verlauf"
+                className="shrink-0 px-2 text-slate-600 hover:text-rose-700"
+            >
+                <ArrowLeft aria-hidden="true" className="w-4 h-4" />
+            </Button>
+            <div className="min-w-0">
+                <DialogTitle id={titelId} className="text-sm leading-normal text-slate-900">
+                    {emailComposeTitel({ antwort: true, weiterleitung: false, betreff })}
+                </DialogTitle>
+                <DialogDescription id={`${titelId}-betreff`} className="text-xs truncate">{betreff}</DialogDescription>
+            </div>
+        </div>
+    );
+}
+
+/** Kopf des Verlaufs: Betreff, Anzahl und „Antworten“ auf die letzte Nachricht. */
+function VerlaufKopf({ titelId, subject, thread, showReplyButton, reply }: EmailsTabThreadDialogProps & { titelId: string }) {
+    return (
+        <div className="flex items-center justify-between gap-3 pl-5 pr-14 py-3 border-b border-slate-200 bg-slate-50 shrink-0">
+            <div className="min-w-0">
+                <DialogTitle id={titelId} className="text-sm leading-normal text-slate-900 truncate">{subject}</DialogTitle>
+                {thread && (
+                    <DialogDescription id={`${titelId}-anzahl`} className="text-xs">
+                        {verlaufAnzahl(thread.emails)}
+                    </DialogDescription>
+                )}
+            </div>
+            {showReplyButton && !reply.isReplying && thread && thread.emails.length > 0 && (
+                <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={reply.replyLaedt}
+                    aria-busy={reply.replyLaedt || undefined}
+                    title={reply.replyLaedt ? 'Mail wird geladen…' : undefined}
+                    onClick={() => { void reply.startReply(thread.emails[thread.emails.length - 1]); }}
+                    className="gap-1.5 shrink-0 text-slate-700 border-slate-300 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
+                >
+                    {reply.replyLaedt
+                        ? <Loader2 aria-hidden="true" className="w-4 h-4 motion-safe:animate-spin" />
+                        : <Reply aria-hidden="true" className="w-4 h-4" />}
+                    Antworten
+                </Button>
+            )}
+        </div>
     );
 }
 
@@ -132,6 +185,8 @@ function EmailsTabThreadContent({
                     onClose={reply.cancelReply}
                     onBeforeLeave={onBeforeLeave}
                     onSuccess={onReplySuccess}
+                    kopf="ohne"
+                    schliessenText="Zurück zum Verlauf"
                     initialRecipient={reply.replyInitialRecipient}
                     initialSubject={reply.replyInitialSubject}
                     replyQuote={reply.replyQuote}
