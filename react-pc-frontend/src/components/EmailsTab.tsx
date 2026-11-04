@@ -6,7 +6,7 @@ import { escapeHtml, extractDisplayName, extractEmailAddress } from '../lib/emai
 import { buildReplyAddressing } from '../features/email/emailCenterModel';
 import { Button } from './ui/button';
 import { cn } from '../lib/utils';
-import { parseHtmlInert } from '../lib/htmlSanitizer';
+import { getThreadPreview } from '../features/email/threadQuotes';
 import { EmailComposeModal } from './EmailComposeModal';
 import { EmailThreadView } from './EmailThreadView';
 import { EmailComposeForm } from './EmailComposeForm';
@@ -286,63 +286,12 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
         } catch { return dateStr; }
     };
 
-    const getTextPreview = (email: GenericEmail) => {
-        const html = email.bodyHtml || email.bodyPreview || email.body || '';
-        const div = parseHtmlInert(html);
-
-        // Remove style/script tags first (prevent raw CSS in preview)
-        div.querySelectorAll('style, script, link').forEach(el => el.remove());
-        // Remove HTML comments (<!-- ... -->)
-        const walker = document.createTreeWalker(div, NodeFilter.SHOW_COMMENT, null);
-        const comments: Comment[] = [];
-        let c: Comment | null;
-        while ((c = walker.nextNode() as Comment | null)) comments.push(c);
-        comments.forEach(n => n.remove());
-
-        // Remove quoted content (Outlook, Gmail, standard blockquote, etc.)
-        // Outlook OWA
-        const rplyEl = div.querySelector('#divRplyFwdMsg');
-        if (rplyEl) {
-            let cur: Element | null = rplyEl;
-            while (cur) { const next: Element | null = cur.nextElementSibling; cur.remove(); cur = next; }
-            const hr = div.querySelector('hr');
-            if (hr) hr.remove();
-        }
-        // Outlook Desktop: border-top div with "Von:/From:/Gesendet:/Sent:"
-        div.querySelectorAll<HTMLElement>('div[style*="border-top"]').forEach(bd => {
-            if (/Von:|From:|Gesendet:|Sent:/i.test(bd.textContent || '')) {
-                let startEl: Element = bd;
-                if (bd.parentElement?.tagName === 'DIV') {
-                    const pLen = (bd.parentElement.textContent || '').trim().length;
-                    const bLen = (bd.textContent || '').trim().length;
-                    if (pLen > 0 && Math.abs(pLen - bLen) < 30) startEl = bd.parentElement;
-                }
-                let cur: Element | null = startEl;
-                while (cur) { const next: Element | null = cur.nextElementSibling; cur.remove(); cur = next; }
-            }
-        });
-        // Gmail quotes, Yahoo, standard blockquotes
-        div.querySelectorAll('blockquote, .gmail_quote, .yahoo_quoted, .moz-cite-prefix, [class*="ygmail_extra"]')
-            .forEach(el => el.remove());
-        // email-quote class (from our own compose)
-        div.querySelectorAll('.email-quote').forEach(el => el.remove());
-
-        // Extract text, collapse whitespace, remove email signatures/footers
-        let text = (div.textContent || div.innerText || '').replace(/\s+/g, ' ').trim();
-
-        // Strip common text-based quote markers: "Von: ... Gesendet: ... An: ... Betreff: ..." pattern
-        text = text.replace(/\s*Von:.*?Gesendet:.*?An:.*?Betreff:.*$/is, '').trim();
-        // Strip "Am DD.MM.YYYY um HH:MM schrieb ...:" (t-online, Thunderbird)
-        text = text.replace(/\s*(Am\s+\d{1,2}\.\d{1,2}\.\d{2,4}\s+um\s+\d{1,2}:\d{2}\s+schrieb\b.*?:).*/is, '').trim();
-        // Strip "Am DD.MM.YYYY ... schrieb ...:" (generic German)
-        text = text.replace(/\s*(Am\s+\d{1,2}\.\d{1,2}\.\d{4}.*?schrieb.*?:).*/is, '').trim();
-        // Strip "On ... wrote:" (English)
-        text = text.replace(/\s*(On\s+\w+.*?wrote.*?:).*/is, '').trim();
-        // Strip "-------- Ursprüngliche Nachricht --------" / "---- Original Message ----"
-        text = text.replace(/\s*-{3,}\s*(Urspr[üu]ngliche Nachricht|Original Message|Weitergeleitete Nachricht|Forwarded Message)\s*-{3,}.*/is, '').trim();
-
-        return text;
-    };
+    /**
+     * Vorschauzeile ohne zitierten Verlauf, dieselbe Erkennung wie im E-Mail-Center.
+     * Einmal je Mailliste berechnet (nicht je Rendern und nicht je Tastendruck in der Suche).
+     */
+    const textPreviews = useMemo(() => new Map(threadRoots.map(email =>
+        [email.id, getThreadPreview(email.bodyHtml || email.bodyPreview || email.body || '')])), [threadRoots]);
 
     // ─── Build reply quote ────────────────────────────────────
     const replyQuote = useMemo(() => {
@@ -595,7 +544,7 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
                                                     {email.from || email.fromAddress || email.sender || 'Unbekannt'}
                                                 </p>
                                                 {(email.bodyHtml || email.bodyPreview || email.body) && (
-                                                    <p className="text-sm text-slate-400 mt-1 line-clamp-2">{getTextPreview(email)}</p>
+                                                    <p className="text-sm text-slate-400 mt-1 line-clamp-2">{textPreviews.get(email.id)}</p>
                                                 )}
                                                 {/* Rueckläufer-Warnung: Ohne diesen Hinweis sieht eine nie
                                                     angekommene Mail exakt aus wie eine erfolgreich versendete —

@@ -6,7 +6,7 @@ const replyHtml = '<p>Passt, danke.</p><p>Viele Grüße<br>Aktuelle Signatur</p>
     + '<blockquote type="cite"><p>Vorherige Antwort</p><p>Vorherige Signatur</p></blockquote>'
     + '<p>Nachtrag: Bitte morgen liefern.</p>';
 
-async function openThread(page: Page, htmlBody = replyHtml) {
+async function openThread(page: Page, htmlBody = replyHtml, entry: Record<string, unknown> = {}) {
     const initial = {
         id: 901, type: 'EMAIL', direction: 'IN', subject: 'Termin für Max Mustermann',
         sender: 'Max Mustermann', fromAddress: '"Max Mustermann" <test@example.com>',
@@ -24,6 +24,7 @@ async function openThread(page: Page, htmlBody = replyHtml) {
                 ...initial, id: 902, direction: 'OUT', htmlBody,
                 fromAddress: '"Handwerk Musterbetrieb" <handwerk@example.com>', recipient: 'test@example.com',
                 sentAt: '2026-09-09T16:20:00', snippet: 'Veralteter Server-Ausschnitt mit Vorherige Signatur',
+                ...entry,
             }],
         };
         else if (pathname === '/api/emails/901') body = initial;
@@ -78,4 +79,28 @@ test('Klartext-Zitate klappen ein, Antworten zwischen Zitaten bleiben sichtbar',
     expect(visibleText).toContain('Meine zweite Antwort');
     expect(visibleText).not.toContain('Zweite alte Frage');
     await expect(frame.getByRole('button', { name: 'Zitierten Verlauf anzeigen' })).toHaveCount(2);
+});
+
+const forwardHeader = (from: string, date: string, to: string, subject: string) =>
+    `<div><b>Von:</b> ${from}<br><b>Gesendet:</b> ${date}<br><b>An:</b> ${to}<br><b>Betreff:</b> ${subject}</div>`;
+const forwardHtml = '<div>Zur Info, bitte Angebot prüfen.</div><hr>'
+    + forwardHeader('Max Mustermann &lt;test@example.com&gt;', 'Montag, 6. Oktober 2026 10:00', 'Erika Musterfrau', 'Angebot Geländer')
+    + '<div>Weitergeleitetes Angebot: Geländer 12 m</div><hr>'
+    + forwardHeader('Erika Musterfrau &lt;erika@example.com&gt;', 'Freitag, 3. Oktober 2026 09:00', 'Max Mustermann', 'Anfrage')
+    + '<div>Alte Anfrage vom Freitag</div>';
+
+test('Weiterleitung mit älterem Verlauf: weitergeleitete Mail sichtbar, alter Verlauf eingeklappt', async ({ page }, testInfo) => {
+    await openThread(page, forwardHtml, { subject: 'WG: Angebot Geländer', forwarded: true });
+    const frame = page.frameLocator('iframe[title="Email Content"]');
+    await expect(frame.getByText('Zur Info, bitte Angebot prüfen.')).toBeVisible();
+    await expect(frame.getByText('Angebot Geländer', { exact: false }).first()).toBeVisible();
+    await expect(frame.getByText('Weitergeleitetes Angebot: Geländer 12 m')).toBeVisible();
+    await expect(frame.getByText('Alte Anfrage vom Freitag')).toBeHidden();
+    const toggle = frame.getByRole('button', { name: 'Zitierten Verlauf anzeigen' });
+    await expect(toggle).toHaveCount(1);
+    expect(await frame.locator('body').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath('email-weiterleitung-eingeklappt.png'), animations: 'disabled' });
+    await toggle.click();
+    await expect(frame.getByText('Alte Anfrage vom Freitag')).toBeVisible();
+    await expect(frame.getByRole('button', { name: 'Zitierten Verlauf ausblenden' })).toHaveAttribute('aria-expanded', 'true');
 });
