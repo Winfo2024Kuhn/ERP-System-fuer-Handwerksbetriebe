@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useToast } from '../components/ui/toast';
 import { apiAnfrage, leseFehlermeldung } from '../lib/apiFehler';
-
-/** So lange lässt sich ein Löschen ohne Rückfrage rückgängig machen. */
-export const RUECKGAENGIG_MS = 6000;
+import { RUECKGAENGIG_MS } from '../lib/rueckgaengig';
 
 export interface LoeschAuftrag {
     /** Eindeutig je Objekt, z. B. `ordner:12`. */

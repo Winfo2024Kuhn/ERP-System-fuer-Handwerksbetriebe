@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { MoreHorizontal, Reply, ReplyAll, Forward, Star, Trash2, FolderPlus, FolderInput, Download,
-    Inbox, Newspaper, ShieldAlert, ShieldCheck, ShieldX, CheckCircle2, RotateCcw } from 'lucide-react';
+    Inbox, ShieldAlert, ShieldCheck, ShieldX, CheckCircle2, RotateCcw } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
     DropdownMenuSeparator, DropdownMenuLabel, DropdownMenuSub, DropdownMenuSubTrigger,
@@ -8,30 +8,28 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuIte
 import { EmailRecipientDropdown } from '../../components/EmailRecipientDropdown';
 import { useToast } from '../../components/ui/toast';
 import { cn } from '../../lib/utils';
-import { getSenderName, type EmailItem, type FolderType } from './emailCenterModel';
+import { getSenderName, type EmailItem, type EmailOrdnerWert } from './emailCenterModel';
 import { ermittleEmailZuordnung } from './emailZuordnung';
 import { EmailZuordnungLink } from './EmailZuordnungLink';
 import { PostfachSchild } from './PostfachSchild';
+import { VERSCHIEBE_ZIELE, type VerschiebeZiel } from './emailOrdner';
 
 type Action = () => void | Promise<void>;
-type MoveTarget = 'inbox' | 'trash' | 'spam' | 'newsletter';
 interface Props {
-    email: EmailItem; folder: FolderType; onReply: Action; onForward: Action; onAssign: Action;
+    email: EmailItem;
+    /** Wo die Mail liegt; `null`, wenn unbekannt (Suche in allen Ordnern). */
+    folder: EmailOrdnerWert | null; onReply: Action; onForward: Action; onAssign: Action;
     /** Nur gesetzt, wenn "Allen antworten" mehr Empfänger erreicht als "Antworten". */
     onReplyAll?: Action;
-    onStar: Action; onDelete: Action; onMove: (target: MoveTarget) => void | Promise<void>;
+    onStar: Action; onDelete: Action;
+    /** Papierkorb: in den Ursprungsordner zurückholen. */
+    onRestore: Action;
+    onMove: (target: VerschiebeZiel) => void | Promise<void>;
     onSpam: Action; onNotSpam: Action; onBlock: Action; onNotNewsletter: Action; onConfirmNewsletter: Action;
 }
 
-const moveTargets = [
-    { id: 'inbox', label: 'Posteingang', icon: Inbox },
-    { id: 'newsletter', label: 'Newsletter', icon: Newspaper },
-    { id: 'spam', label: 'Spam', icon: ShieldAlert },
-    { id: 'trash', label: 'Papierkorb', icon: Trash2 },
-] as const;
-
 /** Häufige Aktionen bleiben sichtbar; weitere Aktionen öffnen ein Portal mit Tastatursteuerung. */
-export function EmailDetailHeader({ email, folder, onReply, onReplyAll, onForward, onAssign, onStar, onDelete,
+export function EmailDetailHeader({ email, folder, onReply, onReplyAll, onForward, onAssign, onStar, onDelete, onRestore,
     onMove, onSpam, onNotSpam, onBlock, onNotNewsletter, onConfirmNewsletter }: Props) {
     const [busy, setBusy] = useState(false);
     const toast = useToast();
@@ -43,6 +41,7 @@ export function EmailDetailHeader({ email, folder, onReply, onReplyAll, onForwar
         finally { setBusy(false); }
     };
     const zuordnung = ermittleEmailZuordnung(email);
+    const loeschLabel = folder === 'trash' ? 'Endgültig löschen (Entf)' : 'In den Papierkorb (Entf)';
     const date = email.sentAt ? new Date(email.sentAt).toLocaleString('de-DE', {
         day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
     }) : '';
@@ -66,6 +65,11 @@ export function EmailDetailHeader({ email, folder, onReply, onReplyAll, onForwar
                     className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 h-8 w-8 rounded-lg p-0 text-slate-500">
                     <Star className={cn('h-4 w-4', email.isStarred && 'fill-amber-400 text-amber-500')} />
                 </Button>
+                <Button variant="ghost" size="sm" onClick={() => void run(onDelete)} disabled={busy}
+                    title={loeschLabel} aria-label={loeschLabel}
+                    className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 h-8 w-8 rounded-lg p-0 text-slate-500 hover:bg-red-50 hover:text-red-600">
+                    <Trash2 className="h-4 w-4" />
+                </Button>
                 <DropdownMenu modal={false}>
                     <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="sm" disabled={busy} aria-label="Weitere E-Mail-Aktionen"
@@ -85,13 +89,13 @@ export function EmailDetailHeader({ email, folder, onReply, onReplyAll, onForwar
                             <DropdownMenuSub>
                                 <DropdownMenuSubTrigger><FolderInput />Verschieben nach</DropdownMenuSubTrigger>
                                 <DropdownMenuPortal><DropdownMenuSubContent collisionPadding={12}>
-                                    {moveTargets.filter(target => target.id !== folder).map(target =>
+                                    {VERSCHIEBE_ZIELE.filter(target => target.id !== folder).map(target =>
                                         <DropdownMenuItem key={target.id} onSelect={() => void run(() => onMove(target.id))}>
                                             <target.icon />{target.label}
                                         </DropdownMenuItem>)}
                                 </DropdownMenuSubContent></DropdownMenuPortal>
                             </DropdownMenuSub>
-                            {folder === 'trash' && <DropdownMenuItem onSelect={() => void run(() => onMove('inbox'))}>
+                            {folder === 'trash' && <DropdownMenuItem onSelect={() => void run(onRestore)}>
                                 <RotateCcw />Wiederherstellen
                             </DropdownMenuItem>}
                             {folder === 'spam' && <DropdownMenuItem onSelect={() => void run(onNotSpam)}><ShieldCheck />Kein Spam</DropdownMenuItem>}

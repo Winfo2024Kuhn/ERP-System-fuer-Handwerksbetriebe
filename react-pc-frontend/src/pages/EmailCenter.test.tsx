@@ -311,19 +311,36 @@ describe('EmailCenter', () => {
             });
         });
 
-        it('filtert E-Mails lokal bei Eingabe', async () => {
+        it('sucht ab 2 Zeichen auf dem Server im geöffneten Ordner, nicht in den geladenen Mails', async () => {
             const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+            const mock = mockFetchResponses({
+                '/api/emails/suche': { eintraege: [{ ...mockEmails[1], id: 77, subject: 'Rechnung 2019-003', folder: 'inbox' }], hatMehr: false, seite: 0, seitenGroesse: 25 },
+            });
+            vi.stubGlobal('fetch', mock);
             renderEmailCenter();
 
             await waitFor(() => expect(screen.getByText('Angebot für Treppe')).toBeInTheDocument());
+            await user.type(screen.getByRole('searchbox', { name: 'E-Mails durchsuchen' }), 'Rechnung');
 
-            const searchInput = screen.getByPlaceholderText(/suchen/i);
-            await user.type(searchInput, 'Rechnung');
+            // Eine ältere Mail, die gar nicht geladen war, kommt vom Server.
+            expect(await screen.findByText('Rechnung 2019-003')).toBeInTheDocument();
+            expect(screen.queryByText('Angebot für Treppe')).not.toBeInTheDocument();
+            expect(screen.getByText('1 Treffer in diesem Ordner')).toBeInTheDocument();
+            const aufrufe = mock.mock.calls.map(([url]) => String(url)).filter(url => url.startsWith('/api/emails/suche'));
+            expect(aufrufe).toEqual(['/api/emails/suche?q=Rechnung&ordner=inbox&page=0&size=25']);
+            // Im Ordner-Modus kein Ordner-Schild.
+            expect(screen.queryByTestId('email-ordner-chip')).not.toBeInTheDocument();
+        });
 
-            await waitFor(() => {
-                expect(screen.getByText('Rechnung 2024-001')).toBeInTheDocument();
-                expect(screen.queryByText('Angebot für Treppe')).not.toBeInTheDocument();
-            });
+        it('meldet „keine Treffer“ mit dem Suchbegriff und bietet die Suche in allen Ordnern an', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+            vi.stubGlobal('fetch', mockFetchResponses({ '/api/emails/suche': { eintraege: [], hatMehr: false, seite: 0, seitenGroesse: 25 } }));
+            renderEmailCenter();
+            await screen.findByText('Angebot für Treppe');
+            await user.type(screen.getByRole('searchbox', { name: 'E-Mails durchsuchen' }), 'müller geländer');
+            expect(await screen.findByText('Keine E-Mails zu „müller geländer“ gefunden.')).toBeInTheDocument();
+            await user.click(screen.getByRole('button', { name: 'In allen Ordnern suchen' }));
+            expect(screen.getByRole('button', { name: 'Alle Ordner' })).toHaveAttribute('aria-pressed', 'true');
         });
     });
 
@@ -371,21 +388,31 @@ describe('EmailCenter', () => {
     });
 
     describe('Globale Suche', () => {
-        it('wechselt zwischen Ordner- und Serversuche', async () => {
+        it('sucht in allen Ordnern und zeigt an jedem Treffer, wo er liegt', async () => {
             const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
-            renderEmailCenter();
-            await waitFor(() => expect(screen.getByText('Angebot für Treppe')).toBeInTheDocument());
-
-            // Find the "Alle Ordner" toggle button for global search
-            const globeButton = screen.getByText('Alle Ordner');
-            expect(globeButton).toBeInTheDocument();
-
-            await user.click(globeButton);
-
-            // Info banner should appear
-            await waitFor(() => {
-                expect(screen.getByText(/Mindestens 2 Zeichen/i)).toBeInTheDocument();
+            const mock = mockFetchResponses({
+                '/api/emails/suche': {
+                    eintraege: [
+                        { ...mockEmails[0], id: 81, subject: 'Treppe Mustermann', folder: 'trash' },
+                        { ...mockEmails[2], id: 82, subject: 'Re: Treppe Mustermann', folder: 'sent' },
+                    ],
+                    hatMehr: false, seite: 0, seitenGroesse: 25,
+                },
             });
+            vi.stubGlobal('fetch', mock);
+            renderEmailCenter();
+            await screen.findByText('Angebot für Treppe');
+
+            await user.click(screen.getByRole('button', { name: 'Alle Ordner' }));
+            expect(screen.getByText('Sucht in allen Ordnern, auch im Papierkorb, im Spam und in Gesendet.')).toBeInTheDocument();
+            await user.type(screen.getByRole('searchbox', { name: 'E-Mails durchsuchen' }), 'Treppe');
+
+            const chips = await screen.findAllByTestId('email-ordner-chip');
+            expect(chips.map(chip => chip.textContent)).toEqual(['Liegt in: Papierkorb', 'Liegt in: Gesendet']);
+            expect(mock.mock.calls.map(([url]) => String(url))).toContain('/api/emails/suche?q=Treppe&ordner=alle&page=0&size=25');
+            // Während der Suche: kein Lese-Filter, Sortierung gesperrt mit Begründung.
+            expect(screen.queryByRole('button', { name: 'Ungelesen' })).not.toBeInTheDocument();
+            expect(screen.getByRole('button', { name: 'Suchtreffer sind immer nach Datum sortiert, neueste zuerst.' })).toHaveAttribute('aria-disabled', 'true');
         });
     });
 
@@ -545,26 +572,57 @@ describe('EmailCenter', () => {
             });
         });
 
-        it('entfernt E-Mail sofort bei Löschung', async () => {
+        it('legt die geöffnete Mail mit einem Klick in den Papierkorb, öffnet die nächste und holt sie per „Rückgängig“ zurück', async () => {
             const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+            const mock = mockFetchResponses({ '/api/emails/1': mockEmails[0], '/api/emails/2': mockEmails[1] });
+            vi.stubGlobal('fetch', mock);
             renderEmailCenter();
 
-            await waitFor(() => expect(screen.getByText('Angebot für Treppe')).toBeInTheDocument());
-            await user.click(screen.getByText('Angebot für Treppe'));
+            await user.click(await screen.findByText('Angebot für Treppe'));
+            await user.click(within(await screen.findByTestId('email-detail-header')).getByRole('button', { name: 'In den Papierkorb (Entf)' }));
 
-            // Find delete button
-            const deleteButtons = screen.getAllByRole('button').filter(btn =>
-                btn.textContent?.includes('Löschen') || btn.getAttribute('title')?.includes('Löschen')
-            );
+            expect(await screen.findByText('E-Mail in den Papierkorb gelegt.')).toBeInTheDocument();
+            expect(screen.queryByText('Angebot für Treppe')).not.toBeInTheDocument();
+            expect(mock).toHaveBeenCalledWith('/api/emails/papierkorb', expect.objectContaining({ method: 'POST', body: JSON.stringify({ ids: [1] }) }));
+            // Die nächste Mail der Liste ist offen.
+            expect(await screen.findByRole('heading', { name: 'Rechnung 2024-001' })).toBeInTheDocument();
 
-            if (deleteButtons.length > 0) {
-                await user.click(deleteButtons[0]);
+            await user.click(screen.getByRole('button', { name: 'Rückgängig' }));
+            expect(await screen.findByText('E-Mail ist wieder da.')).toBeInTheDocument();
+            expect(mock).toHaveBeenCalledWith('/api/emails/papierkorb/zurueckholen', expect.objectContaining({ method: 'POST', body: JSON.stringify({ ids: [1] }) }));
+            expect(await screen.findByText('Angebot für Treppe')).toBeInTheDocument();
+        });
 
-                // Email should be optimistically removed
-                await waitFor(() => {
-                    expect(screen.queryByText('Angebot für Treppe')).not.toBeInTheDocument();
-                });
-            }
+        it('löscht mit der Entf-Taste die geöffnete Mail, aber nicht beim Tippen im Suchfeld', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+            const mock = mockFetchResponses({ '/api/emails/1': mockEmails[0], '/api/emails/2': mockEmails[1] });
+            vi.stubGlobal('fetch', mock);
+            renderEmailCenter();
+            await user.click(await screen.findByText('Angebot für Treppe'));
+            await screen.findByRole('heading', { name: 'Angebot für Treppe' });
+
+            await user.click(screen.getByRole('searchbox', { name: 'E-Mails durchsuchen' }));
+            await user.keyboard('{Backspace}{Delete}');
+            expect(mock).not.toHaveBeenCalledWith('/api/emails/papierkorb', expect.anything());
+
+            (document.activeElement as HTMLElement).blur();
+            await user.keyboard('{Delete}');
+            expect(await screen.findByText('E-Mail in den Papierkorb gelegt.')).toBeInTheDocument();
+            expect(mock).toHaveBeenCalledWith('/api/emails/papierkorb', expect.objectContaining({ body: JSON.stringify({ ids: [1] }) }));
+        });
+
+        it('löscht über den Knopf in der Listenzeile, ohne die Mail zu öffnen', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+            const mock = mockFetchResponses();
+            vi.stubGlobal('fetch', mock);
+            renderEmailCenter();
+            await screen.findByText('Rechnung 2024-001');
+            const zeile = screen.getByText('Rechnung 2024-001').closest('[data-testid="email-listenzeile"]') as HTMLElement;
+            await user.click(within(zeile).getByRole('button', { name: 'In den Papierkorb (Entf)' }));
+            expect(await screen.findByText('E-Mail in den Papierkorb gelegt.')).toBeInTheDocument();
+            expect(mock).toHaveBeenCalledWith('/api/emails/papierkorb', expect.objectContaining({ body: JSON.stringify({ ids: [2] }) }));
+            expect(screen.getByText('Angebot für Treppe')).toBeInTheDocument();
+            expect(screen.queryByText('Rechnung 2024-001')).not.toBeInTheDocument();
         });
     });
 
@@ -705,10 +763,10 @@ describe('EmailCenter', () => {
             await user.click(await screen.findByRole('button', { name: 'Weitere E-Mail-Aktionen' }));
             await user.click(await screen.findByText('In Papierkorb'));
             await waitFor(() => {
-                expect(mock).toHaveBeenCalledWith('/api/emails/16', { method: 'DELETE' });
-                expect(mock).toHaveBeenCalledWith('/api/emails/17', { method: 'DELETE' });
+                expect(mock).toHaveBeenCalledWith('/api/emails/papierkorb', expect.objectContaining({ body: JSON.stringify({ ids: [16, 17] }) }));
             });
             expect(screen.queryByText('Re: Anfrage Terrasse')).not.toBeInTheDocument();
+            expect(screen.getByText('2 E-Mails in den Papierkorb gelegt.')).toBeInTheDocument();
         });
 
         it('belegt bei "Allen antworten" An und CC ohne eigene Adresse vor', async () => {
@@ -949,10 +1007,10 @@ describe('EmailCenter', () => {
     });
 
     describe('Löschen mit Fehlerprüfung', () => {
-        /** Lässt DELETE auf den genannten Adressen scheitern, alles andere wie gehabt. */
+        /** Lässt Aufrufe auf den genannten Adressen scheitern, alles andere wie gehabt. */
         function mitLoeschFehlern(basis: ReturnType<typeof mockFetchResponses>, fehler: Record<string, () => Response>) {
             const mock = vi.fn((url: string, options?: RequestInit) => {
-                if (options?.method === 'DELETE' && fehler[url]) return Promise.resolve(fehler[url]());
+                if ((options?.method === 'DELETE' || options?.method === 'POST') && fehler[url]) return Promise.resolve(fehler[url]());
                 return basis(url, options);
             });
             vi.stubGlobal('fetch', mock);
@@ -965,19 +1023,18 @@ describe('EmailCenter', () => {
                 '/api/emails/1': mockEmails[0],
                 '/api/emails/1/thread': { rootEmailId: 1, focusedEmailId: 1, emails: [mockEmails[0]] },
             }), {
-                '/api/emails/1': () => new Response(JSON.stringify({ message: 'Der Mailserver ist gerade nicht erreichbar.' }), { status: 503 }),
+                '/api/emails/papierkorb': () => new Response(JSON.stringify({ message: 'Der Mailserver ist gerade nicht erreichbar.' }), { status: 503 }),
             });
             renderEmailCenter();
             await user.click(await screen.findByText('Angebot für Treppe'));
-            await user.click(await screen.findByRole('button', { name: 'Weitere E-Mail-Aktionen' }));
-            await user.click(await screen.findByText('In Papierkorb'));
+            await user.click(within(await screen.findByTestId('email-detail-header')).getByRole('button', { name: 'In den Papierkorb (Entf)' }));
 
             expect(await screen.findByText('Der Mailserver ist gerade nicht erreichbar.')).toBeInTheDocument();
             // Die Liste kommt neu vom Server – die Mail steht wieder drin.
             expect(await screen.findByText('Angebot für Treppe')).toBeInTheDocument();
         });
 
-        it('meldet „n von m“, wenn nur ein Teil eines Verlaufs gelöscht werden konnte', async () => {
+        it('fragt im Papierkorb nach und meldet „n von m“, wenn nur ein Teil endgültig gelöscht werden konnte', async () => {
             const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
             const anfrage = {
                 id: 16, type: 'EMAIL', direction: 'IN' as const, subject: 'Anfrage Terrasse',
@@ -986,20 +1043,132 @@ describe('EmailCenter', () => {
             };
             const nachfrage = { ...anfrage, id: 17, subject: 'Re: Anfrage Terrasse', parentEmailId: 16, sentAt: '2026-09-17T09:00:00' };
             const mock = mitLoeschFehlern(mockFetchResponses({
-                '/api/emails/inbox': [nachfrage, anfrage],
+                '/api/emails/trash': [nachfrage, anfrage],
                 '/api/emails/16': anfrage, '/api/emails/17': nachfrage,
                 '/api/emails/17/thread': { rootEmailId: 16, focusedEmailId: 17, emails: [anfrage, nachfrage] },
             }), {
-                '/api/emails/17': () => new Response('', { status: 500 }),
+                '/api/emails/17/permanent': () => new Response('', { status: 500 }),
             });
-            renderEmailCenter();
+            renderEmailCenter('trash');
             await user.click(await screen.findByText('Re: Anfrage Terrasse'));
-            await user.click(await screen.findByRole('button', { name: 'Weitere E-Mail-Aktionen' }));
-            await user.click(await screen.findByText('In Papierkorb'));
+            await user.click(within(await screen.findByTestId('email-detail-header')).getByRole('button', { name: 'Endgültig löschen (Entf)' }));
+
+            const dialog = await screen.findByRole('dialog', { name: 'Endgültig löschen?' });
+            expect(dialog).toHaveTextContent('Der Verlauf „Re: Anfrage Terrasse“ mit 2 E-Mails wird endgültig gelöscht');
+            await user.click(within(dialog).getByRole('button', { name: 'Endgültig löschen' }));
 
             expect(await screen.findByText('1 von 2 E-Mails konnten nicht gelöscht werden.')).toBeInTheDocument();
-            expect(mock).toHaveBeenCalledWith('/api/emails/16', { method: 'DELETE' });
+            expect(mock).toHaveBeenCalledWith('/api/emails/16/permanent', { method: 'DELETE' });
             expect(await screen.findByText('Re: Anfrage Terrasse')).toBeInTheDocument();
+        });
+
+        it('stellt im Papierkorb den ganzen Verlauf in seinen Ursprungsordner wieder her', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+            const anfrage = {
+                id: 16, type: 'EMAIL', direction: 'IN' as const, subject: 'Anfrage Terrasse',
+                fromAddress: 'max@example.com', body: 'Ich hätte gerne ein Angebot.',
+                sentAt: '2026-09-16T09:00:00', isRead: true, zuordnungTyp: 'KEINE', attachments: [], threadRootId: 16,
+            };
+            const nachfrage = { ...anfrage, id: 17, subject: 'Re: Anfrage Terrasse', parentEmailId: 16, sentAt: '2026-09-17T09:00:00' };
+            const mock = mockFetchResponses({
+                '/api/emails/trash': [nachfrage, anfrage],
+                '/api/emails/16': anfrage, '/api/emails/17': nachfrage,
+                '/api/emails/17/thread': { rootEmailId: 16, focusedEmailId: 17, emails: [anfrage, nachfrage] },
+            });
+            vi.stubGlobal('fetch', mock);
+            renderEmailCenter('trash');
+            await user.click(await screen.findByText('Re: Anfrage Terrasse'));
+            await user.click(await screen.findByRole('button', { name: 'Weitere E-Mail-Aktionen' }));
+            await user.click(await screen.findByRole('menuitem', { name: 'Wiederherstellen' }));
+
+            expect(await screen.findByText('2 E-Mails sind wieder da.')).toBeInTheDocument();
+            expect(mock).toHaveBeenCalledWith('/api/emails/papierkorb/zurueckholen', expect.objectContaining({ method: 'POST', body: JSON.stringify({ ids: [16, 17] }) }));
+            expect(mock).not.toHaveBeenCalledWith('/api/emails/bulk/move-to-folder', expect.anything());
+            expect(screen.queryByText('Re: Anfrage Terrasse')).not.toBeInTheDocument();
+        });
+
+        it('stellt mehrere markierte Mails aus dem Papierkorb wieder her', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+            const mock = mockFetchResponses({
+                '/api/emails/trash': [mockEmails[0], mockEmails[1]],
+                '/api/emails/1': mockEmails[0], '/api/emails/2': mockEmails[1],
+            });
+            vi.stubGlobal('fetch', mock);
+            renderEmailCenter('trash');
+            await user.click(await screen.findByText('Angebot für Treppe'));
+            await user.keyboard('{Control>}');
+            await user.click(screen.getByText('Rechnung 2024-001'));
+            await user.keyboard('{/Control}');
+            await user.click(await screen.findByRole('button', { name: 'Wiederherstellen (2)' }));
+
+            expect(await screen.findByText('2 E-Mails sind wieder da.')).toBeInTheDocument();
+            expect(mock).toHaveBeenCalledWith('/api/emails/papierkorb/zurueckholen', expect.objectContaining({ body: JSON.stringify({ ids: [1, 2] }) }));
+            expect(mock).not.toHaveBeenCalledWith('/api/emails/bulk/move-to-folder', expect.anything());
+            expect(screen.queryByText('Angebot für Treppe')).not.toBeInTheDocument();
+            expect(screen.queryByText('Rechnung 2024-001')).not.toBeInTheDocument();
+        });
+
+        /** „Verschieben nach“ → Ziel per Tastatur (Klicks im Radix-Untermenü kommen in jsdom nicht an). */
+        async function waehleImUntermenue(user: ReturnType<typeof userEvent.setup>, ziel: string) {
+            (await screen.findByRole('menuitem', { name: 'Verschieben nach' })).focus();
+            await user.keyboard('{ArrowRight}');
+            const eintrag = await screen.findByRole('menuitem', { name: ziel });
+            eintrag.focus();
+            await user.keyboard('{Enter}');
+        }
+
+        /** Sucht in „Alle Ordner“ und öffnet den einen Treffer. */
+        async function oeffneTrefferAusAllenOrdnern(ordner: string, treffer: Record<string, unknown>) {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+            const mock = mockFetchResponses({
+                '/api/emails/suche': { eintraege: [treffer], hatMehr: false, seite: 0, seitenGroesse: 25 },
+                [`/api/emails/${treffer.id}`]: treffer,
+            });
+            vi.stubGlobal('fetch', mock);
+            renderEmailCenter(ordner);
+            await user.click(await screen.findByRole('button', { name: 'Alle Ordner' }));
+            await user.type(screen.getByRole('searchbox', { name: 'E-Mails durchsuchen' }), 'Carport');
+            await user.click(await screen.findByText(String(treffer.subject)));
+            const kopf = await screen.findByTestId('email-detail-header');
+            await within(kopf).findByRole('heading', { name: String(treffer.subject) });
+            return { user, mock, kopf };
+        }
+
+        it('legt eine „Mögliche Anfrage“ aus „Alle Ordner“ im Papierkorb-Ordner nur in den Papierkorb, statt sie endgültig zu löschen', async () => {
+            const treffer = { ...mockEmails[0], id: 61, subject: 'Carport Mustermann', folder: 'inquiries' };
+            const { user, mock, kopf } = await oeffneTrefferAusAllenOrdnern('trash', treffer);
+            expect(within(kopf).queryByRole('button', { name: 'Endgültig löschen (Entf)' })).not.toBeInTheDocument();
+            await user.click(within(kopf).getByRole('button', { name: 'In den Papierkorb (Entf)' }));
+
+            expect(await screen.findByText('E-Mail in den Papierkorb gelegt.')).toBeInTheDocument();
+            expect(screen.queryByRole('dialog', { name: 'Endgültig löschen?' })).not.toBeInTheDocument();
+            expect(mock).toHaveBeenCalledWith('/api/emails/papierkorb', expect.objectContaining({ body: JSON.stringify({ ids: [61] }) }));
+            expect(mock).not.toHaveBeenCalledWith('/api/emails/61/permanent', expect.anything());
+        });
+
+        it('verschiebt einen Spam-Treffer aus „Alle Ordner“ in den Posteingang, auch wenn der Posteingang offen ist', async () => {
+            const treffer = { ...mockEmails[0], id: 62, subject: 'Carport Spam', folder: 'spam' };
+            const { user, mock, kopf } = await oeffneTrefferAusAllenOrdnern('inbox', treffer);
+            await user.click(within(kopf).getByRole('button', { name: 'Weitere E-Mail-Aktionen' }));
+            await waehleImUntermenue(user, 'Posteingang');
+            await waitFor(() => expect(mock).toHaveBeenCalledWith('/api/emails/bulk/move-to-folder',
+                expect.objectContaining({ body: JSON.stringify({ ids: [62], targetFolder: 'inbox' }) })));
+        });
+
+        it('legt per „Verschieben nach → Papierkorb“ mit „Rückgängig“ in den Papierkorb', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+            const mock = mockFetchResponses({ '/api/emails/1': mockEmails[0], '/api/emails/2': mockEmails[1] });
+            vi.stubGlobal('fetch', mock);
+            renderEmailCenter();
+            await user.click(await screen.findByText('Angebot für Treppe'));
+            const kopf = await screen.findByTestId('email-detail-header');
+            await user.click(within(kopf).getByRole('button', { name: 'Weitere E-Mail-Aktionen' }));
+            await waehleImUntermenue(user, 'Papierkorb');
+
+            expect(await screen.findByText('E-Mail in den Papierkorb gelegt.')).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: 'Rückgängig' })).toBeInTheDocument();
+            expect(mock).toHaveBeenCalledWith('/api/emails/papierkorb', expect.objectContaining({ body: JSON.stringify({ ids: [1] }) }));
+            expect(mock).not.toHaveBeenCalledWith('/api/emails/bulk/move-to-folder', expect.anything());
         });
 
         it('lässt einen Entwurf stehen und meldet den Fehler, wenn er nicht gelöscht werden konnte', async () => {

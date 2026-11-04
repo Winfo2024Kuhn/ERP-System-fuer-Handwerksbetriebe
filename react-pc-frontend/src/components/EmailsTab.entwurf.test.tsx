@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import EmailsTab, { type GenericEmail } from './EmailsTab';
 import type { EmailThread } from './EmailThreadView';
 import { ToastProvider } from './ui/toast';
-import { RUECKGAENGIG_MS } from '../hooks/useVerzoegertesLoeschen';
+import { RUECKGAENGIG_MS } from '../lib/rueckgaengig';
 
 /**
  * Entwurf im Verlauf löschen: sofort weg, „Rückgängig“ in der Meldung, DELETE erst nach
