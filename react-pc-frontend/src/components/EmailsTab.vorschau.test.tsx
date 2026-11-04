@@ -30,7 +30,7 @@ function vorschauVon(bodyHtml: string): string {
     };
     render(
         <MemoryRouter>
-            <EmailsTab emails={[email]} kundeId={1} showComposeButton={false} showReplyButton={false} />
+            <EmailsTab emails={[email]} showComposeButton={false} showReplyButton={false} />
         </MemoryRouter>
     );
     return screen.getByText(/Neue Antwort/).textContent || '';
@@ -66,7 +66,7 @@ describe('EmailsTab – Vorschau wird nicht bei jedem Rendern neu berechnet', ()
         }));
         const tab = () => (
             <MemoryRouter>
-                <EmailsTab emails={emails} kundeId={1} showComposeButton={false} showReplyButton={false} />
+                <EmailsTab emails={emails} showComposeButton={false} showReplyButton={false} />
             </MemoryRouter>
         );
         const { rerender } = render(tab());

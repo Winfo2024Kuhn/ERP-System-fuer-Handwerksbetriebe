@@ -1,7 +1,7 @@
 import { act, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ToastProvider } from '../../components/ui/toast';
-import { RUECKGAENGIG_MS } from '../../lib/rueckgaengig';
+import { ToastProvider } from '../components/ui/toast';
+import { RUECKGAENGIG_MS } from '../lib/rueckgaengig';
 import { useVerzoegertesLoeschen } from './useVerzoegertesLoeschen';
 
 const geloescht = vi.fn();
@@ -122,13 +122,29 @@ describe('Löschen mit „Rückgängig“ (ohne Bezüge)', () => {
         expect(screen.getByText('„Holzbau“ konnte nicht gelöscht werden.')).toBeInTheDocument();
     });
 
-    it('nach dem Verlassen der Seite wird nichts mehr angezeigt oder übernommen', async () => {
+    it('meldet einen Fehler auch nach dem Verlassen (die Meldungen leben weiter), übernimmt aber nichts mehr', async () => {
         fetchMock.mockResolvedValue({ ok: false, status: 409, json: () => Promise.resolve({ message: 'Fehler danach' }) });
         function Huelle({ zeigen }: { zeigen: boolean }) { return <ToastProvider>{zeigen && <Probe />}</ToastProvider>; }
         const { rerender } = render(<Huelle zeigen />);
         act(() => screen.getByText('Löschen').click());
         await act(async () => { rerender(<Huelle zeigen={false} />); });
-        expect(screen.queryByText('Fehler danach')).not.toBeInTheDocument();
+        expect(screen.getByText('Fehler danach')).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Rückgängig' })).not.toBeInTheDocument();
+        expect(geloescht).not.toHaveBeenCalled();
+    });
+
+    it('nimmt statt „Name“ eine eigene Bezeichnung, wenn eine mitgegeben ist', async () => {
+        function OhneName() {
+            const { planen } = useVerzoegertesLoeschen();
+            return <button onClick={() => planen({
+                schluessel: 'entwurf:1', url: '/api/emails/drafts/1', name: 'Entwurf', anzeige: 'Entwurf',
+                fehlerText: 'x', onGeloescht: vi.fn(),
+            })}>Entwurf löschen</button>;
+        }
+        render(<ToastProvider><OhneName /></ToastProvider>);
+        act(() => screen.getByText('Entwurf löschen').click());
+        expect(screen.getByText('Entwurf gelöscht.')).toBeInTheDocument();
+        act(() => screen.getByRole('button', { name: 'Rückgängig' }).click());
+        expect(screen.getByText('Entwurf ist wieder da.')).toBeInTheDocument();
     });
 });

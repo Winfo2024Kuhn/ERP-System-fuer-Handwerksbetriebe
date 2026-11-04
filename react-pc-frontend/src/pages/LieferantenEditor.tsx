@@ -343,9 +343,6 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, la
                         )}
                         {nachgeladen.emails === undefined ? <ReiterLaedt text="E-Mails werden geladen…" /> : <EmailsTab
                             emails={nachgeladen.emails}
-                            lieferantId={lieferant.id as number}
-                            entityName={lieferant.lieferantenname}
-                            kundenEmail={lieferant.kundenEmails?.[0]}
                             showComposeButton={false}
                             showReplyButton={false}
                         />}

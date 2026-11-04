@@ -1,6 +1,7 @@
 import { Plus, Search } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
-import { cn } from '../../../lib/utils';
+import { Input } from '../../../components/ui/input';
+import { SegmentAuswahl, type SegmentOption } from '../../../components/ui/segment-auswahl';
 import type { EmailsTabFilter } from './emailsTabTypes';
 
 interface EmailsTabToolbarProps {
@@ -12,6 +13,12 @@ interface EmailsTabToolbarProps {
     onCompose: () => void;
 }
 
+const FILTER: SegmentOption[] = [
+    { wert: 'all', text: 'Alle' },
+    { wert: 'in', text: 'Eingang' },
+    { wert: 'out', text: 'Ausgang' },
+];
+
 /** Kopf des E-Mail-Reiters: Überschrift, Suche, Filter Alle/Eingang/Ausgang, „Neue E-Mail“. */
 export function EmailsTabToolbar({ search, onSearchChange, filter, onFilterChange, showCompose, onCompose }: EmailsTabToolbarProps) {
     return (
@@ -19,38 +26,25 @@ export function EmailsTabToolbar({ search, onSearchChange, filter, onFilterChang
             <h3 className="text-lg font-medium text-slate-900">E-Mails</h3>
             <div className="flex flex-wrap items-center gap-3">
                 <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input
+                    <Search aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <Input
                         type="text"
-                        placeholder="E-Mails durchsuchen..."
+                        aria-label="E-Mails durchsuchen"
+                        placeholder="E-Mails durchsuchen…"
                         value={search}
                         onChange={e => onSearchChange(e.target.value)}
-                        className="pl-9 pr-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500 w-48"
+                        className="pl-9 pr-3 py-2 rounded-lg w-60"
                     />
                 </div>
-                <div className="flex rounded-lg border border-slate-200 overflow-hidden">
-                    <button
-                        onClick={() => onFilterChange('all')}
-                        className={cn("px-3 py-1.5 text-sm font-medium transition-colors",
-                            filter === 'all' ? "bg-rose-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
-                        )}
-                    >Alle</button>
-                    <button
-                        onClick={() => onFilterChange('in')}
-                        className={cn("px-3 py-1.5 text-sm font-medium transition-colors border-l border-slate-200",
-                            filter === 'in' ? "bg-blue-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
-                        )}
-                    >Eingang</button>
-                    <button
-                        onClick={() => onFilterChange('out')}
-                        className={cn("px-3 py-1.5 text-sm font-medium transition-colors border-l border-slate-200",
-                            filter === 'out' ? "bg-green-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
-                        )}
-                    >Ausgang</button>
-                </div>
+                <SegmentAuswahl
+                    beschriftung="E-Mails filtern"
+                    optionen={FILTER}
+                    wert={filter}
+                    onChange={wert => onFilterChange(wert as EmailsTabFilter)}
+                />
                 {showCompose && (
-                    <Button onClick={onCompose} className="bg-rose-600 text-white hover:bg-rose-700">
-                        <Plus className="w-4 h-4 mr-2" /> Neue E-Mail
+                    <Button onClick={onCompose}>
+                        <Plus aria-hidden="true" className="w-4 h-4 mr-2" /> Neue E-Mail
                     </Button>
                 )}
             </div>

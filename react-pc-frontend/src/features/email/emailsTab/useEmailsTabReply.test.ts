@@ -78,6 +78,40 @@ describe('useEmailsTabReply', () => {
         expect(result.current.replyToEmail?.body).toBe('Text aus dem Verlauf');
     });
 
+    it('zeigt das Laden und verwirft die späte Mail, wenn die Antwort inzwischen abgebrochen wurde', async () => {
+        let spaet: (r: Response) => void = () => {};
+        vi.stubGlobal('fetch', vi.fn().mockReturnValueOnce(new Promise<Response>(resolve => { spaet = resolve; })));
+        const { result } = renderHook(() => useEmailsTabReply());
+
+        let laeuft: Promise<void> = Promise.resolve();
+        act(() => { laeuft = result.current.startReply(eintrag); });
+        expect(result.current.replyLaedt).toBe(true);
+        act(() => result.current.cancelReply());
+        expect(result.current.replyLaedt).toBe(false);
+
+        await act(async () => { spaet({ ok: true, json: () => Promise.resolve({ id: 42, subject: 'Spät' }) } as Response); await laeuft; });
+        expect(result.current.isReplying).toBe(false);
+        expect(result.current.replyToEmail).toBeNull();
+    });
+
+    it('übernimmt bei zwei schnellen Klicks nur die zuletzt gewählte Mail', async () => {
+        let ersteAntwort: (r: Response) => void = () => {};
+        vi.stubGlobal('fetch', vi.fn()
+            .mockReturnValueOnce(new Promise<Response>(resolve => { ersteAntwort = resolve; }))
+            .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ id: 43, subject: 'Zweite Mail' }) }));
+        const { result } = renderHook(() => useEmailsTabReply());
+
+        let erste: Promise<void> = Promise.resolve();
+        act(() => { erste = result.current.startReply(eintrag); });
+        await act(() => result.current.startReply({ ...eintrag, id: 43 }));
+        expect(result.current.replyToEmailId).toBe(43);
+        expect(result.current.replyLaedt).toBe(false);
+
+        await act(async () => { ersteAntwort({ ok: true, json: () => Promise.resolve({ id: 42, subject: 'Erste Mail' }) } as Response); await erste; });
+        expect(result.current.replyToEmailId).toBe(43);
+        expect(result.current.replyToEmail?.subject).toBe('Zweite Mail');
+    });
+
     it('bricht die Antwort ab und vergisst die Mail', async () => {
         vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
         const { result } = renderHook(() => useEmailsTabReply());

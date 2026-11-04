@@ -1,6 +1,6 @@
 import { act, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { RUECKGAENGIG_MS } from '../../lib/rueckgaengig';
+import { RUECKGAENGIG_MS } from '../lib/rueckgaengig';
 import { useVerzoegertesLoeschen } from './useVerzoegertesLoeschen';
 
 // Die echte Meldung schließt sich beim Senden; um einen verspäteten Klick auf „Rückgängig“
@@ -8,7 +8,7 @@ import { useVerzoegertesLoeschen } from './useVerzoegertesLoeschen';
 const toastApi = vi.hoisted(() => ({
     success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn(), schliessen: vi.fn(),
 }));
-vi.mock('../../components/ui/toast', () => ({ useToast: () => toastApi }));
+vi.mock('../components/ui/toast', () => ({ useToast: () => toastApi }));
 
 function Probe() {
     const { planen } = useVerzoegertesLoeschen();

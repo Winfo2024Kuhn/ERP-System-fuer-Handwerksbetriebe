@@ -70,8 +70,9 @@ export default function DocumentPreviewModal({ doc, onClose, isPdf: isPdfOverrid
                             Neuer Tab
                         </Button>
                         <Button variant="ghost" size="sm" onClick={onClose}
-                            className="text-slate-500 hover:text-slate-700">
-                            <X className="w-5 h-5" />
+                            className="text-slate-500 hover:text-slate-700"
+                            aria-label="Vorschau schließen" title="Vorschau schließen">
+                            <X aria-hidden="true" className="w-5 h-5" />
                         </Button>
                     </div>
                 </div>

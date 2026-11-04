@@ -1742,8 +1742,6 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                         parentEmailId: e.parentEmailId ?? e.parentId,
                     }))}
                     projektId={projekt.id}
-                    entityName={projekt.bauvorhaben}
-                    kundenEmail={projekt.kundeDto?.kundenEmails?.[0]}
                     projekt={projekt}
                     onEmailSent={() => onRefresh()}
                 />
