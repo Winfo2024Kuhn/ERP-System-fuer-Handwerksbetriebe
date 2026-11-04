@@ -73,7 +73,7 @@ test('E-Mail-Center: Verlauf in Rose/Slate, Foto-Vorschau als eigenes Fenster', 
 
     await page.getByText(BETREFF, { exact: true }).first().click();
     const verlaufsBereich = page.getByTestId('email-verlauf');
-    const fotoKnopf = verlaufsBereich.getByRole('button', { name: new RegExp(FOTO.replace(/\./g, '\\.')) });
+    const fotoKnopf = verlaufsBereich.getByRole('button', { name: FOTO });
     await expect(fotoKnopf).toBeVisible();
     await expect(verlaufsBereich.getByText('Danke, wir kommen am Freitag zum Aufmaß.')).toBeVisible();
 
