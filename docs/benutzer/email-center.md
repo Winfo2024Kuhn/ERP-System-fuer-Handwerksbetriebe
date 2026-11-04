@@ -13,10 +13,17 @@ Die Zahl neben einem Ordner nennt die ungelesenen E-Mails. Alle Postfächer steh
 
 ## E-Mails suchen
 
-Oben in der Liste (**Kommunikation → E-Mail Center**):
-- „Ordner“ sucht im geöffneten Ordner, „Alle Ordner“ in allen (ab 2 Zeichen) – in Betreff, Absender und Text.
+Oben in der Liste (**Kommunikation → E-Mail Center**) ins Suchfeld tippen. Ab 2 Zeichen sucht das Programm auf dem Server, also auch in älteren E-Mails, die in der Liste noch gar nicht geladen sind:
+- „Ordner“ sucht im geöffneten Ordner, „Alle Ordner“ überall – auch im Papierkorb, im Spam und in Gesendet. Ein kleines Schild an jedem Treffer (z. B. „Papierkorb“, „Gesendet“, „Projekt“) zeigt dann, wo die E-Mail liegt.
+- Durchsucht werden Absender und Empfänger samt Namen, CC, Betreff, der ganze Text mit dem zitierten Verlauf und die Namen der Anhänge. Groß- und Kleinschreibung und Umlaute spielen keine Rolle: „wurth“, „wuerth“ und „Würth“ finden dasselbe. Auch Wortteile zählen: „gel“ findet „Geländer“.
+- Mehrere Wörter („müller geländer“) finden nur E-Mails, in denen alle Wörter vorkommen, egal an welcher Stelle.
+- Treffer stehen einzeln da, die neuesten zuerst; weitere kommen beim Scrollen bzw. mit „Weitere laden“. Findet die Suche im Ordner nichts, bietet sie „In allen Ordnern suchen“ an.
+- Entwürfe durchsucht „Alle Ordner“ nicht. Im Ordner „Entwürfe“ filtert das Suchfeld die Entwürfe direkt.
+- Das (i) neben „Alle Ordner“ erklärt das Ganze noch einmal kurz.
+
+Ohne Suchbegriff:
 - „Alle“ / „Ungelesen“ / „Gelesen“ filtert nach Lesestatus.
-- Der Pfeil-Knopf dreht die Reihenfolge (neueste oder älteste zuerst).
+- Der Pfeil-Knopf dreht die Reihenfolge (neueste oder älteste zuerst). Während einer Suche sind beide aus, weil Treffer immer nach Datum sortiert sind.
 - „Alle gelesen“ markiert alle ungelesenen im Ordner als gelesen.
 
 ## E-Mail lesen und Anhänge öffnen
@@ -53,8 +60,19 @@ Eine E-Mail wird beim Schreiben automatisch als Entwurf gespeichert; unten steht
 
 ## Löschen, Spam und Newsletter
 
+Löschen geht mit einem Klick, ohne Rückfrage:
+- der Papierkorb-Knopf oben neben „Antworten“ bei der geöffneten E-Mail,
+- der Papierkorb-Knopf in der Listenzeile (erscheint beim Drüberfahren, neben dem Stern),
+- die Taste Entf oder ⌫ – sie löscht die geöffnete bzw. alle markierten E-Mails, aber nicht, solange man in einem Feld oder beim Schreiben tippt.
+
+Die E-Mail wandert in den Papierkorb, eine Zeile der Liste mit dem ganzen Verlauf im Ordner. Danach öffnet sich die nächste E-Mail der Liste. Oben rechts steht ein paar Sekunden lang „E-Mail in den Papierkorb gelegt.“ mit „Rückgängig“: Das holt die E-Mail in ihren alten Ordner zurück (eine Spam-Mail also wieder in „Spam“).
+
+„Verschieben nach“ → „Papierkorb“ und Ziehen auf den Papierkorb links wirken genauso, ebenfalls mit „Rückgängig“.
+
+Im Papierkorb löschen dieselben Knöpfe und Tasten endgültig – dann auch vom Mailserver. Das lässt sich nicht rückgängig machen, darum fragt das Programm vorher mit „Endgültig löschen?“ nach und nennt den Betreff.
+
 Im Menü „…“ einer E-Mail:
-- „In Papierkorb“ (im Papierkorb: „Wiederherstellen“ oder „Endgültig löschen“ – dann auch vom Mailserver),
+- „In Papierkorb“ (im Papierkorb: „Wiederherstellen“ holt die E-Mail in ihren alten Ordner zurück, z. B. wieder nach „Spam“ oder „Newsletter“; „Endgültig löschen“),
 - „Verschieben nach“,
 - „Als Spam markieren“ bzw. „Kein Spam“,
 - „Kein Newsletter“ / „Newsletter bestätigen“,

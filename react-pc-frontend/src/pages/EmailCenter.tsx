@@ -1,8 +1,14 @@
 import { EmailNavigationGuard } from '../features/email/EmailNavigationGuard';
-import { getThreadPreview } from '../features/email/threadQuotes';
 import { EmailDetailHeader } from '../features/email/EmailDetailHeader';
-import { EmailZuordnungLink } from '../features/email/EmailZuordnungLink';
-import { PostfachSchild } from '../features/email/PostfachSchild';
+import { EmailEntwurfZeile } from '../features/email/EmailEntwurfZeile';
+import { EmailListenZeile } from '../features/email/EmailListenZeile';
+import { EmailListeLaedt, EmailListeLeer, EmailListenEnde, EmailSuchFehler, type LeerArt } from '../features/email/EmailListenZustand';
+import { EmailSuchHinweis, EmailSuchleiste } from '../features/email/EmailSuchleiste';
+import { naechsteNachLoeschen } from '../features/email/emailLoeschen';
+import { VERSCHIEBE_ZIELE, ablageOrdner, type VerschiebeZiel } from '../features/email/emailOrdner';
+import { useEmailLoeschen } from '../features/email/useEmailLoeschen';
+import { useEmailSuche } from '../features/email/useEmailSuche';
+import { useLoeschTaste } from '../features/email/useLoeschTaste';
 import { useAbsenderPostfaecher } from '../features/email/useAbsenderPostfaecher';
 import { ermittleEmailZuordnung } from '../features/email/emailZuordnung';
 import { EmailFolderSidebar } from '../features/email/EmailFolderSidebar';
@@ -12,38 +18,16 @@ import { OrdnerHinweis } from '../features/email/OrdnerHinweis';
 import { useOptionalAuth } from '../auth/AuthContext';
 import { useEmailPaneWidth } from '../features/email/useEmailPaneWidth';
 import {
-    buildEmailListUrl, buildForwardSubject, buildReplyAddressing, buildReplySubject, emailListCacheKey, filtereEntwuerfe, fremderEntwurfVon,
-    getSenderName, getDisplayName, groupEmailThreads, hasFurtherRecipients, isImageAttachment, loeschFehlerMeldung, nutztServerFilterUngelesen,
+    buildEmailListUrl, buildForwardSubject, buildReplyAddressing, buildReplySubject, emailListCacheKey, filtereEntwuerfe,
+    getSenderName, getDisplayName, groupEmailThreads, hasFurtherRecipients, isImageAttachment, nutztServerFilterUngelesen,
     type DraftItem, type EmailItem, type EmailThreadRow, type FolderType, type ReadFilter, type ReplyMode,
 } from '../features/email/emailCenterModel';
 import React, { useState, useEffect, useContext, useCallback, useLayoutEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams, UNSAFE_DataRouterContext } from 'react-router-dom';
 import { PdfCanvasViewer } from '../components/ui/PdfCanvasViewer';
 import {
-    Mail,
-    RefreshCw,
-    Trash2,
-    Inbox,
-    Paperclip,
-    Download,
-    FolderPlus,
-    Search,
-    File,
-    FileEdit,
-    ShieldAlert,
-    ShieldCheck,
-    ShieldX,
-    Star,
-    Newspaper,
-    Globe,
-    X,
-    CheckSquare,
-    MessagesSquare,
-    RotateCcw,
-    FolderInput,
-    ArrowDownAZ,
-    ArrowUpAZ,
-    CheckCircle2,
+    Mail, Trash2, Inbox, Download, FolderPlus, File, ShieldAlert, ShieldCheck, ShieldX, X, CheckSquare, RotateCcw,
+    FolderInput, CheckCircle2,
 } from 'lucide-react';
 import {
     DndContext,
@@ -51,14 +35,11 @@ import {
     PointerSensor,
     useSensor,
     useSensors,
-    useDraggable,
     type DragStartEvent,
     type DragEndEvent
 } from '@dnd-kit/core';
 import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
 import { cn } from '../lib/utils';
-import { htmlZuEinzeiler } from '../lib/htmlSanitizer';
 import { extractDisplayName, extractEmailAddress, escapeHtml, parseRecipientList } from '../lib/emailAddress';
 import { EMAILS_REFRESH_EVENT, refreshNotifications } from '../lib/notificationRefresh';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
@@ -73,37 +54,6 @@ import type { EmailThread } from '../components/EmailThreadView';
 
 // Main EmailCenter Component
 const VALID_FOLDERS: FolderType[] = ['inbox', 'sent', 'drafts', 'trash', 'spam', 'newsletter', 'starred', 'projects', 'offers', 'suppliers', 'tax-advisors', 'unassigned'];
-
-// ─────────────────────────────────────────────────────────────
-// DnD helper components (Drag & Drop für Ordner-Verschieben)
-// ─────────────────────────────────────────────────────────────
-
-interface DraggableEmailWrapperProps {
-    emailId: number;
-    disabled?: boolean;
-    children: React.ReactNode;
-}
-
-function DraggableEmailWrapper({ emailId, disabled, children }: DraggableEmailWrapperProps) {
-    const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-        id: `email-${emailId}`,
-        data: { emailId },
-        disabled
-    });
-    return (
-        <div
-            ref={setNodeRef}
-            {...attributes}
-            {...listeners}
-            className={cn(
-                "outline-none",
-                isDragging && "opacity-40"
-            )}
-        >
-            {children}
-        </div>
-    );
-}
 
 /** Gemerkte Mail-Liste je Ordner/Filter (stale-while-revalidate). */
 type EmailListCacheEintrag = { emails: EmailItem[]; hasMore: boolean; timestamp: number };
@@ -256,17 +206,15 @@ export default function EmailCenter() {
         window.addEventListener('pointermove', onPointerMove);
         window.addEventListener('pointerup', onPointerUp);
     }, [effectiveListWidth]);
-    const [searchQuery, setSearchQuery] = useState('');
-    const [isGlobalSearch, setIsGlobalSearch] = useState(false);
-    const [globalSearchResults, setGlobalSearchResults] = useState<EmailItem[]>([]);
-    const [globalSearchLoading, setGlobalSearchLoading] = useState(false);
+    // Serverseitige Suche in beiden Modi; unter 2 Zeichen zeigt die Liste den Ordner.
+    const suche = useEmailSuche(activeFolder);
+    const { aktiv: sucheAktiv, treffer: suchTreffer, aendereTreffer, mehrLaden: sucheMehrLaden,
+        neuLaden: sucheNeuLaden, nachladeFehler: sucheNachladeFehler, hatMehr: sucheHatMehr } = suche;
     const [loading, setLoading] = useState(false);
     // Pagination – seitenweise Nachladen pro Ordner (Infinite Scroll)
     const PAGE_SIZE = 50;
     const [hasMore, setHasMore] = useState(false);
     const [loadingMore, setLoadingMore] = useState(false);
-    const [searchHasMore, setSearchHasMore] = useState(false);
-    const [searchLoadingMore, setSearchLoadingMore] = useState(false);
     const [selectedEmail, setSelectedEmail] = useState<EmailItem | null>(null);
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
     const lastSelectedIdRef = useRef<number | null>(null);
@@ -415,10 +363,11 @@ export default function EmailCenter() {
         setIsComposing(true);
     };
 
-    const handleToggleStar = async (emailId: number, e?: React.MouseEvent) => {
-        if (e) { e.stopPropagation(); e.preventDefault(); }
+    const handleToggleStar = async (emailId: number) => {
+        const umschalten = (liste: EmailItem[]) => liste.map(em => em.id === emailId ? { ...em, isStarred: !em.isStarred } : em);
         // Optimistic update
-        setEmails(prev => prev.map(em => em.id === emailId ? { ...em, isStarred: !em.isStarred } : em));
+        setEmails(umschalten);
+        aendereTreffer(umschalten);
         if (selectedEmail?.id === emailId) {
             setSelectedEmail(prev => prev ? { ...prev, isStarred: !prev.isStarred } : prev);
         }
@@ -428,7 +377,8 @@ export default function EmailCenter() {
             loadStats();
         } catch {
             // Revert on error
-            setEmails(prev => prev.map(em => em.id === emailId ? { ...em, isStarred: !em.isStarred } : em));
+            setEmails(umschalten);
+            aendereTreffer(umschalten);
             if (selectedEmail?.id === emailId) {
                 setSelectedEmail(prev => prev ? { ...prev, isStarred: !prev.isStarred } : prev);
             }
@@ -768,7 +718,7 @@ export default function EmailCenter() {
                         .then(res => {
                             if (!res.ok) return;
                             setEmails(prev => prev.map(item => item.id === email.id ? { ...item, isRead: true } : item));
-                            setGlobalSearchResults(prev => prev.map(item => item.id === email.id ? { ...item, isRead: true } : item));
+                            aendereTreffer(prev => prev.map(item => item.id === email.id ? { ...item, isRead: true } : item));
                             loadStats();
                             refreshNotifications();
                         })
@@ -777,7 +727,7 @@ export default function EmailCenter() {
             })
             .catch(() => { /* keep an already selected list entry if detail loading fails */ });
         return () => controller.abort();
-    }, [emailIdParam, activeFolder, loadStats]);
+    }, [emailIdParam, activeFolder, loadStats, aendereTreffer]);
 
     // Ordnerwechsel ohne offenen Editor und ohne gewählte Mail in der Adresse: Auswahl leeren.
     const [auswahlOrdner, setAuswahlOrdner] = useState(activeFolder);
@@ -797,8 +747,8 @@ export default function EmailCenter() {
     // Steht vor den Handlern, die diese Werte lesen.
     // Eine Zeile pro Verlauf (wie Gmail): Die jüngste geladene Nachricht steht stellvertretend
     // in der Liste; Sortierung und "Ungelesen" richten sich nach dem ganzen Verlauf, damit neue
-    // Antworten den Verlauf nach oben holen. Bei der globalen Suche werden alle Treffer einzeln
-    // gezeigt (der Nutzer sucht gezielt nach einer bestimmten Nachricht).
+    // Antworten den Verlauf nach oben holen. Suchtreffer stehen einzeln da (der Nutzer sucht gezielt
+    // nach einer bestimmten Nachricht).
     const threadRows = useMemo(() => groupEmailThreads(emails), [emails]);
     const threadRowByEmailId = useMemo(() => {
         const byId = new Map<number, EmailThreadRow>();
@@ -808,7 +758,7 @@ export default function EmailCenter() {
 
     /** Alle geladenen Nachrichten der Verläufe zu den gewählten Listenzeilen. */
     const expandToThreadMembers = (ids: number[]): number[] => {
-        if (isGlobalSearch) return ids;
+        if (sucheAktiv) return ids;
         const expanded = new Set<number>();
         for (const id of ids) {
             const members = threadRowByEmailId.get(id)?.members;
@@ -844,32 +794,23 @@ export default function EmailCenter() {
         return counterparts;
     }, [threadRows, isOwnEmail]);
 
+    // Suchtreffer kommen fertig sortiert vom Server; Sortierung und Lese-Filter gelten nur für die Ordnerliste.
     const filteredEmails = useMemo(() => {
-        if (isGlobalSearch) {
-            return [...globalSearchResults].sort((a, b) => {
-                const aTs = a.sentAt ? new Date(a.sentAt).getTime() : 0;
-                const bTs = b.sentAt ? new Date(b.sentAt).getTime() : 0;
-                return sortOrder === 'desc' ? bTs - aTs : aTs - bTs;
-            });
-        }
-        const q = searchQuery.trim().toLowerCase();
-        const matches = (e: EmailItem) => !q || (
-            e.subject?.toLowerCase().includes(q) ||
-            e.fromAddress?.toLowerCase().includes(q) ||
-            e.recipient?.toLowerCase().includes(q) ||
-            e.body?.toLowerCase().includes(q) ||
-            getDisplayName(e, isOwnEmail).toLowerCase().includes(q)
-        );
-        let rows = threadRows.filter(row => row.members.some(matches));
-        // Gesendet/Entwürfe haben kein sinnvolles Lese-Konzept.
+        if (sucheAktiv) return suchTreffer;
+        let rows = threadRows;
+        // Gesendet hat kein sinnvolles Lese-Konzept.
         // Ein Verlauf gilt als ungelesen, sobald eine seiner Nachrichten ungelesen ist.
         if (readFilter !== 'all' && activeFolder !== 'sent') {
             rows = rows.filter(row => readFilter === 'unread' ? row.anyUnread : !row.anyUnread);
         }
-        return rows
+        return [...rows]
             .sort((a, b) => sortOrder === 'desc' ? b.latestActivity - a.latestActivity : a.latestActivity - b.latestActivity)
             .map(row => row.email);
-    }, [threadRows, searchQuery, isGlobalSearch, globalSearchResults, sortOrder, readFilter, activeFolder, isOwnEmail]);
+    }, [threadRows, sucheAktiv, suchTreffer, sortOrder, readFilter, activeFolder]);
+
+    /** Wo eine Mail liegt: bei der Suche in allen Ordnern allein ihr eigener Ordner (unbekannt = `null`). */
+    const ordnerDerMail = (email: EmailItem) => ablageOrdner(email, sucheAktiv && suche.modus === 'alle', activeFolder);
+    const liegtImPapierkorb = (email: EmailItem) => ordnerDerMail(email) === 'trash';
 
     // Handlers
     const handleEmailClick = async (e: React.MouseEvent, email: EmailItem) => {
@@ -921,113 +862,117 @@ export default function EmailCenter() {
         setSelectedIds(newSelected);
 
         if (newSelected.has(id)) {
-            setSelectedEmail(email);
-            // Update URL to reflect selected email (single-select only)
-            if (newSelected.size === 1) {
-                // Nur wenn sich die URL ändert – sonst läuft der Effekt nicht und der Stand bliebe liegen.
-                if (emailIdParam !== String(id)) klickAuswahlRef.current = { emailId: id, version: selectionVersionRef.current };
-                navigate(`/emails/${activeFolder}/${id}`, { replace: true });
-            }
-            // Fetch full email detail (list DTO has truncated body/no htmlBody)
-            fetch(`/api/emails/${id}`)
-                .then(r => { if (r.ok) return r.json(); throw new Error(); })
-                .then((full: EmailItem) => setSelectedEmail(prev => prev?.id === id ? full : prev))
-                .catch(() => { /* keep list version as fallback */ });
-            // Der ganze Verlauf ist jetzt sichtbar – alle ungelesenen Nachrichten darin als gelesen markieren.
-            const unreadIds = isGlobalSearch
-                ? (email.isRead ? [] : [id])
-                : (threadRowByEmailId.get(id)?.members ?? [email]).filter(member => !member.isRead).map(member => member.id);
-            if (unreadIds.length > 0) {
-                // allSettled: Was auf dem Server gelesen ist, wird auch lokal gelesen – auch wenn
-                // einzelne Aufrufe scheitern.
-                void Promise.allSettled(unreadIds.map(unreadId => fetch(`/api/emails/${unreadId}/mark-read`, { method: 'POST' })
-                    .then(res => { if (!res.ok) throw new Error(`HTTP ${res.status}`); return unreadId; })))
-                    .then(results => {
-                        const marked = new Set(results.flatMap(result => result.status === 'fulfilled' ? [result.value] : []));
-                        if (marked.size > 0) {
-                            setEmails(prev => prev.map(e => marked.has(e.id) ? { ...e, isRead: true } : e));
-                            setGlobalSearchResults(prev => prev.map(e => marked.has(e.id) ? { ...e, isRead: true } : e));
-                            // Refresh stats + Glocke (entfernt diese E-Mails aus dem Notification-Center)
-                            loadStats();
-                            refreshNotifications();
-                        }
-                        if (marked.size < results.length) {
-                            console.error('Failed to mark as read:', results.filter(result => result.status === 'rejected'));
-                            toast.error('E-Mail konnte nicht als gelesen markiert werden.');
-                        }
-                    });
-            }
+            zeigeEmail(email, newSelected.size === 1);
         } else {
             if (selectedEmail?.id === id) setSelectedEmail(null);
         }
     };
 
-    const handleDelete = async (e: React.MouseEvent | null, email?: EmailItem) => {
-        if (e) {
-            e.preventDefault();
-            e.stopPropagation();
+    /** Zeigt eine Mail rechts an, lädt sie vollständig und markiert ihren Verlauf als gelesen. */
+    const zeigeEmail = (email: EmailItem, inAdresse: boolean) => {
+        const id = email.id;
+        setSelectedEmail(email);
+        // Update URL to reflect selected email (single-select only)
+        if (inAdresse) {
+            // Nur wenn sich die URL ändert – sonst läuft der Effekt nicht und der Stand bliebe liegen.
+            if (emailIdParam !== String(id)) klickAuswahlRef.current = { emailId: id, version: selectionVersionRef.current };
+            navigate(`/emails/${activeFolder}/${id}`, { replace: true });
         }
-
-        // Eine Listenzeile steht für den ganzen Verlauf im Ordner – sonst rückte nach dem
-        // Löschen die nächstältere Nachricht desselben Verlaufs in die Liste nach.
-        const idsToDelete = new Set<number>(expandToThreadMembers(email ? [email.id] : Array.from(selectedIds)));
-
-        if (idsToDelete.size === 0) return;
-
-        // Im Papierkorb: Bestätigung für endgültiges Löschen
-        const isPermanentDelete = activeFolder === 'trash';
-        if (isPermanentDelete) {
-            const count = idsToDelete.size;
-            const message = count === 1
-                ? 'Möchten Sie diese E-Mail endgültig löschen? Sie wird auch vom Mailserver entfernt.'
-                : `Möchten Sie ${count} E-Mails endgültig löschen? Sie werden auch vom Mailserver entfernt.`;
-            if (!await confirmDialog({ title: 'Bestätigung', message: message, variant: 'danger', confirmLabel: 'Bestätigen' })) return;
+        // Fetch full email detail (list DTO has truncated body/no htmlBody)
+        fetch(`/api/emails/${id}`)
+            .then(r => { if (r.ok) return r.json(); throw new Error(); })
+            .then((full: EmailItem) => setSelectedEmail(prev => prev?.id === id ? full : prev))
+            .catch(() => { /* keep list version as fallback */ });
+        // Der ganze Verlauf ist jetzt sichtbar – alle ungelesenen Nachrichten darin als gelesen markieren.
+        const unreadIds = sucheAktiv
+            ? (email.isRead ? [] : [id])
+            : (threadRowByEmailId.get(id)?.members ?? [email]).filter(member => !member.isRead).map(member => member.id);
+        if (unreadIds.length > 0) {
+            // allSettled: Was auf dem Server gelesen ist, wird auch lokal gelesen – auch wenn
+            // einzelne Aufrufe scheitern.
+            void Promise.allSettled(unreadIds.map(unreadId => fetch(`/api/emails/${unreadId}/mark-read`, { method: 'POST' })
+                .then(res => { if (!res.ok) throw new Error(`HTTP ${res.status}`); return unreadId; })))
+                .then(results => {
+                    const marked = new Set(results.flatMap(result => result.status === 'fulfilled' ? [result.value] : []));
+                    if (marked.size > 0) {
+                        setEmails(prev => prev.map(e => marked.has(e.id) ? { ...e, isRead: true } : e));
+                        aendereTreffer(prev => prev.map(e => marked.has(e.id) ? { ...e, isRead: true } : e));
+                        // Refresh stats + Glocke (entfernt diese E-Mails aus dem Notification-Center)
+                        loadStats();
+                        refreshNotifications();
+                    }
+                    if (marked.size < results.length) {
+                        console.error('Failed to mark as read:', results.filter(result => result.status === 'rejected'));
+                        toast.error('E-Mail konnte nicht als gelesen markiert werden.');
+                    }
+                });
         }
+    };
 
-        const currentIds = Array.from(idsToDelete);
-        currentIds.forEach(id => pendingRemovalsRef.current.add(id));
-        setEmails(prev => prev.filter(item => !idsToDelete.has(item.id)));
+    /** Nimmt Mails aus Ordnerliste, Suchtreffern und Auswahl; die Detail-Abfrage für sie bleibt gesperrt. */
+    const entferneAusListen = (ids: number[]) => {
+        const weg = new Set(ids);
+        ids.forEach(id => pendingRemovalsRef.current.add(id));
+        setEmails(prev => prev.filter(e => !weg.has(e.id)));
+        aendereTreffer(prev => prev.filter(e => !weg.has(e.id)));
+        setSelectedIds(prev => new Set([...prev].filter(id => !weg.has(id))));
+        return weg;
+    };
 
-        setSelectedIds(prev => {
-            const next = new Set(prev);
-            currentIds.forEach(id => next.delete(id));
-            return next;
-        });
-
-        if (selectedEmail && idsToDelete.has(selectedEmail.id)) {
+    /** Beim Löschen wie Outlook/Gmail: Die nächste Mail der Liste öffnet sich, sonst bleibt rechts der leere Hinweis. */
+    const ausListeNehmen = (ids: number[]) => {
+        const betroffen = (selectedEmail !== null && ids.includes(selectedEmail.id)) || [...selectedIds].some(id => ids.includes(id));
+        const naechste = betroffen && !isComposing ? naechsteNachLoeschen(filteredEmails, new Set(ids)) : null;
+        entferneAusListen(ids);
+        if (!betroffen) return;
+        if (naechste) {
+            selectionVersionRef.current += 1;
+            lastSelectedIdRef.current = naechste.id;
+            setSelectedIds(new Set([naechste.id]));
+            zeigeEmail(naechste, true);
+        } else {
             setSelectedEmail(null);
         }
+    };
 
-        const fehlgeschlagen: number[] = [];
-        let serverMeldung: string | null = null;
-        for (const id of currentIds) {
-            try {
-                // Im Papierkorb: Permanent löschen (DB + Mailserver)
-                // Ansonsten: Soft delete (in Papierkorb verschieben)
-                const endpoint = isPermanentDelete
-                    ? `/api/emails/${id}/permanent`
-                    : `/api/emails/${id}`;
-                const res = await fetch(endpoint, { method: 'DELETE' });
-                if (!res.ok) {
-                    fehlgeschlagen.push(id);
-                    serverMeldung ??= await parseErrorMessage(res, '');
-                }
-            } catch {
-                fehlgeschlagen.push(id);
-            }
-        }
+    const { loeschen, wiederherstellen } = useEmailLoeschen({
+        ausblenden: ausListeNehmen,
+        neuLaden: (ids) => {
+            ids.forEach(id => pendingRemovalsRef.current.delete(id));
+            folderCacheRef.current.clear();
+            void refreshEmailsSilently();
+            void loadStats();
+            if (sucheAktiv) sucheNeuLaden();
+        },
+        geaendert: () => {
+            folderCacheRef.current.clear();
+            void loadStats();
+            refreshNotifications();
+        },
+    });
 
-        // Stats aktualisieren nach Löschung
-        folderCacheRef.current.clear();
-        loadStats();
+    /**
+     * Löscht Listenzeilen samt ihrem Verlauf im Ordner. Außerhalb des Papierkorbs ohne Rückfrage mit
+     * „Rückgängig“, im Papierkorb endgültig mit Rückfrage. Bei gemischter Auswahl (Suche in allen
+     * Ordnern) wandert nur, was noch nicht im Papierkorb liegt.
+     */
+    const loescheZeilen = (zeilen: EmailItem[]) => {
+        if (zeilen.length === 0) return Promise.resolve();
+        const endgueltig = zeilen.every(liegtImPapierkorb);
+        const auswahl = endgueltig ? zeilen : zeilen.filter(zeile => !liegtImPapierkorb(zeile));
+        const ids = expandToThreadMembers(auswahl.map(zeile => zeile.id));
+        return loeschen(ids, { endgueltig, betreff: auswahl.length === 1 ? auswahl[0].subject : null });
+    };
 
-        if (fehlgeschlagen.length > 0) {
-            // Nicht gelöschte Mails gehören wieder in die Liste: aus der Sperre nehmen und
-            // die Liste vom Server holen – der Zwischenspeicher ist oben schon geleert.
-            fehlgeschlagen.forEach(id => pendingRemovalsRef.current.delete(id));
-            refreshEmailsSilently();
-            toast.error(loeschFehlerMeldung(fehlgeschlagen.length, currentIds.length, serverMeldung));
-        }
+    /** „Wiederherstellen“ im Papierkorb: Zeilen samt Verlauf zurück in ihren Ursprungsordner. */
+    const stelleZeilenWiederHer = (zeilen: EmailItem[]) =>
+        wiederherstellen(expandToThreadMembers(zeilen.map(zeile => zeile.id)));
+
+    /** Markierte Zeilen bzw. die geöffnete Mail. */
+    const ausgewaehlteZeilen = (): EmailItem[] => {
+        const markiert = filteredEmails.filter(email => selectedIds.has(email.id));
+        if (markiert.length > 0) return markiert;
+        return selectedEmail ? [selectedEmail] : [];
     };
 
     const handleAssign = async (type: ZuordnungsZiel, targetId: number) => {
@@ -1220,34 +1165,29 @@ export default function EmailCenter() {
         }
     };
 
-    const MOVE_TARGETS = [
-        { id: 'inbox' as const, label: 'Posteingang', icon: Inbox },
-        { id: 'trash' as const, label: 'Papierkorb', icon: Trash2 },
-        { id: 'spam' as const, label: 'Spam', icon: ShieldAlert },
-        { id: 'newsletter' as const, label: 'Newsletter', icon: Newspaper }
-    ];
-    type MoveTarget = typeof MOVE_TARGETS[number]['id'];
+    const moveTargetLabel = (t: VerschiebeZiel) =>
+        VERSCHIEBE_ZIELE.find(m => m.id === t)?.label ?? t;
 
-    const moveTargetLabel = (t: MoveTarget) =>
-        MOVE_TARGETS.find(m => m.id === t)?.label ?? t;
+    /** Listenzeilen zu IDs; die geöffnete Mail zählt auch, wenn sie (Direktlink) nicht in der Liste steht. */
+    const zeilenZu = (ids: number[]): EmailItem[] => ids.flatMap(id => {
+        const zeile = filteredEmails.find(email => email.id === id) ?? (selectedEmail?.id === id ? selectedEmail : undefined);
+        return zeile ? [zeile] : [];
+    });
 
-    const handleMoveToFolder = async (target: MoveTarget, emailIds?: number[]) => {
-        const ids = expandToThreadMembers(emailIds && emailIds.length > 0
+    /**
+     * Verschieben per Menü, Mehrfachauswahl oder Ziehen. Mails, die schon im Ziel liegen, bleiben, wo
+     * sie sind. Der Papierkorb als Ziel nimmt denselben Weg wie Löschen – mit „Rückgängig“.
+     */
+    const handleMoveToFolder = async (target: VerschiebeZiel, emailIds?: number[]) => {
+        const zeilenIds = emailIds && emailIds.length > 0
             ? emailIds
-            : (selectedIds.size > 0
-                ? Array.from(selectedIds)
-                : (selectedEmail ? [selectedEmail.id] : [])));
-        if (ids.length === 0) return;
-        if (target === activeFolder) return;
+            : (selectedIds.size > 0 ? Array.from(selectedIds) : (selectedEmail ? [selectedEmail.id] : []));
+        const zeilen = zeilenZu(zeilenIds).filter(zeile => ordnerDerMail(zeile) !== target);
+        if (zeilen.length === 0) return;
+        if (target === 'trash') return loescheZeilen(zeilen);
+        const ids = expandToThreadMembers(zeilen.map(zeile => zeile.id));
 
-        const idsSet = new Set(ids);
-        ids.forEach(id => pendingRemovalsRef.current.add(id));
-        setEmails(prev => prev.filter(e => !idsSet.has(e.id)));
-        setSelectedIds(prev => {
-            const next = new Set(prev);
-            ids.forEach(id => next.delete(id));
-            return next;
-        });
+        const idsSet = entferneAusListen(ids);
         if (selectedEmail && idsSet.has(selectedEmail.id)) {
             setSelectedEmail(null);
         }
@@ -1288,7 +1228,7 @@ export default function EmailCenter() {
         const data = e.active.data.current as { emailId?: number } | undefined;
         const id = data?.emailId;
         if (id == null) return;
-        const email = emails.find(x => x.id === id) || null;
+        const email = filteredEmails.find(x => x.id === id) ?? emails.find(x => x.id === id) ?? null;
         setDragActiveEmail(email);
         const count = selectedIds.has(id) && selectedIds.size > 1 ? selectedIds.size : 1;
         setDragCount(count);
@@ -1304,13 +1244,14 @@ export default function EmailCenter() {
         const targetData = over.data.current as { folderId?: FolderType } | undefined;
         const targetFolder = targetData?.folderId;
         if (!targetFolder) return;
-        if (!['inbox', 'trash', 'spam', 'newsletter'].includes(targetFolder)) return;
+        const ziel = VERSCHIEBE_ZIELE.find(z => z.id === targetFolder);
+        if (!ziel) return;
         if (startedId == null) return;
 
         const ids = (selectedIds.has(startedId) && selectedIds.size > 1)
             ? Array.from(selectedIds)
             : [startedId];
-        handleMoveToFolder(targetFolder as MoveTarget, ids);
+        handleMoveToFolder(ziel.id, ids);
     };
 
     const handleMarkAllRead = async () => {
@@ -1334,22 +1275,6 @@ export default function EmailCenter() {
         } catch {
             toast.error("Fehler beim Markieren als gelesen");
             refreshEmailsSilently();
-        }
-    };
-
-    const formatDate = (dateStr?: string) => {
-        if (!dateStr) return '-';
-        try {
-            const date = new Date(dateStr);
-            const today = new Date();
-            const isToday = date.toDateString() === today.toDateString();
-
-            if (isToday) {
-                return date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-            }
-            return date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
-        } catch {
-            return dateStr;
         }
     };
 
@@ -1403,101 +1328,39 @@ export default function EmailCenter() {
         });
     }, [selectedEmail, inlineAttachmentIds]);
 
-    // Global search with debounce – laedt erste Seite.
-    // Suche geändert: Ergebnisse sofort leeren (zu kurz) bzw. als „sucht“ zeigen.
-    const globaleSucheGueltig = isGlobalSearch && searchQuery.trim().length >= 2;
-    const [vorherigeSuche, setVorherigeSuche] = useState({ isGlobalSearch, searchQuery });
-    if (vorherigeSuche.isGlobalSearch !== isGlobalSearch || vorherigeSuche.searchQuery !== searchQuery) {
-        setVorherigeSuche({ isGlobalSearch, searchQuery });
-        if (!globaleSucheGueltig) {
-            setGlobalSearchResults([]);
-            setSearchHasMore(false);
-            setGlobalSearchLoading(false);
-        } else {
-            setGlobalSearchLoading(true);
-        }
-    }
-    useEffect(() => {
-        if (!isGlobalSearch || !searchQuery.trim() || searchQuery.trim().length < 2) return;
-        const timeout = setTimeout(async () => {
-            try {
-                const res = await fetch(`/api/emails/search?q=${encodeURIComponent(searchQuery.trim())}&offset=0&limit=${PAGE_SIZE}`);
-                if (res.ok) {
-                    const data = await res.json();
-                    const arr: EmailItem[] = Array.isArray(data) ? data : [];
-                    setGlobalSearchResults(arr);
-                    setSearchHasMore(arr.length >= PAGE_SIZE);
-                } else {
-                    setGlobalSearchResults([]);
-                    setSearchHasMore(false);
-                }
-            } catch (err) {
-                console.error('Global search failed:', err);
-                setGlobalSearchResults([]);
-                setSearchHasMore(false);
-            } finally {
-                setGlobalSearchLoading(false);
-            }
-        }, 350);
-        return () => clearTimeout(timeout);
-    }, [isGlobalSearch, searchQuery]);
-
-    // Naechste Seite der globalen Suche nachladen
-    const loadMoreSearch = useCallback(async () => {
-        if (!isGlobalSearch || !searchQuery.trim() || searchQuery.trim().length < 2) return;
-        if (searchLoadingMore || globalSearchLoading || !searchHasMore) return;
-        const offset = globalSearchResults.length;
-        setSearchLoadingMore(true);
-        try {
-            const res = await fetch(`/api/emails/search?q=${encodeURIComponent(searchQuery.trim())}&offset=${offset}&limit=${PAGE_SIZE}`);
-            if (!res.ok) { setSearchHasMore(false); return; }
-            const data = await res.json();
-            const arr: EmailItem[] = Array.isArray(data) ? data : [];
-            setGlobalSearchResults(prev => {
-                const existing = new Set(prev.map(e => e.id));
-                const fresh = arr.filter(e => !existing.has(e.id));
-                return [...prev, ...fresh];
-            });
-            setSearchHasMore(arr.length >= PAGE_SIZE);
-        } catch (err) {
-            console.error('Load more search failed:', err);
-        } finally {
-            setSearchLoadingMore(false);
-        }
-    }, [isGlobalSearch, searchQuery, searchLoadingMore, globalSearchLoading, searchHasMore, globalSearchResults.length]);
-
-    // IntersectionObserver: triggert loadMore wenn Sentinel sichtbar wird
+    // IntersectionObserver: lädt nach, sobald das Listenende in Sicht kommt.
+    // Nach einem gescheiterten Nachladen der Suche nur noch per Knopf, sonst liefe es in einer Schleife.
     useEffect(() => {
         const node = loadMoreSentinelRef.current;
         if (!node) return;
         const observer = new IntersectionObserver(
             (entries) => {
                 if (!entries[0]?.isIntersecting) return;
-                if (isGlobalSearch) {
-                    loadMoreSearch();
-                } else {
-                    loadMoreEmails();
-                }
+                if (!sucheAktiv) loadMoreEmails();
+                else if (!sucheNachladeFehler) sucheMehrLaden();
             },
             { rootMargin: '200px 0px' } // Vorlaufzeit, damit's "ganz am Ende" gefuehlt asynchron startet
         );
         observer.observe(node);
         return () => observer.disconnect();
-    }, [isGlobalSearch, loadMoreEmails, loadMoreSearch, hasMore, searchHasMore, emails.length, globalSearchResults.length]);
+    }, [sucheAktiv, sucheNachladeFehler, sucheMehrLaden, loadMoreEmails, hasMore, sucheHatMehr, emails.length, suchTreffer.length]);
 
+    // Entf/⌫ löschen die geöffnete bzw. markierten Mails – nicht beim Schreiben, in Entwürfen oder Dialogen.
+    useLoeschTaste(!isComposing && !previewAttachment && !(activeFolder === 'drafts' && !sucheAktiv),
+        () => { void loescheZeilen(ausgewaehlteZeilen()); });
 
     /** Fett/markiert, solange irgendeine Nachricht des Verlaufs ungelesen ist. */
-    const isRowUnread = (email: EmailItem) => isGlobalSearch
+    const isRowUnread = (email: EmailItem) => sucheAktiv
         ? !email.isRead
         : (threadRowByEmailId.get(email.id)?.anyUnread ?? !email.isRead);
 
     const filteredDrafts = useMemo(() => {
-        return [...filtereEntwuerfe(drafts, searchQuery)].sort((a, b) => {
+        return [...filtereEntwuerfe(drafts, suche.begriff)].sort((a, b) => {
             const dateA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
             const dateB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
             return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
         });
-    }, [drafts, searchQuery, sortOrder]);
+    }, [drafts, suche.begriff, sortOrder]);
 
     // Set von E-Mail-IDs, zu denen ein Entwurf existiert (replyEmailId → draftId)
     const draftsByEmailId = useMemo(() => {
@@ -1508,8 +1371,11 @@ export default function EmailCenter() {
         return map;
     }, [drafts]);
 
-    const isDraftFolderView = activeFolder === 'drafts' && !isGlobalSearch;
+    const isDraftFolderView = activeFolder === 'drafts' && !sucheAktiv;
     const visibleItemCount = isDraftFolderView ? filteredDrafts.length : filteredEmails.length;
+    const leerArt: LeerArt = sucheAktiv ? 'suche'
+        : isDraftFolderView ? 'entwuerfe'
+            : readFilter === 'unread' && activeFolder !== 'sent' ? 'ungelesen' : 'ordner';
 
     // Right Pane Content Logic
     const renderRightPane = () => {
@@ -1646,7 +1512,7 @@ export default function EmailCenter() {
                         {activeFolder === 'trash' && (
                             <Button
                                 variant="outline"
-                                onClick={() => handleMoveToFolder('inbox', bulkIds)}
+                                onClick={() => { void stelleZeilenWiederHer(ausgewaehlteZeilen()); }}
                                 className="w-full gap-2 justify-start h-11 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 hover:border-emerald-300"
                             >
                                 <RotateCcw className="w-4 h-4" />
@@ -1662,11 +1528,12 @@ export default function EmailCenter() {
                                     Verschieben nach
                                 </div>
                                 <div className="grid grid-cols-2 gap-1">
-                                    {MOVE_TARGETS.filter(t => t.id !== activeFolder).map(t => (
+                                    {VERSCHIEBE_ZIELE.filter(t => t.id !== activeFolder).map(t => (
                                         <button
                                             key={t.id}
+                                            type="button"
                                             onClick={() => handleMoveToFolder(t.id, bulkIds)}
-                                            className="flex items-center gap-1.5 px-2 py-2 rounded-md text-xs font-medium text-slate-700 hover:bg-rose-50 hover:text-rose-700 border border-transparent hover:border-rose-200 transition-all cursor-pointer"
+                                            className="flex items-center gap-1.5 px-2 py-2 rounded-md text-xs font-medium text-slate-700 hover:bg-rose-50 hover:text-rose-700 border border-transparent hover:border-rose-200 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
                                         >
                                             <t.icon className="w-3.5 h-3.5" />
                                             <span className="truncate">{t.label}</span>
@@ -1738,11 +1605,12 @@ export default function EmailCenter() {
 
                         <Button
                             variant="outline"
-                            onClick={(e) => handleDelete(e)}
+                            onClick={() => { void loescheZeilen(ausgewaehlteZeilen()); }}
+                            title="Taste Entf"
                             className="w-full gap-2 justify-start h-11 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 hover:border-red-300"
                         >
                             <Trash2 className="w-4 h-4" />
-                            {activeFolder === 'trash' ? `Endgültig löschen (${selectedIds.size})` : `In Papierkorb (${selectedIds.size})`}
+                            {ausgewaehlteZeilen().every(liegtImPapierkorb) ? `Endgültig löschen (${selectedIds.size})` : `In Papierkorb (${selectedIds.size})`}
                         </Button>
                     </div>
 
@@ -1764,14 +1632,15 @@ export default function EmailCenter() {
                 <>
                     <EmailDetailHeader
                         email={selectedEmail}
-                        folder={activeFolder}
+                        folder={ordnerDerMail(selectedEmail)}
                         onReply={() => handleReply(selectedEmail)}
                         onReplyAll={hasFurtherRecipients(selectedEmail, isOwnEmail)
                             ? () => handleReply(selectedEmail, undefined, 'replyAll') : undefined}
                         onForward={() => handleForward(selectedEmail)}
                         onAssign={() => setShowAssignModal(true)}
                         onStar={() => handleToggleStar(selectedEmail.id)}
-                        onDelete={() => handleDelete(null, selectedEmail)}
+                        onDelete={() => loescheZeilen([selectedEmail])}
+                        onRestore={() => stelleZeilenWiederHer([selectedEmail])}
                         onMove={(target) => handleMoveToFolder(target, [selectedEmail.id])}
                         onSpam={handleMarkSpam}
                         onNotSpam={handleMarkNotSpam}
@@ -1907,307 +1776,49 @@ export default function EmailCenter() {
                 className="bg-white border-r border-slate-200 flex flex-col shrink-0 min-w-[280px]"
             >
                 {/* Besonderheiten des Ordners: Aufräumfrist, eigene Entwürfe, „Nicht zugeordnet“ */}
-                {!isGlobalSearch && <OrdnerHinweis ordner={activeFolder} />}
+                {!(sucheAktiv && suche.modus === 'alle') && <OrdnerHinweis ordner={activeFolder} />}
                 {/* Ordner-Header mit "Alle gelesen"-Button */}
-                {!isGlobalSearch && activeFolder !== 'sent' && ungeleseneAnzahl > 0 && (
+                {!sucheAktiv && activeFolder !== 'sent' && ungeleseneAnzahl > 0 && (
                     <UngelesenKopfzeile
                         anzahl={ungeleseneAnzahl}
                         onAlleGelesen={handleMarkAllRead}
                     />
                 )}
-                {/* Search */}
-                <div className="p-3 border-b border-slate-200 space-y-2">
-                    <div className="relative">
-                        {isGlobalSearch ? (
-                            <Globe className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-rose-500" />
-                        ) : (
-                            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                        )}
-                        <Input
-                            placeholder={isGlobalSearch ? "Globale Suche (alle Ordner)..." : "In diesem Ordner suchen..."}
-                            className={cn(
-                                "pl-9 pr-9 border-slate-200 focus:border-rose-300 focus:ring-rose-200 transition-colors",
-                                isGlobalSearch ? "bg-rose-50/50 border-rose-200" : "bg-slate-50 focus:bg-white"
-                            )}
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                        />
-                        {searchQuery && (
-                            <button
-                                onClick={() => { setSearchQuery(''); setGlobalSearchResults([]); }}
-                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                            >
-                                <X className="w-4 h-4" />
-                            </button>
-                        )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <button
-                            onClick={() => { setIsGlobalSearch(false); setGlobalSearchResults([]); }}
-                            className={cn(
-                                "flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-medium transition-all cursor-pointer",
-                                !isGlobalSearch
-                                    ? "bg-slate-100 text-slate-800 shadow-sm"
-                                    : "text-slate-500 hover:bg-slate-50"
-                            )}
-                        >
-                            <Search className="w-3 h-3" />
-                            Ordner
-                        </button>
-                        <button
-                            onClick={() => setIsGlobalSearch(true)}
-                            className={cn(
-                                "flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-medium transition-all cursor-pointer",
-                                isGlobalSearch
-                                    ? "bg-rose-100 text-rose-700 shadow-sm"
-                                    : "text-slate-500 hover:bg-slate-50"
-                            )}
-                        >
-                            <Globe className="w-3 h-3" />
-                            Alle Ordner
-                        </button>
-                        {/* Sort toggle */}
-                        <button
-                            onClick={() => setSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}
-                            className={cn(
-                                "flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium transition-all cursor-pointer shrink-0",
-                                "text-slate-500 hover:bg-rose-50 hover:text-rose-600"
-                            )}
-                            title={sortOrder === 'desc' ? 'Neueste zuerst – klicken für Älteste zuerst' : 'Älteste zuerst – klicken für Neueste zuerst'}
-                        >
-                            {sortOrder === 'desc' ? <ArrowDownAZ className="w-3.5 h-3.5" /> : <ArrowUpAZ className="w-3.5 h-3.5" />}
-                        </button>
-                    </div>
-                    {/* Lese-Filter (im Gesendet-Ordner ausgeblendet) */}
-                    {activeFolder !== 'sent' && !isDraftFolderView && (
-                        <div className="flex items-center gap-1 bg-slate-50 rounded-md p-0.5">
-                            {([
-                                { id: 'all' as const, label: 'Alle' },
-                                { id: 'unread' as const, label: 'Ungelesen' },
-                                { id: 'read' as const, label: 'Gelesen' }
-                            ]).map(opt => (
-                                <button
-                                    key={opt.id}
-                                    onClick={() => setReadFilter(opt.id)}
-                                    className={cn(
-                                        "flex-1 px-2 py-1 rounded text-xs font-medium transition-all cursor-pointer",
-                                        readFilter === opt.id
-                                            ? "bg-white text-rose-700 shadow-sm ring-1 ring-rose-200"
-                                            : "text-slate-500 hover:text-slate-700"
-                                    )}
-                                >
-                                    {opt.label}
-                                </button>
-                            ))}
-                        </div>
-                    )}
-                </div>
-
-                {/* Global search info banner */}
-                {isGlobalSearch && (
-                    <div className="px-3 py-2 bg-rose-50 border-b border-rose-100 text-xs text-rose-600 flex items-center gap-2">
-                        <Globe className="w-3.5 h-3.5 flex-shrink-0" />
-                        {searchQuery.trim().length < 2
-                            ? "Mindestens 2 Zeichen eingeben..."
-                            : globalSearchLoading
-                                ? "Suche läuft..."
-                                : `${visibleItemCount} Ergebnis${visibleItemCount !== 1 ? 'se' : ''} gefunden`}
-                    </div>
-                )}
+                <EmailSuchleiste begriff={suche.begriff} onBegriff={suche.setBegriff} modus={suche.modus} onModus={suche.setModus}
+                    sucheAktiv={sucheAktiv} sortierung={sortOrder} onSortierung={setSortOrder}
+                    leseFilter={readFilter} onLeseFilter={setReadFilter} zeigeLeseFilter={activeFolder !== 'sent' && !isDraftFolderView} />
+                <EmailSuchHinweis modus={suche.modus} begriff={suche.begriff} aktiv={sucheAktiv} laedt={suche.laedt}
+                    fehler={suche.fehler} anzahl={suchTreffer.length} hatMehr={sucheHatMehr}
+                    serverSuche={!(activeFolder === 'drafts' && suche.modus === 'ordner')} />
 
                 {/* List */}
                 <div className="flex-1 overflow-y-auto">
-                    {(loading || (isGlobalSearch && globalSearchLoading)) ? (
-                        <div className="divide-y divide-slate-100 animate-pulse">
-                            {Array.from({ length: 8 }).map((_, i) => (
-                                <div key={i} className="px-4 py-3 border-l-[3px] border-l-transparent">
-                                    <div className="flex items-start justify-between gap-2 mb-1">
-                                        <div className="h-4 bg-slate-200 rounded w-32" />
-                                        <div className="h-3 bg-slate-100 rounded w-16" />
-                                    </div>
-                                    <div className="h-4 bg-slate-200 rounded w-3/4 mb-1" />
-                                    <div className="h-3 bg-slate-100 rounded w-full" />
-                                    <div className="h-3 bg-slate-100 rounded w-2/3 mt-1" />
-                                </div>
-                            ))}
-                        </div>
+                    {(sucheAktiv ? suche.laedt : loading) ? (
+                        <EmailListeLaedt />
+                    ) : sucheAktiv && suche.fehler ? (
+                        <EmailSuchFehler onErneut={sucheNeuLaden} />
                     ) : visibleItemCount === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-48 text-slate-400 gap-2">
-                            <div className="w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center">
-                                {isGlobalSearch ? <Globe className="w-7 h-7 text-slate-300" /> : isDraftFolderView ? <FileEdit className="w-7 h-7 text-slate-300" /> : <Mail className="w-7 h-7 text-slate-300" />}
-                            </div>
-                            <p className="text-sm font-medium text-slate-500">
-                                {isGlobalSearch
-                                    ? (searchQuery.trim().length < 2 ? 'Suchbegriff eingeben' : 'Keine Treffer')
-                                    : isDraftFolderView ? 'Keine Entwürfe'
-                                    : readFilter === 'unread' && activeFolder !== 'sent' ? 'Keine ungelesenen E-Mails in diesem Ordner'
-                                    : 'Keine E-Mails'}
-                            </p>
-                            <p className="text-xs text-slate-400">
-                                {isGlobalSearch
-                                    ? 'Suche in Betreff, Absender und Inhalt'
-                                    : isDraftFolderView ? 'Entwürfe erscheinen hier sofort nach dem automatischen Speichern'
-                                    : readFilter === 'unread' && activeFolder !== 'sent' ? 'Alles gelesen – neue Nachrichten erscheinen hier automatisch'
-                                    : 'In diesem Ordner ist nichts vorhanden'}
-                            </p>
-                        </div>
+                        <EmailListeLeer art={leerArt} begriff={suche.begriff} modus={suche.modus} onAlleOrdner={() => suche.setModus('alle')} />
                     ) : (
                         <div className="divide-y divide-slate-100">
                             {isDraftFolderView ? filteredDrafts.map(draft => (
-                                <div
-                                    key={draft.id}
-                                    onClick={() => handleOpenDraft(draft)}
-                                    className="px-4 py-3 cursor-pointer transition-all duration-150 border-l-[3px] bg-amber-50/50 border-l-amber-400 hover:bg-amber-50"
-                                >
-                                    <div className="flex items-start justify-between gap-2 mb-1">
-                                        <p className="text-sm font-semibold text-slate-800 truncate">
-                                            {draft.recipient?.trim() || 'Kein Empfänger'}
-                                        </p>
-                                        <div className="flex items-center gap-1 shrink-0">
-                                            <button
-                                                onClick={(e) => handleDeleteDraft(draft.id, e)}
-                                                className="p-0.5 rounded hover:bg-red-50 transition-colors cursor-pointer"
-                                                title="Entwurf löschen"
-                                            >
-                                                <Trash2 className="w-3.5 h-3.5 text-slate-300 hover:text-red-500" />
-                                            </button>
-                                            <span className="text-xs text-slate-400 whitespace-nowrap">
-                                                {formatDate(draft.updatedAt)}
-                                            </span>
-                                        </div>
-                                    </div>
-                                    <p className="text-sm mb-1 truncate font-medium text-slate-700">
-                                        {draft.subject || '(Kein Betreff)'}
-                                    </p>
-                                    {fremderEntwurfVon(draft, eigenerName) && (
-                                        <p className="text-xs text-slate-500 mb-1 truncate">von {fremderEntwurfVon(draft, eigenerName)}</p>
-                                    )}
-                                    <p className="text-xs text-slate-400 line-clamp-2">
-                                        {(htmlZuEinzeiler(draft.body) || '...').substring(0, 150)}
-                                    </p>
-
-                                    <div className="flex gap-2 mt-2 flex-wrap">
-                                        <div className="flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200">
-                                            <FileEdit className="w-3 h-3" />
-                                            Entwurf
-                                        </div>
-                                        {draft.replyEmailId && (
-                                            <div className="flex items-center gap-1 text-xs text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
-                                                <MessagesSquare className="w-3 h-3" />
-                                                Mit Thread verknüpft
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
+                                <EmailEntwurfZeile key={draft.id} entwurf={draft} eigenerName={eigenerName}
+                                    onOeffnen={handleOpenDraft} onLoeschen={handleDeleteDraft} />
                             )) : filteredEmails.map(email => (
-                                <DraggableEmailWrapper key={email.id} emailId={email.id} disabled={activeFolder === 'sent'}>
-                                <div
-                                    onClick={(e) => handleEmailClick(e, email)}
-                                    className={cn(
-                                        "px-4 py-3 cursor-pointer transition-all duration-150 border-l-[3px]",
-                                        selectedIds.has(email.id)
-                                            ? "bg-rose-50/80 border-l-rose-500"
-                                            : !isRowUnread(email)
-                                                ? "bg-white border-l-transparent hover:bg-slate-50"
-                                                : "bg-white border-l-rose-400 hover:bg-rose-50/30"
-                                    )}
-                                >
-                                    <div className="flex items-start justify-between gap-2 mb-1">
-                                        <p className={cn(
-                                            "text-sm truncate",
-                                            isRowUnread(email) ? "font-bold text-slate-900" : "font-medium text-slate-700"
-                                        )}>
-                                            {threadCounterparts.get(email.id) || getDisplayName(email, isOwnEmail)}
-                                        </p>
-                                        <div className="flex items-center gap-1 shrink-0">
-                                            <button
-                                                onClick={(e) => handleToggleStar(email.id, e)}
-                                                className="p-0.5 rounded hover:bg-amber-50 transition-colors cursor-pointer"
-                                                title={email.isStarred ? 'Markierung entfernen' : 'Markieren'}
-                                            >
-                                                <Star className={cn(
-                                                    "w-3.5 h-3.5 transition-colors",
-                                                    email.isStarred ? "fill-amber-400 text-amber-400" : "text-slate-300 hover:text-amber-400"
-                                                )} />
-                                            </button>
-                                            <span className="text-xs text-slate-400 whitespace-nowrap">
-                                                {formatDate(email.sentAt)}
-                                            </span>
-                                        </div>
-                                    </div>
-                                    <p className={cn(
-                                        "text-sm mb-1 truncate",
-                                        isRowUnread(email) ? "font-semibold text-slate-800" : "text-slate-600"
-                                    )}>
-                                        {email.subject || '(Kein Betreff)'}
-                                    </p>
-                                    <p className="text-xs text-slate-400 line-clamp-2">
-                                        {getThreadPreview(email.htmlBody || email.body || '') || 'Kein neuer Nachrichtentext'}
-                                    </p>
-
-                                    {/* Badges */}
-                                    <div className="flex gap-2 mt-2 flex-wrap">
-                                        {/* Thread-Badge: zeigt Anzahl Nachrichten im Thread */}
-                                        {email.replyCount != null && email.replyCount > 0 && (
-                                            <div
-                                                className="flex items-center gap-1 text-xs font-semibold text-white bg-rose-600 px-2 py-0.5 rounded-full shadow-sm"
-                                                title={`${email.replyCount + 1} Nachrichten in diesem Thread`}
-                                            >
-                                                <MessagesSquare className="w-3 h-3" />
-                                                {email.replyCount + 1} Nachrichten
-                                            </div>
-                                        )}
-                                        {email.attachments && email.attachments.length > 0 && (
-                                            <div className="flex items-center gap-1 text-xs text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
-                                                <Paperclip className="w-3 h-3" />
-                                                {email.attachments.length}
-                                            </div>
-                                        )}
-                                        {email.spamScore != null && email.spamScore > 0 && (
-                                            <div className={cn(
-                                                "flex items-center gap-1 text-xs px-1.5 py-0.5 rounded",
-                                                email.spamScore >= 90 ? "text-red-700 bg-red-100 border border-red-200 font-semibold" :
-                                                email.spamScore >= 50 ? "text-orange-700 bg-orange-50 border border-orange-200" :
-                                                "text-slate-500 bg-slate-50 border border-slate-200"
-                                            )}>
-                                                <ShieldAlert className="w-3 h-3" />
-                                                {email.spamScore}% Spam
-                                            </div>
-                                        )}
-                                        <PostfachSchild postfaecher={email.postfaecher} />
-                                        <EmailZuordnungLink zuordnung={ermittleEmailZuordnung(email)} variante="liste" />
-                                        {draftsByEmailId.has(email.id) && (
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    const draft = draftsByEmailId.get(email.id)!;
-                                                    handleOpenDraft(draft);
-                                                }}
-                                                className="flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200 hover:bg-amber-200 transition-colors cursor-pointer"
-                                                title="Entwurf öffnen"
-                                            >
-                                                <FileEdit className="w-3 h-3" />
-                                                Entwurf
-                                            </button>
-                                        )}
-                                    </div>
-                                </div>
-                                </DraggableEmailWrapper>
+                                <EmailListenZeile key={email.id} email={email}
+                                    name={threadCounterparts.get(email.id) || getDisplayName(email, isOwnEmail)}
+                                    ausgewaehlt={selectedIds.has(email.id)} ungelesen={isRowUnread(email)}
+                                    zeigeOrdner={sucheAktiv && suche.modus === 'alle'} imPapierkorb={liegtImPapierkorb(email)}
+                                    ziehbar={activeFolder !== 'sent'} entwurf={draftsByEmailId.get(email.id)}
+                                    onOeffnen={handleEmailClick} onStern={(zeile) => handleToggleStar(zeile.id)}
+                                    onLoeschen={(zeile) => { void loescheZeilen([zeile]); }} onEntwurf={handleOpenDraft} />
                             ))}
-                            {/* Infinite-Scroll Sentinel + "Lade mehr"-Indikator (nur in Email-Listenansicht) */}
+                            {/* Listenende: lädt beim Hinscrollen nach oder per Knopf */}
                             {!isDraftFolderView && (
-                                <div ref={loadMoreSentinelRef} className="px-4 py-3 text-center">
-                                    {(isGlobalSearch ? searchLoadingMore : loadingMore) ? (
-                                        <div className="inline-flex items-center gap-2 text-xs text-slate-400">
-                                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                                            Weitere Nachrichten werden geladen...
-                                        </div>
-                                    ) : (isGlobalSearch ? !searchHasMore : !hasMore) ? (
-                                        <span className="text-xs text-slate-300">Ende der Liste</span>
-                                    ) : (
-                                        <span className="text-xs text-slate-400">Scroll fuer weitere Nachrichten</span>
-                                    )}
-                                </div>
+                                <EmailListenEnde ref={loadMoreSentinelRef}
+                                    laedtMehr={sucheAktiv ? suche.laedtMehr : loadingMore}
+                                    hatMehr={sucheAktiv ? sucheHatMehr : hasMore}
+                                    onMehr={sucheAktiv ? sucheMehrLaden : () => { void loadMoreEmails(); }} />
                             )}
                         </div>
                     )}
@@ -2216,15 +1827,15 @@ export default function EmailCenter() {
                 {/* Footer Status */}
                 <div className="px-4 py-2.5 border-t border-slate-200 text-xs text-slate-500 flex items-center justify-between gap-2">
                     <span>
-                        {isGlobalSearch && <Globe className="w-3 h-3 inline mr-1 text-rose-500" />}
                         {(() => {
-                            // Bei „Ungelesen" wäre die Gesamtzahl des Ordners irreführend.
-                            const total = isGlobalSearch || nurUngelesen
+                            // Bei „Ungelesen" und bei Suchtreffern wäre die Gesamtzahl des Ordners irreführend.
+                            const total = sucheAktiv || nurUngelesen
                                 ? null
                                 : (folderTotals[activeFolder] ?? null);
-                            const noun = visibleItemCount === 1
-                                ? (isDraftFolderView ? 'Entwurf' : 'Nachricht')
-                                : (isDraftFolderView ? 'Entwürfe' : 'Nachrichten');
+                            const noun = sucheAktiv ? 'Treffer'
+                                : visibleItemCount === 1
+                                    ? (isDraftFolderView ? 'Entwurf' : 'Nachricht')
+                                    : (isDraftFolderView ? 'Entwürfe' : 'Nachrichten');
                             if (total != null && total > visibleItemCount) {
                                 return `${visibleItemCount} von ${total} ${noun}`;
                             }

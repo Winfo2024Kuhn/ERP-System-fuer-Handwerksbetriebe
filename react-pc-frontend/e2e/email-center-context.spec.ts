@@ -17,7 +17,7 @@ async function prepare(page: Page, empty = false) {
         if (path.endsWith('/stats')) body = { inboxCount: 2, starredCount: 2, unassignedCount: 2 };
         else if (path.endsWith('/absender-postfaecher')) body = [{ id: 1, emailAdresse: 'betrieb@example.com', anzeigename: null, eigenes: false, hauptpostfach: true }];
         else if (path.endsWith('/thread')) body = { rootEmailId: message?.id, focusedEmailId: message?.id, emails: [message] };
-        else if (path.endsWith('/search')) body = messages;
+        else if (path.endsWith('/suche')) body = { eintraege: messages, hatMehr: false, seite: 0, seitenGroesse: 25 };
         else if (/\/emails\/(starred|unassigned|newsletter)$/.test(path)) body = empty ? [] : messages;
         else if (message) body = message;
         await route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
@@ -25,10 +25,10 @@ async function prepare(page: Page, empty = false) {
 }
 
 for (const [folder, label] of [['starred', 'Markiert'], ['unassigned', 'Nicht zugeordnet']]) {
-    test(`${label}: Mail öffnen erhält Ordner und lokale Suche`, async ({ page }) => {
+    test(`${label}: Mail öffnen erhält Ordner und Suche`, async ({ page }) => {
         await prepare(page);
         await page.goto(`/emails/${folder}`);
-        const search = page.getByPlaceholder('In diesem Ordner suchen...');
+        const search = page.getByRole('searchbox', { name: 'E-Mails durchsuchen' });
         await search.fill('Montage');
         for (const mail of messages) {
             await page.getByText(mail.subject, { exact: true }).first().click();
@@ -45,7 +45,7 @@ test('Globale Suchergebnisse bleiben beim Öffnen und Wechseln einer Mail besteh
     await prepare(page, true);
     await page.goto('/emails/unassigned');
     await page.getByRole('button', { name: 'Alle Ordner', exact: true }).click();
-    const search = page.getByPlaceholder('Globale Suche (alle Ordner)...');
+    const search = page.getByRole('searchbox', { name: 'E-Mails durchsuchen' });
     await search.fill('Montage');
     for (const mail of messages) {
         await page.getByText(mail.subject, { exact: true }).first().click();

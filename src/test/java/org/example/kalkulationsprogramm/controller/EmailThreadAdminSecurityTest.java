@@ -44,7 +44,8 @@ import org.springframework.test.web.servlet.MockMvc;
  * für Admins erreichbar ist und ohne ausdrückliche Angabe nur einen Probelauf macht.
  */
 @WebMvcTest(controllers = UnifiedEmailController.class)
-@Import({ SecurityConfig.class, EmailThreadAdminSecurityTest.EchteFilterBeans.class })
+@Import({ SecurityConfig.class, EmailThreadAdminSecurityTest.EchteFilterBeans.class,
+        org.example.kalkulationsprogramm.service.mail.liste.EmailListenDtoMapper.class, org.example.kalkulationsprogramm.service.mail.liste.SteuerberaterOrdner.class })
 @org.springframework.test.context.TestPropertySource(properties = "file.mail-attachment-dir=target/test-attachments")
 class EmailThreadAdminSecurityTest {
 
