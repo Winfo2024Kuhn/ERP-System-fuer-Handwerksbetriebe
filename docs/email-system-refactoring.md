@@ -15,7 +15,7 @@
 | **Vorlagen & Stammdaten › Administration › Einstellungen** → Reiter **„E-Mail“** → „Postfächer“ | Admin | Postfächer anlegen, Zugangsdaten, Hauptpostfach |
 | **Einstellungen** → Reiter **„Abteilungen & Rechte“** → „E-Mail-Postfächer – wer sieht welches Postfach?“ | Admin | Sichtbarkeit je Abteilung und Benutzer |
 | Benutzermenü → **„Benutzer verwalten“** → Feld „Eigenes Postfach“ | Admin | Einem Benutzer sein Postfach zuordnen |
-| Projekt, Anfrage, Lieferant („E-Mail-Verlauf“), Steuerberater | alle | Alle Mails zu diesem Vorgang |
+| Projekt, Anfrage, Kunde, Lieferant (Reiter „E-Mails“), Steuerberater | alle | Alle Mails zu diesem Vorgang, als Verläufe seitenweise (25 je Seite, „Mehr laden“) |
 
 ### So geht's (Kurzfassung)
 
@@ -170,7 +170,7 @@ Ort: **Kommunikation › E-Mail › E-Mail Vorlagen**. Je Dokumenttyp eine Vorla
 - **Aktionen an einer Mail:** „Antworten“, „Allen antworten“, Stern (markieren), Menü mit „Weiterleiten“, „Zuordnen“, „Alle Anhänge herunterladen“, „Verschieben nach“, „Wiederherstellen“, „Kein Spam“ / „Als Spam markieren“, „Kein Newsletter“ / „Newsletter bestätigen“, „Absender sperren“, „In Papierkorb“ / „Endgültig löschen“.
 - **Ziehen und Ablegen** auf „Posteingang“, „Newsletter“, „Spam“ und „Papierkorb“.
 - Jede Mail zeigt, in welchem Postfach sie liegt. Verläufe werden zusammengefasst angezeigt, Zitate eingeklappt.
-- In Projekt, Anfrage und Lieferant zeigt der E-Mail-Reiter alle zugeordneten Mails – unabhängig von der Postfach-Sichtbarkeit.
+- In Projekt, Anfrage, Kunde und Lieferant zeigt der E-Mail-Reiter alle zugeordneten Mails – unabhängig von der Postfach-Sichtbarkeit (zugeordnete Mails darf jeder öffnen). Eine Zeile ist ein Verlauf; geladen wird seitenweise über `GET /api/emails/reiter/{bezug}/{id}`, Suche und Filter Eingang/Ausgang laufen beim Server. Die neueste Mail bestimmt die Reihenfolge – eine neue Antwort holt einen alten Verlauf nach oben. Mitgezählt werden im Verlauf nur Mails, die der Benutzer öffnen darf. Die Detailseiten liefern nur die Zahl `emailAnzahl` für die Beschriftung „E-Mails (140)“.
 
 ---
 
@@ -178,7 +178,7 @@ Ort: **Kommunikation › E-Mail › E-Mail Vorlagen**. Je Dokumenttyp eine Vorla
 
 | Basis | Wichtige Endpunkte |
 |---|---|
-| `/api/emails` | Ordner: `GET /inbox`, `/sent`, `/projects`, `/offers` (Anfragen), `/suppliers`, `/tax-advisors`, `/unassigned`, `/starred`, `/newsletter`, `/spam`, `/trash`, `/stats`; Suche `GET /suche` (`q`, `ordner`, `page`, `size`; `EmailSucheController`); je Vorgang `GET /projekt/{id}`, `/anfrage/{id}`, `/lieferant/{id}`; Einzelmail `GET /{id}`, `/{id}/thread`, `/{id}/attachments/{aid}`; `GET /absender-postfaecher`; Senden `POST /send`, `/{id}/reply` (multipart); Zuordnen `POST /{id}/assign/projekt/{x}`, `/assign/anfrage/{x}`, `/assign/lieferant/{x}`, `/{id}/unassign`; Spam `POST /{id}/mark-spam`, `/mark-not-spam`, `/mark-not-newsletter`, `/confirm-newsletter`, `/{id}/block-sender`; `POST /{id}/mark-read`, `/{id}/toggle-star`, `/bulk/move-to-folder`, `/mark-all-read`; Papierkorb mit Rückgängig `POST /papierkorb`, `/papierkorb/zurueckholen` (`EmailPapierkorbController`); endgültig `DELETE /{id}/permanent`; Wartung `POST /import`, `/scan-*`, `/admin/rebuild-threads` (nur Admin) |
+| `/api/emails` | Ordner: `GET /inbox`, `/sent`, `/projects`, `/offers` (Anfragen), `/suppliers`, `/tax-advisors`, `/unassigned`, `/starred`, `/newsletter`, `/spam`, `/trash`, `/stats`; Suche `GET /suche` (`q`, `ordner`, `page`, `size`; `EmailSucheController`); je Vorgang `GET /reiter/{bezug}/{id}` (`projekt`, `anfrage`, `kunde`, `lieferant`; `page`, `size`, `q`, `richtung`; `EmailReiterController`); Einzelmail `GET /{id}`, `/{id}/thread`, `/{id}/attachments/{aid}`; `GET /absender-postfaecher`; Senden `POST /send`, `/{id}/reply` (multipart); Zuordnen `POST /{id}/assign/projekt/{x}`, `/assign/anfrage/{x}`, `/assign/lieferant/{x}`, `/{id}/unassign`; Spam `POST /{id}/mark-spam`, `/mark-not-spam`, `/mark-not-newsletter`, `/confirm-newsletter`, `/{id}/block-sender`; `POST /{id}/mark-read`, `/{id}/toggle-star`, `/bulk/move-to-folder`, `/mark-all-read`; Papierkorb mit Rückgängig `POST /papierkorb`, `/papierkorb/zurueckholen` (`EmailPapierkorbController`); endgültig `DELETE /{id}/permanent`; Wartung `POST /import`, `/scan-*`, `/admin/rebuild-threads` (nur Admin) |
 | `/api/emails/drafts` | Entwürfe anlegen, ändern, löschen, `/count`, Anhänge |
 | `/api/email` | `GET /from-addresses`, `/dokument-absender`; `POST /beautify` (KI-Formulierung), `/preview`, `/send`, `/send/anfrage` (Geschäftsdokumente) |
 | `/api/email/template` | Vorlage für einen Dokumenttyp rendern (`anrede` = Anrede-Art als Rohwert, z. B. `HERR`) |
@@ -220,4 +220,5 @@ Server, Benutzernamen und Passwörter der Postfächer werden in der Oberfläche 
 | `EmailSignaturVerwaltungService`, `EmailSignatureService` | Signaturen |
 | `AbwesenheitsnotizService`, `OutOfOfficeResponder` | Abwesenheitsnotizen |
 | `EmailTextTemplateService` | E-Mail-Vorlagen |
+| `EmailReiterService`, `EmailReiterEintraege`, `EmailReiterRepository` | E-Mail-Reiter der Detailseiten: Verläufe, Suche, Seiten, Zähler |
 | `UnifiedEmailController`, `EmailController`, `EmailDraftController`, `PostfachController` | REST-API |

@@ -34,7 +34,7 @@ function akte(loeschbar: boolean, gesperrt = false) {
         zahlungsziel: 8,
         kundenEmails: gesperrt ? [] : ['max@example.com'],
         statistik: { projektAnzahl: 1, anfrageAnzahl: 0, emailAdresseAnzahl: 1, gesamtUmsatz: 1000, gesamtGewinn: 200 },
-        kommunikation: [],
+        emailAnzahl: 0,
         projekte: loeschbar ? [] : [
             { id: 5, bauvorhaben: 'Carport Mustermann', auftragsnummer: 'A-2026-0005', anlegedatum: '2026-01-15', bezahlt: true, bruttoPreis: 1000 },
         ],

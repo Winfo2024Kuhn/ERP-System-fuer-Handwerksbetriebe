@@ -206,7 +206,7 @@ function dummyAkte(zahlungsziel: number) {
         projekte: [{ id: 1, bauvorhaben: 'Carport Mustermann', auftragsnummer: 'A-1', bruttoPreis: 1000, bezahlt: false }],
         anfragen: [],
         geschaeftsdokumente: [],
-        kommunikation: [],
+        emailAnzahl: 0,
         notizen: [],
     };
 }

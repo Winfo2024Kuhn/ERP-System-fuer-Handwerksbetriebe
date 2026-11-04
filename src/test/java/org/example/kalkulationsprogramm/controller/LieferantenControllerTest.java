@@ -4,7 +4,6 @@ import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.LieferantRolle;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantDetailDto;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantStatistikDto;
-import org.example.kalkulationsprogramm.dto.Lieferant.LieferantEmailDto;
 import org.example.kalkulationsprogramm.mapper.LieferantMapper;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
@@ -222,20 +221,6 @@ class LieferantenControllerTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.artikelAnzahl").value(42));
     mockMvc.perform(get("/api/lieferanten/99/statistik"))
-        .andExpect(status().isNotFound());
-  }
-
-  @Test
-  @DisplayName("E-Mail-Verlauf: liefert Liste bzw. 404")
-  void getEmailVerlauf() throws Exception {
-    when(lieferantenRepository.existsById(5L)).thenReturn(true);
-    when(lieferantenRepository.existsById(99L)).thenReturn(false);
-    when(lieferantenDetailService.loadEmailVerlauf(5L)).thenReturn(List.of());
-
-    mockMvc.perform(get("/api/lieferanten/5/email-verlauf"))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$").isArray());
-    mockMvc.perform(get("/api/lieferanten/99/email-verlauf"))
         .andExpect(status().isNotFound());
   }
 

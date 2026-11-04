@@ -344,18 +344,6 @@ class UnifiedEmailSichtbarkeitSecurityTest {
         }
 
         @Test
-        void projektReiterUngefiltert() throws Exception {
-            Projekt projekt = fremdeProjektMail.getProjekt();
-            given(projektRepository.findById(5L)).willReturn(Optional.of(projekt));
-            given(emailRepository.findByProjektOrderBySentAtDesc(projekt)).willReturn(List.of(fremdeProjektMail));
-
-            mockMvc.perform(get("/api/emails/projekt/5"))
-                    .andExpect(status().isOk())
-                    .andExpect(jsonPath("$", hasSize(1)))
-                    .andExpect(jsonPath("$[0].id").value(FREMDE_PROJEKT_MAIL));
-        }
-
-        @Test
         void zaehlerNurUeberSichtbare() throws Exception {
             given(emailRepository.findInboxFiltered()).willReturn(List.of(infoMail, fremdeMail));
             given(emailRepository.findProjectEmails()).willReturn(List.of(fremdeProjektMail));
@@ -1020,26 +1008,6 @@ class UnifiedEmailSichtbarkeitSecurityTest {
     @DisplayName("Reiter und Detail-Ansicht")
     @WithMockUser(username = "erika", roles = "USER")
     class ReiterUndDetail {
-
-        @Test
-        void alleReiterUngefiltertUndUnbekannt404() throws Exception {
-            org.example.kalkulationsprogramm.domain.Anfrage anfrage = new org.example.kalkulationsprogramm.domain.Anfrage();
-            anfrage.setId(6L);
-            org.example.kalkulationsprogramm.domain.Lieferanten lieferant = new org.example.kalkulationsprogramm.domain.Lieferanten();
-            lieferant.setId(8L);
-            given(anfrageRepository.findById(6L)).willReturn(Optional.of(anfrage));
-            given(lieferantenRepository.findById(8L)).willReturn(Optional.of(lieferant));
-            given(emailRepository.findByAnfrageOrderBySentAtDesc(anfrage)).willReturn(List.of(fremdeMail));
-            given(emailRepository.findByLieferantOrderBySentAtDesc(lieferant)).willReturn(List.of(fremdeMail));
-
-            mockMvc.perform(get("/api/emails/anfrage/6")).andExpect(status().isOk())
-                    .andExpect(jsonPath("$[0].id").value(FREMDE_MAIL));
-            mockMvc.perform(get("/api/emails/lieferant/8")).andExpect(status().isOk())
-                    .andExpect(jsonPath("$[0].id").value(FREMDE_MAIL));
-            for (String reiter : List.of("projekt", "anfrage", "lieferant")) {
-                mockMvc.perform(get("/api/emails/" + reiter + "/" + Long.MAX_VALUE)).andExpect(status().isNotFound());
-            }
-        }
 
         @Test
         void detailMitEingebettetemBildUndOhneRichtung() throws Exception {

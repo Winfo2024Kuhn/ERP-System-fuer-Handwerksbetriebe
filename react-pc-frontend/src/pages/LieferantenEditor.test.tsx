@@ -207,8 +207,7 @@ const DUMMY_DETAIL = {
     ort: 'Musterstadt',
     lieferantenTyp: 'Lieferant',
     rollen: [],
-    emails: [],
-    kommunikation: [],
+    emailAnzahl: 0,
     dokumente: [],
     notizen: [],
     kundenEmails: [],
@@ -289,11 +288,11 @@ describe('LieferantenEditor – Reiter in der Adresszeile', () => {
         expect(offenerReiter).toHaveTextContent(/Dokumente/);
     });
 
-    it('öffnet die Seite mit Stammdaten und lädt den E-Mail-Verlauf erst danach', async () => {
+    it('öffnet die Seite mit Stammdaten, der E-Mail-Reiter lädt seine erste Seite selbst', async () => {
         let emailsFreigeben: (body: unknown) => void = () => {};
         const basis = mockDetailApi();
         fetchMock = vi.fn((url: string) => {
-            if (url === '/api/lieferanten/7/email-verlauf') {
+            if (url === '/api/emails/reiter/lieferant/7?page=0&size=25') {
                 return new Promise(resolve => {
                     emailsFreigeben = (body) => resolve({ ok: true, json: () => Promise.resolve(body) });
                 });
@@ -312,9 +311,12 @@ describe('LieferantenEditor – Reiter in der Adresszeile', () => {
             expect(aufrufe).toContain('/api/lieferanten/7/statistik');
             expect(aufrufe).toContain('/api/lieferanten/7/notizen');
         });
+        // Den alten Gesamt-Abruf aller Mails gibt es nicht mehr.
+        expect(fetchMock.mock.calls.map((aufruf: unknown[]) => aufruf[0])).not.toContain('/api/lieferanten/7/email-verlauf');
 
-        await act(async () => emailsFreigeben([]));
+        await act(async () => emailsFreigeben({ eintraege: [], gesamt: 0, seite: 0, seitenGroesse: 25 }));
         await waitFor(() => expect(screen.queryByText('E-Mails werden geladen…')).not.toBeInTheDocument());
+        expect(screen.getByText('Keine E-Mails vorhanden.')).toBeInTheDocument();
     });
 
     it('fällt bei unbekanntem Reiter auf den E-Mail-Verlauf zurück', async () => {

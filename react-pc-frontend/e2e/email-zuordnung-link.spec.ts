@@ -50,7 +50,7 @@ const EMAILS = [
 const LIEFERANT = {
     id: 7, lieferantenname: 'Musterhandel GmbH', lieferantenTyp: 'Lieferant', rollen: [],
     strasse: 'Musterweg 1', plz: '12345', ort: 'Musterstadt',
-    emails: [], kommunikation: [], notizen: [], kundenEmails: [], dokumente: [],
+    emailAnzahl: 0, notizen: [], kundenEmails: [], dokumente: [],
 };
 
 async function vorbereiten(page: Page, start: string) {

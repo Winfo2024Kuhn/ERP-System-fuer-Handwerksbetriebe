@@ -1,7 +1,9 @@
+import type { ReactNode } from 'react';
 import { Plus, Search } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
 import { SegmentAuswahl, type SegmentOption } from '../../../components/ui/segment-auswahl';
+import { SUCHE_MAX_LAENGE } from './emailsTabListe';
 import type { EmailsTabFilter } from './emailsTabTypes';
 
 interface EmailsTabToolbarProps {
@@ -11,6 +13,8 @@ interface EmailsTabToolbarProps {
     onFilterChange: (filter: EmailsTabFilter) => void;
     showCompose: boolean;
     onCompose: () => void;
+    /** Erklärung (InfoButton) neben Suche und Filter, z. B. im Kunden-Reiter. */
+    info?: ReactNode;
 }
 
 const FILTER: SegmentOption[] = [
@@ -19,8 +23,8 @@ const FILTER: SegmentOption[] = [
     { wert: 'out', text: 'Ausgang' },
 ];
 
-/** Kopf des E-Mail-Reiters: Überschrift, Suche, Filter Alle/Eingang/Ausgang, „Neue E-Mail“. */
-export function EmailsTabToolbar({ search, onSearchChange, filter, onFilterChange, showCompose, onCompose }: EmailsTabToolbarProps) {
+/** Kopf des E-Mail-Reiters: Überschrift, Suche, Filter Alle/Eingang/Ausgang, optional Erklärung, „Neue E-Mail“. */
+export function EmailsTabToolbar({ search, onSearchChange, filter, onFilterChange, showCompose, onCompose, info }: EmailsTabToolbarProps) {
     return (
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
             <h3 className="text-lg font-medium text-slate-900">E-Mails</h3>
@@ -32,6 +36,7 @@ export function EmailsTabToolbar({ search, onSearchChange, filter, onFilterChang
                         aria-label="E-Mails durchsuchen"
                         placeholder="E-Mails durchsuchen…"
                         value={search}
+                        maxLength={SUCHE_MAX_LAENGE}
                         onChange={e => onSearchChange(e.target.value)}
                         className="pl-9 pr-3 py-2 rounded-lg w-60"
                     />
@@ -42,6 +47,7 @@ export function EmailsTabToolbar({ search, onSearchChange, filter, onFilterChang
                     wert={filter}
                     onChange={wert => onFilterChange(wert as EmailsTabFilter)}
                 />
+                {info}
                 {showCompose && (
                     <Button onClick={onCompose}>
                         <Plus aria-hidden="true" className="w-4 h-4 mr-2" /> Neue E-Mail

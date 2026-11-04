@@ -121,7 +121,7 @@ const DUMMY_KUNDE = {
         gesamtUmsatz: 225000,
         gesamtGewinn: 42000,
     },
-    kommunikation: [],
+    emailAnzahl: 0,
     projekte: [
         { id: 5, bauvorhaben: BAUVORHABEN_LANG, auftragsnummer: 'A-2026-0005', anlegedatum: '2026-01-15', bezahlt: false, bruttoPreis: 125000 },
     ],

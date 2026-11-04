@@ -14,12 +14,8 @@ import org.example.kalkulationsprogramm.domain.FrontendUserRole;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.dto.LieferantDokumentDto;
-import org.example.kalkulationsprogramm.dto.Lieferant.LieferantAttachmentViewDto;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantDetailDto;
-import org.example.kalkulationsprogramm.dto.Lieferant.LieferantKommunikationDto;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantStatistikDto;
-import org.example.kalkulationsprogramm.dto.ProjektEmail.ProjektEmailDto;
-import org.example.kalkulationsprogramm.dto.ProjektEmail.ProjektEmailFileDto;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 
@@ -71,15 +67,14 @@ public class LieferantDokumentZugriffService {
     }
 
     /**
-     * Beschränkt eine Lieferanten-Detailantwort auf die sichtbaren Dokumenttypen: Dokumente,
-     * E-Mail-Anhänge (Rechnung per Mail) und Kennzahlen aus Dokumenten. Wer nicht zuzuordnen
+     * Beschränkt eine Lieferanten-Detailantwort auf die sichtbaren Dokumenttypen: Dokumente und
+     * Kennzahlen aus Dokumenten. E-Mail-Anhänge (Rechnung per Mail) prüft der E-Mail-Reiter selbst
+     * über {@link #gesperrteAnhaenge}. Wer nicht zuzuordnen
      * ist, bekommt nichts davon — die Stammdaten bleiben unberührt.
      */
     public void beschraenkeDokumente(LieferantDetailDto detail, String token, Authentication auth) {
         Set<LieferantDokumentTyp> sichtbar = sichtbareTypen(token, auth).orElseGet(this::keine);
         beschraenkeStatistik(detail.getStatistik(), sichtbar);
-        beschraenkeKommunikation(detail.getKommunikation(), sichtbar);
-        beschraenkeEmailVerlauf(detail.getEmails(), sichtbar);
         List<LieferantDokumentDto.Response> dokumente = detail.getDokumente();
         if (dokumente == null) {
             // nurStammdaten: nur der Zähler für den Reiter ist gefüllt, aber ungefiltert.
@@ -157,43 +152,11 @@ public class LieferantDokumentZugriffService {
         }
     }
 
-    /** E-Mail-Verlauf: Anhänge, die als Dokument eines nicht sichtbaren Typs abgelegt sind, entfallen. */
-    public void beschraenkeEmailVerlauf(List<ProjektEmailDto> emails, Set<LieferantDokumentTyp> sichtbar) {
-        if (emails == null) {
-            return;
-        }
-        Set<Long> gesperrt = gesperrteAnhaenge(emails.stream()
-                .filter(e -> e.getAttachments() != null)
-                .flatMap(e -> e.getAttachments().stream())
-                .map(ProjektEmailFileDto::getId)
-                .collect(Collectors.toSet()), sichtbar);
-        if (gesperrt.isEmpty()) {
-            return;
-        }
-        emails.stream().filter(e -> e.getAttachments() != null).forEach(e -> e.setAttachments(
-                e.getAttachments().stream().filter(a -> !gesperrt.contains(a.getId())).toList()));
-    }
-
-    /** Kommunikation der Detailantwort: wie {@link #beschraenkeEmailVerlauf}. */
-    public void beschraenkeKommunikation(List<LieferantKommunikationDto> kommunikation,
-            Set<LieferantDokumentTyp> sichtbar) {
-        if (kommunikation == null) {
-            return;
-        }
-        Set<Long> gesperrt = gesperrteAnhaenge(kommunikation.stream()
-                .filter(k -> k.getAttachments() != null)
-                .flatMap(k -> k.getAttachments().stream())
-                .map(LieferantAttachmentViewDto::getId)
-                .collect(Collectors.toSet()), sichtbar);
-        if (gesperrt.isEmpty()) {
-            return;
-        }
-        kommunikation.stream().filter(k -> k.getAttachments() != null).forEach(k -> k.setAttachments(
-                k.getAttachments().stream().filter(a -> !gesperrt.contains(a.getId())).toList()));
-    }
-
-    /** Anhänge, die als Dokument eines nicht sichtbaren Typs abgelegt sind. */
-    private Set<Long> gesperrteAnhaenge(Collection<Long> anhangIds, Set<LieferantDokumentTyp> sichtbar) {
+    /**
+     * Welche dieser E-Mail-Anhänge sind als Dokument eines nicht sichtbaren Typs abgelegt? Anhänge ohne
+     * Dokument sind frei. Genutzt von {@link #istAnhangSichtbar} und dem E-Mail-Reiter (Lieferant).
+     */
+    public Set<Long> gesperrteAnhaenge(Collection<Long> anhangIds, Set<LieferantDokumentTyp> sichtbar) {
         Set<Long> ids = anhangIds.stream().filter(Objects::nonNull).collect(Collectors.toSet());
         EnumSet<LieferantDokumentTyp> gesperrteTypen = EnumSet.allOf(LieferantDokumentTyp.class);
         gesperrteTypen.removeAll(sichtbar);

@@ -3,13 +3,12 @@ import { AlertTriangle, ArrowDownLeft, ArrowUpRight, Mail, MessagesSquare, Paper
 import { klartextGrund } from '../../../lib/zustellGrund';
 import { cn } from '../../../lib/utils';
 import { formatEmailDate } from './emailsTabFormat';
-import type { ThreadRootEmail } from './emailsTabThreadRoots';
+import type { EmailsTabEintrag } from './emailsTabTypes';
 
 interface EmailsTabListItemProps {
-    email: ThreadRootEmail;
-    /** Vorschauzeile ohne zitierten Verlauf, einmal je Mailliste im Reiter berechnet. */
-    preview: string | undefined;
-    onOpen: (email: ThreadRootEmail) => void;
+    /** Ein Verlauf; zeigt dessen neueste Nachricht (Vorschau ohne zitierten Verlauf). */
+    email: EmailsTabEintrag;
+    onOpen: (email: EmailsTabEintrag) => void;
 }
 
 /**
@@ -17,9 +16,9 @@ interface EmailsTabListItemProps {
  * Echter Knopf (Tab, Enter, Leertaste); Name ist der Betreff, der Rest die Beschreibung.
  * Innen nur `span`, weil ein Knopf keine Block-Elemente enthalten darf.
  */
-export function EmailsTabListItem({ email, preview, onOpen }: EmailsTabListItemProps) {
-    const isThread = email._replyCount > 0;
-    const mitAnhang = !!email.attachments?.some(a => !a.inline);
+export function EmailsTabListItem({ email, onOpen }: EmailsTabListItemProps) {
+    const isThread = email.nachrichtenAnzahl > 1;
+    const { mitAnhang } = email;
     const betreffId = useId();
     const chipsId = useId();
     const detailsId = useId();
@@ -45,17 +44,17 @@ export function EmailsTabListItem({ email, preview, onOpen }: EmailsTabListItemP
                     <span id={detailsId} className="block">
                         <span className="block text-sm text-slate-500 truncate">
                             {email.direction === 'IN' ? 'Von: ' : 'An: '}
-                            {email.from || email.fromAddress || email.sender || 'Unbekannt'}
+                            {(email.direction === 'IN' ? email.fromAddress : email.recipient) || 'Unbekannt'}
                         </span>
-                        {(email.bodyHtml || email.bodyPreview || email.body) && (
-                            <span className="block text-sm text-slate-500 mt-1 line-clamp-2">{preview}</span>
+                        {email.vorschau && (
+                            <span className="block text-sm text-slate-500 mt-1 line-clamp-2">{email.vorschau}</span>
                         )}
                         {mitAnhang && <span className="sr-only">mit Anhang</span>}
                         {/* Rückläufer-Warnung: Ohne diesen Hinweis sieht eine nie
                             angekommene Mail exakt aus wie eine erfolgreich versendete –
                             der Fehler fällt im Alltag sonst gar nicht auf. */}
                         {email.zustellStatus === 'UNZUSTELLBAR' && (
-                            <EmailsTabNichtAngekommen zustellFehler={email.zustellFehler} />
+                            <EmailsTabNichtAngekommen zustellFehler={email.zustellFehler ?? undefined} />
                         )}
                     </span>
                 </span>
@@ -71,7 +70,7 @@ export function EmailsTabListItem({ email, preview, onOpen }: EmailsTabListItemP
     );
 }
 
-function EmailsTabListItemChips({ id, email, isThread }: { id: string; email: ThreadRootEmail; isThread: boolean }) {
+function EmailsTabListItemChips({ id, email, isThread }: { id: string; email: EmailsTabEintrag; isThread: boolean }) {
     const RichtungsIcon = email.direction === 'IN' ? ArrowDownLeft : ArrowUpRight;
     return (
         <span id={id} className="flex items-center gap-2 mb-1.5 flex-wrap">
@@ -82,13 +81,13 @@ function EmailsTabListItemChips({ id, email, isThread }: { id: string; email: Th
             {isThread && (
                 <span
                     className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 ring-1 ring-rose-200"
-                    title={`${email._replyCount + 1} Nachrichten in diesem Verlauf`}
+                    title={`${email.nachrichtenAnzahl} Nachrichten in diesem Verlauf`}
                 >
                     <MessagesSquare aria-hidden="true" className="w-3 h-3" />
-                    {email._replyCount + 1} Nachrichten
+                    {email.nachrichtenAnzahl} Nachrichten
                 </span>
             )}
-            <span className="text-xs text-slate-500">{formatEmailDate(email)}</span>
+            <span className="text-xs text-slate-500">{formatEmailDate(email.sentAt)}</span>
         </span>
     );
 }

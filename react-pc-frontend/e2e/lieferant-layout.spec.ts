@@ -114,10 +114,9 @@ const DUMMY_LIEFERANT = {
         artikelAnzahl: 214,
         lieferzeit: 6,
     },
-    kommunikation: [],
+    emailAnzahl: 0,
     dokumente: [],
     notizen: [],
-    emails: [],
 };
 
 // Fantasie-Firmenname aus einem einzigen, unteilbaren Wort -- genau der Fall,

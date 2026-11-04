@@ -2,7 +2,8 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import EmailsTab, { type GenericEmail } from './EmailsTab';
+import EmailsTab from './EmailsTab';
+import { jsonAntwort, mitReiter, reiterEintrag } from '../features/email/emailsTab/emailsTabTestApi';
 import type { EmailThread } from './EmailThreadView';
 import { ToastProvider } from './ui/toast';
 
@@ -16,10 +17,9 @@ vi.mock('./ui/PdfCanvasViewer', () => ({
     PdfCanvasViewer: ({ url }: { url: string }) => <div data-testid="pdf-vorschau" data-url={url} />,
 }));
 
-const mail: GenericEmail = {
-    id: 7, subject: 'Anfrage Geländer', fromAddress: 'Max Mustermann <max@example.com>',
-    direction: 'IN', sentAt: '2026-10-09T10:05:00', bodyHtml: '<p>Bitte um Angebot</p>',
-};
+const mail = reiterEintrag(7, {
+    subject: 'Anfrage Geländer', fromAddress: 'Max Mustermann <max@example.com>', sentAt: '2026-10-09T10:05:00', bodyHtml: '<p>Bitte um Angebot</p>',
+});
 
 const verlauf: EmailThread = {
     rootEmailId: 7, focusedEmailId: 7, emails: [{
@@ -32,9 +32,9 @@ const verlauf: EmailThread = {
 afterEach(() => vi.unstubAllGlobals());
 
 async function oeffne() {
-    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve(verlauf) } as Response)));
-    render(<MemoryRouter><ToastProvider><EmailsTab emails={[mail]} projektId={3} /></ToastProvider></MemoryRouter>);
-    fireEvent.click(screen.getByRole('button', { name: 'Anfrage Geländer' }));
+    vi.stubGlobal('fetch', vi.fn(mitReiter([mail], () => jsonAntwort(verlauf))));
+    render(<MemoryRouter><ToastProvider><EmailsTab bezug="projekt" bezugId={3} projektId={3} /></ToastProvider></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Anfrage Geländer' }));
     await screen.findByText('1 Nachricht im Verlauf');
 }
 

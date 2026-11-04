@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, PhoneOff, RefreshCw } from 'lucide-react';
+import { PhoneOff, RefreshCw } from 'lucide-react';
 import { Button } from '../../components/ui/button';
+import { MehrLadenLeiste } from '../../components/ui/mehr-laden-leiste';
 import { useToast } from '../../components/ui/toast';
 import { ladeAnrufe, ladeSprachnachrichten, ladeStatus } from './api';
 import { ArtSymbol } from './ArtSymbol';
@@ -224,13 +225,11 @@ export function KontaktAnrufeTab({ typ, kontaktId }: KontaktAnrufeTabProps) {
                 })}
             </ul>
             {weitereSeiten && (
-                <div className="flex items-center justify-between gap-3 pt-3 text-sm text-slate-500">
-                    <span>{anrufe.length} von {gesamt} Anrufen</span>
-                    <Button variant="outline" size="sm" onClick={() => void ladeMehr()} disabled={laedtMehr}>
-                        {laedtMehr && <Loader2 aria-hidden="true" className="h-4 w-4 motion-safe:animate-spin" />}
-                        Weitere Anrufe laden
-                    </Button>
-                </div>
+                <MehrLadenLeiste
+                    className="pt-3" angezeigt={anrufe.length} gesamt={gesamt} hatMehr
+                    laedtMehr={laedtMehr} onMehrLaden={() => void ladeMehr()}
+                    zaehlerText={`${anrufe.length} von ${gesamt} Anrufen`} knopfText="Weitere Anrufe laden"
+                />
             )}
             {zuordnenAnruf.dialogElement}
             {zuordnenNachricht.dialogElement}

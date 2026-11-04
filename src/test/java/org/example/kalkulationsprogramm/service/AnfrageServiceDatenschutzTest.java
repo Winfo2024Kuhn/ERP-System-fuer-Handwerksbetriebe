@@ -32,7 +32,7 @@ class AnfrageServiceDatenschutzTest {
     private final KundeRepository kundeRepository = mock(KundeRepository.class);
     private final AnfrageService service = new AnfrageService(anfrageRepository, mock(DateiSpeicherService.class),
             mock(AnfrageDokumentRepository.class), kundeRepository,
-            mock(org.example.kalkulationsprogramm.repository.EmailRepository.class),
+            mock(org.example.kalkulationsprogramm.repository.EmailRepository.class), mock(org.example.kalkulationsprogramm.repository.EmailReiterRepository.class),
             mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
             mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
             null, mock(org.springframework.context.ApplicationEventPublisher.class),

@@ -643,7 +643,7 @@ class LieferantDokumentRechteSecurityTest {
         verifyNoInteractions(lieferantGdRepo);
     }
 
-    // ---------------------------------- GET /api/lieferanten/{id}/statistik und /email-verlauf
+    // ---------------------------------- GET /api/lieferanten/{id}/statistik
 
     private static org.example.kalkulationsprogramm.dto.Lieferant.LieferantStatistikDto statistik() {
         var statistik = new org.example.kalkulationsprogramm.dto.Lieferant.LieferantStatistikDto();
@@ -703,78 +703,23 @@ class LieferantDokumentRechteSecurityTest {
                 .andExpect(status().isNotFound());
     }
 
-    private static org.example.kalkulationsprogramm.dto.ProjektEmail.ProjektEmailDto mailMitAnhaengen(long... ids) {
-        var mail = new org.example.kalkulationsprogramm.dto.ProjektEmail.ProjektEmailDto();
-        mail.setId(1L);
-        var anhaenge = new java.util.ArrayList<org.example.kalkulationsprogramm.dto.ProjektEmail.ProjektEmailFileDto>();
-        for (long id : ids) {
-            var datei = new org.example.kalkulationsprogramm.dto.ProjektEmail.ProjektEmailFileDto();
-            datei.setId(id);
-            anhaenge.add(datei);
-        }
-        mail.setAttachments(anhaenge);
-        return mail;
-    }
-
     @Test
-    @DisplayName("E-Mail-Verlauf: ohne Anmeldung 401")
-    void emailVerlaufAnonymWird401() throws Exception {
-        mockMvc.perform(get("/api/lieferanten/7/email-verlauf"))
-                .andExpect(status().isUnauthorized());
-
-        verifyNoInteractions(lieferantenDetailService, lieferantenRepository);
-    }
-
-    @Test
-    @DisplayName("E-Mail-Verlauf: Rechnung als Mail-Anhang bleibt für Aufrufer ohne Rechnungs-Recht verborgen")
-    void emailVerlaufBlendetGesperrteAnhaengeAus() throws Exception {
-        given(lieferantenRepository.existsById(7L)).willReturn(true);
-        given(belegService.findCaller(any(), any())).willReturn(mitarbeiter(5L));
-        mitarbeiterDarfSehen(5L, LieferantDokumentTyp.LIEFERSCHEIN);
-        given(lieferantenDetailService.loadEmailVerlauf(7L)).willReturn(List.of(mailMitAnhaengen(11L, 12L)));
-        given(dokumentService.findAnhangIdsMitTyp(any(), any())).willReturn(Set.of(11L));
-
-        mockMvc.perform(get("/api/lieferanten/7/email-verlauf").with(sessionAls(FrontendUserRole.USER)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].attachments.length()").value(1))
-                .andExpect(jsonPath("$[0].attachments[0].id").value(12));
-    }
-
-    @Test
-    @DisplayName("E-Mail-Verlauf: Admin sieht alle Anhänge ohne Zusatzabfrage")
-    void emailVerlaufAdminSiehtAlles() throws Exception {
-        given(lieferantenRepository.existsById(7L)).willReturn(true);
-        given(lieferantenDetailService.loadEmailVerlauf(7L)).willReturn(List.of(mailMitAnhaengen(11L, 12L)));
-
-        mockMvc.perform(get("/api/lieferanten/7/email-verlauf").with(sessionAls(FrontendUserRole.ADMIN)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].attachments.length()").value(2));
-
-        verify(dokumentService, never()).findAnhangIdsMitTyp(any(), any());
-    }
-
-    @Test
-    @DisplayName("Detailantwort: gesperrte Mail-Anhänge und Kennzahlen entfallen auch in kommunikation/emails")
-    void detailBlendetAnhaengeUndKennzahlenAus() throws Exception {
+    @DisplayName("Detailantwort: Kennzahlen aus gesperrten Typen entfallen; Mails gibt es nur noch über den E-Mail-Reiter")
+    void detailBlendetKennzahlenAusUndEnthaeltKeineMails() throws Exception {
         given(belegService.findCaller(any(), any())).willReturn(mitarbeiter(5L));
         mitarbeiterDarfSehen(5L, LieferantDokumentTyp.LIEFERSCHEIN);
         var detail = new LieferantDetailDto();
         detail.setId(7L);
         detail.setDokumente(List.of());
-        detail.setEmails(List.of(mailMitAnhaengen(11L, 12L)));
-        var anhang = new org.example.kalkulationsprogramm.dto.Lieferant.LieferantAttachmentViewDto();
-        anhang.setId(11L);
-        var kommunikation = new org.example.kalkulationsprogramm.dto.Lieferant.LieferantKommunikationDto();
-        kommunikation.setAttachments(List.of(anhang));
-        detail.setKommunikation(List.of(kommunikation));
+        detail.setEmailAnzahl(3L);
         detail.setStatistik(statistik());
         given(lieferantenDetailService.loadDetails(7L)).willReturn(detail);
-        given(dokumentService.findAnhangIdsMitTyp(any(), any())).willReturn(Set.of(11L));
 
         mockMvc.perform(get("/api/lieferanten/7").with(sessionAls(FrontendUserRole.USER)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.emails[0].attachments.length()").value(1))
-                .andExpect(jsonPath("$.kommunikation[0].attachments").isEmpty())
+                .andExpect(jsonPath("$.emailAnzahl").value(3))
+                .andExpect(jsonPath("$.emails").doesNotExist())
+                .andExpect(jsonPath("$.kommunikation").doesNotExist())
                 .andExpect(jsonPath("$.statistik.gesamtKosten").doesNotExist());
     }
 

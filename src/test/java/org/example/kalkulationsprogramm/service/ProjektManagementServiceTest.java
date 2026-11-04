@@ -106,6 +106,8 @@ class ProjektManagementServiceTest {
     @Mock
     private EmailRepository emailRepository;
     @Mock
+    private org.example.kalkulationsprogramm.repository.EmailReiterRepository emailReiterRepository;
+    @Mock
     private org.example.kalkulationsprogramm.repository.KalenderEintragRepository kalenderEintragRepository;
     @Mock
     private ApplicationEventPublisher eventPublisher;
@@ -125,8 +127,24 @@ class ProjektManagementServiceTest {
                 kundeRepository, dateiSpeicherService, projektMapper,
                 anfrageRepository, ausgangsGeschaeftsDokumentRepository, ZeitbuchungRepository,
                 artikelRepository, artikelInProjektRepository, projektPersistenceService,
-                lieferantenRepository, emailRepository, kalenderEintragRepository, eventPublisher);
+                lieferantenRepository, emailRepository, emailReiterRepository, kalenderEintragRepository, eventPublisher);
         service.setAusgangsGeschaeftsDokumentService(ausgangsGeschaeftsDokumentService);
+    }
+
+    @Test
+    void projektantwortTraegtNurDieZahlDerEmailVerlaeufe() {
+        Projekt projekt = new Projekt();
+        projekt.setId(5L);
+        when(projektRepository.findById(5L)).thenReturn(Optional.of(projekt));
+        when(projektRepository.save(projekt)).thenReturn(projekt);
+        when(projektMapper.toProjektResponseDto(projekt)).thenReturn(new ProjektResponseDto());
+        when(emailReiterRepository.anzahlVerlaeufe(org.example.kalkulationsprogramm.domain.EmailBezug.PROJEKT, 5L))
+                .thenReturn(140L);
+
+        ProjektResponseDto dto = service.updateProjektKurzbeschreibung(5L, "Geländer Musterstraße");
+
+        assertEquals(140L, dto.getEmailAnzahl());
+        verify(emailRepository, never()).findByProjektOrderBySentAtDesc(any());
     }
 
     @Test

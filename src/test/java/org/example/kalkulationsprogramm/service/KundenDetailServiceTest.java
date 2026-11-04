@@ -1,21 +1,17 @@
 package org.example.kalkulationsprogramm.service;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import org.example.kalkulationsprogramm.domain.Anfrage;
-import org.example.kalkulationsprogramm.domain.Email;
-import org.example.kalkulationsprogramm.domain.EmailAttachment;
-import org.example.kalkulationsprogramm.domain.EmailDirection;
+import org.example.kalkulationsprogramm.domain.EmailBezug;
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.dto.Kunde.KundeDetailDto;
-import org.example.kalkulationsprogramm.dto.Kunde.KundeKommunikationDto;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
-import org.example.kalkulationsprogramm.repository.EmailRepository;
+import org.example.kalkulationsprogramm.repository.EmailReiterRepository;
 import org.example.kalkulationsprogramm.repository.KundeNotizRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
@@ -34,7 +30,7 @@ class KundenDetailServiceTest {
     @Mock private KundeRepository kundeRepository;
     @Mock private ProjektRepository projektRepository;
     @Mock private AnfrageRepository anfrageRepository;
-    @Mock private EmailRepository emailRepository;
+    @Mock private EmailReiterRepository emailReiterRepository;
     @Mock private DateiSpeicherService dateiSpeicherService;
     @Mock private AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService;
     @Mock private KundeNotizRepository kundeNotizRepository;
@@ -44,7 +40,7 @@ class KundenDetailServiceTest {
     @BeforeEach
     void setUp() {
         service = new KundenDetailService(kundeRepository, projektRepository, anfrageRepository,
-                emailRepository, dateiSpeicherService, ausgangsGeschaeftsDokumentService, kundeNotizRepository);
+                emailReiterRepository, dateiSpeicherService, ausgangsGeschaeftsDokumentService, kundeNotizRepository);
     }
 
     private Kunde erstelleKunde(Long id) {
@@ -64,21 +60,6 @@ class KundenDetailServiceTest {
         projekt.setId(id);
         projekt.setKundenId(kunde);
         return projekt;
-    }
-
-    private Email erstelleEmail(Long id, Projekt projekt, String subject) {
-        Email email = new Email();
-        email.setId(id);
-        email.setSubject(subject);
-        email.setFromAddress("test@example.com");
-        email.setRecipient("firma@example.com");
-        email.setSentAt(LocalDateTime.now());
-        email.setDirection(EmailDirection.IN);
-        email.setBody("Test Body");
-        email.setProjekt(projekt);
-        email.setAttachments(new ArrayList<>());
-        email.setReplies(new ArrayList<>());
-        return email;
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -200,142 +181,54 @@ class KundenDetailServiceTest {
         }
 
         @Test
-        void mapptKommunikationMitParentEmailId() {
+        void kundeOhneKundennummerBekommtSeineDirektenAnfragenEinmal() {
             Kunde kunde = erstelleKunde(1L);
+            kunde.setKundennummer(" ");
             Projekt projekt = erstelleProjekt(10L, kunde);
-
-            Email parentEmail = erstelleEmail(100L, projekt, "Erste Nachricht");
-            Email replyEmail = erstelleEmail(101L, projekt, "Re: Erste Nachricht");
-            replyEmail.setParentEmail(parentEmail);
-            parentEmail.getReplies().add(replyEmail);
-
+            Anfrage imProjekt = new Anfrage();
+            imProjekt.setId(20L);
+            Anfrage direkt = new Anfrage();
+            direkt.setId(21L);
             when(kundeRepository.findById(1L)).thenReturn(Optional.of(kunde));
             when(projektRepository.findByKundenId_Id(1L)).thenReturn(List.of(projekt));
-            setupAnfrageMocks(kunde, List.of(projekt), List.of());
-            when(emailRepository.findByProjektInOrderBySentAtDesc(List.of(projekt)))
-                    .thenReturn(List.of(parentEmail, replyEmail));
+            when(anfrageRepository.findByProjektIdIn(List.of(10L))).thenReturn(List.of(imProjekt));
+            when(anfrageRepository.findByKundeId(1L)).thenReturn(List.of(direkt, imProjekt));
 
-            Optional<KundeDetailDto> result = service.loadDetails(1L);
+            KundeDetailDto dto = service.loadDetails(1L).orElseThrow();
 
-            assertThat(result).isPresent();
-            List<KundeKommunikationDto> komm = result.get().getKommunikation();
-            assertThat(komm).hasSize(2);
-
-            // Parent Email
-            KundeKommunikationDto parentDto = komm.stream()
-                    .filter(k -> k.getId().equals(100L)).findFirst().orElseThrow();
-            assertThat(parentDto.getParentEmailId()).isNull();
-            assertThat(parentDto.getReplyCount()).isEqualTo(1);
-
-            // Reply Email
-            KundeKommunikationDto replyDto = komm.stream()
-                    .filter(k -> k.getId().equals(101L)).findFirst().orElseThrow();
-            assertThat(replyDto.getParentEmailId()).isEqualTo(100L);
-            assertThat(replyDto.getReplyCount()).isEqualTo(1); // 1 Vorfahre (parentEmail) + 0 Nachfolger = Gesamtthread 2
+            assertThat(dto.getAnfragen()).extracting(a -> a.getId()).containsExactlyInAnyOrder(20L, 21L);
+            assertThat(dto.getStatistik().getAnfrageAnzahl()).isEqualTo(2);
+            org.mockito.Mockito.verify(anfrageRepository, org.mockito.Mockito.never())
+                    .findByKunde_KundennummerIgnoreCase(org.mockito.ArgumentMatchers.any());
+            org.mockito.Mockito.verify(ausgangsGeschaeftsDokumentService).findByAnfrage(21L);
         }
 
         @Test
-        void mapptKommunikationOhneParent() {
+        void zaehltEmailAdressenOhneSieMitzuschicken() {
             Kunde kunde = erstelleKunde(1L);
-            Projekt projekt = erstelleProjekt(10L, kunde);
-            Email email = erstelleEmail(100L, projekt, "Einzelne Nachricht");
-
-            when(kundeRepository.findById(1L)).thenReturn(Optional.of(kunde));
-            when(projektRepository.findByKundenId_Id(1L)).thenReturn(List.of(projekt));
-            setupAnfrageMocks(kunde, List.of(projekt), List.of());
-            when(emailRepository.findByProjektInOrderBySentAtDesc(List.of(projekt)))
-                    .thenReturn(List.of(email));
-
-            Optional<KundeDetailDto> result = service.loadDetails(1L);
-
-            assertThat(result).isPresent();
-            List<KundeKommunikationDto> komm = result.get().getKommunikation();
-            assertThat(komm).hasSize(1);
-            assertThat(komm.get(0).getParentEmailId()).isNull();
-            assertThat(komm.get(0).getReplyCount()).isEqualTo(0);
-        }
-
-        @Test
-        void mapptKommunikationMitAnfrageEmails() {
-            Kunde kunde = erstelleKunde(1L);
-            Anfrage anfrage = new Anfrage();
-            anfrage.setId(20L);
-            anfrage.setKunde(kunde);
-
-            Email email = new Email();
-            email.setId(200L);
-            email.setSubject("Anfrage-Email");
-            email.setFromAddress("test@example.com");
-            email.setRecipient("firma@example.com");
-            email.setSentAt(LocalDateTime.now());
-            email.setDirection(EmailDirection.IN);
-            email.setAnfrage(anfrage);
-            email.setAttachments(new ArrayList<>());
-            email.setReplies(new ArrayList<>());
-
+            kunde.setKundenEmails(List.of("max.mustermann@example.com", "MAX.MUSTERMANN@example.com ", "info@example.com"));
             when(kundeRepository.findById(1L)).thenReturn(Optional.of(kunde));
             when(projektRepository.findByKundenId_Id(1L)).thenReturn(List.of());
-            setupAnfrageMocks(kunde, List.of(), List.of(anfrage));
-            when(emailRepository.findByAnfrageInOrderBySentAtDesc(List.of(anfrage)))
-                    .thenReturn(List.of(email));
+            setupAnfrageMocks(kunde, List.of(), List.of());
 
-            Optional<KundeDetailDto> result = service.loadDetails(1L);
+            KundeDetailDto dto = service.loadDetails(1L).orElseThrow();
 
-            assertThat(result).isPresent();
-            List<KundeKommunikationDto> komm = result.get().getKommunikation();
-            assertThat(komm).hasSize(1);
-            assertThat(komm.get(0).getSubject()).isEqualTo("Anfrage-Email");
-            assertThat(komm.get(0).getReferenzTyp()).isEqualTo("ANFRAGE");
+            assertThat(dto.getStatistik().getEmailAdresseAnzahl()).isEqualTo(2);
         }
 
         @Test
-        void mapptAttachmentsMitDownloadUrl() {
+        void zeigtNurDieZahlDerEmailVerlaeufe() {
             Kunde kunde = erstelleKunde(1L);
             Projekt projekt = erstelleProjekt(10L, kunde);
-            Email email = erstelleEmail(100L, projekt, "Mit Anhang");
-
-            EmailAttachment attachment = new EmailAttachment();
-            attachment.setId(500L);
-            attachment.setOriginalFilename("rechnung.pdf");
-            attachment.setStoredFilename("stored-rechnung.pdf");
-            email.getAttachments().add(attachment);
-
             when(kundeRepository.findById(1L)).thenReturn(Optional.of(kunde));
             when(projektRepository.findByKundenId_Id(1L)).thenReturn(List.of(projekt));
             setupAnfrageMocks(kunde, List.of(projekt), List.of());
-            when(emailRepository.findByProjektInOrderBySentAtDesc(List.of(projekt)))
-                    .thenReturn(List.of(email));
+            when(emailReiterRepository.anzahlVerlaeufe(EmailBezug.KUNDE, 1L)).thenReturn(140L);
 
             Optional<KundeDetailDto> result = service.loadDetails(1L);
 
             assertThat(result).isPresent();
-            KundeKommunikationDto komm = result.get().getKommunikation().get(0);
-            assertThat(komm.getAttachments()).hasSize(1);
-            assertThat(komm.getAttachments().get(0).getFilename()).isEqualTo("rechnung.pdf");
-        }
-
-        @Test
-        void mapptDirectionKorrekt() {
-            Kunde kunde = erstelleKunde(1L);
-            Projekt projekt = erstelleProjekt(10L, kunde);
-            Email eingehend = erstelleEmail(100L, projekt, "Eingehend");
-            eingehend.setDirection(EmailDirection.IN);
-            Email ausgehend = erstelleEmail(101L, projekt, "Ausgehend");
-            ausgehend.setDirection(EmailDirection.OUT);
-
-            when(kundeRepository.findById(1L)).thenReturn(Optional.of(kunde));
-            when(projektRepository.findByKundenId_Id(1L)).thenReturn(List.of(projekt));
-            setupAnfrageMocks(kunde, List.of(projekt), List.of());
-            when(emailRepository.findByProjektInOrderBySentAtDesc(List.of(projekt)))
-                    .thenReturn(List.of(eingehend, ausgehend));
-
-            Optional<KundeDetailDto> result = service.loadDetails(1L);
-
-            assertThat(result).isPresent();
-            List<KundeKommunikationDto> komm = result.get().getKommunikation();
-            assertThat(komm).hasSize(2);
-            assertThat(komm.stream().map(KundeKommunikationDto::getDirection))
-                    .containsExactlyInAnyOrder(EmailDirection.IN, EmailDirection.OUT);
+            assertThat(result.get().getEmailAnzahl()).isEqualTo(140L);
         }
     }
 }

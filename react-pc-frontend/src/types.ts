@@ -14,34 +14,6 @@ export interface Kunde {
   kundenEmails?: string[];
 }
 
-// Shared Intefaces
-export interface Kommunikation {
-  id: number;
-  referenzId: number;
-  referenzTyp: 'PROJEKT' | 'ANFRAGE' | 'STAMMDATEN' | 'BESTELLUNG'; // Added BESTELLUNG
-  referenzName: string;
-  subject: string;
-  absender: string;
-  empfaenger: string;
-  zeitpunkt: string;
-  direction: 'IN' | 'OUT';
-  snippet: string;
-  body?: string;
-  attachments?: EmailAttachment[];
-  parentEmailId?: number;
-  replyCount?: number;
-  /** Nur bei direction 'OUT': 'OFFEN' = kein Fehler bekannt, 'UNZUSTELLBAR' = kam nicht an. */
-  zustellStatus?: 'OFFEN' | 'UNZUSTELLBAR';
-  /** Grund der Ablehnung, z.B. "unknown user / Teilnehmer existiert nicht". */
-  zustellFehler?: string;
-}
-
-export interface EmailAttachment {
-  id: number;
-  filename: string;
-  url: string;
-}
-
 export interface KundeStatistik {
   projektAnzahl: number;
   anfrageAnzahl: number;
@@ -92,7 +64,8 @@ export interface KundeDetail {
   kundenEmails?: string[];
   hatProjekte?: boolean;
   statistik?: KundeStatistik;
-  kommunikation?: Kommunikation[];
+  /** Zahl der E-Mail-Verläufe für die Reiter-Beschriftung; die Liste lädt der Reiter selbst. */
+  emailAnzahl?: number;
   projekte?: KundeProjektKurz[];
   anfragen?: KundeAnfrageKurz[];
   geschaeftsdokumente?: AusgangsGeschaeftsDokument[];
@@ -269,12 +242,11 @@ export interface LieferantReklamation {
 
 export interface LieferantDetail extends Lieferant {
   statistik?: LieferantStatistik;
-  kommunikation?: Kommunikation[];
   dokumente?: LieferantDokument[];
   dokumenteAnzahl?: number; // Zahl für den Reiter; die Liste lädt der Reiter selbst nach
+  /** Zahl der E-Mail-Verläufe für die Reiter-Beschriftung; die Liste lädt der Reiter selbst. */
   emailAnzahl?: number;
   notizenAnzahl?: number;
-  emails?: ProjektEmail[]; // Unified email structure for EmailsTab
   notizen?: LieferantNotiz[];
 }
 
@@ -758,44 +730,6 @@ export const GESCHAEFTSDOKUMENT_TYPEN: { value: GeschaeftsdokumentTyp; label: st
   { value: 'GUTSCHRIFT', label: 'Gutschrift' },
 ];
 
-// E-Mail Anhang Interface
-export interface ProjektEmailAttachment {
-  id?: number;
-  originalFilename: string;
-  storedFilename: string;
-  contentId?: string;
-  inline?: boolean;
-  url?: string; // Download-URL vom Backend
-}
-
-export interface ProjektEmail {
-  id: number;
-  /** Nur bei direction 'OUT': 'OFFEN' = kein Fehler bekannt, 'UNZUSTELLBAR' = kam nicht an. */
-  zustellStatus?: 'OFFEN' | 'UNZUSTELLBAR';
-  /** Grund der Ablehnung, z.B. "unknown user / Teilnehmer existiert nicht". */
-  zustellFehler?: string;
-  subject?: string;
-  from?: string;           // Backend liefert "from"
-  sender?: string;         // Alias für Kompatibilität
-  fromAddress?: string;    // Alias für Kompatibilität
-  to?: string;             // Backend liefert "to"
-  recipient?: string;      // Alias für Kompatibilität
-  recipients?: string[];   // Alias für Kompatibilität
-  direction: 'IN' | 'OUT';
-  receivedDate?: string;
-  sentAt?: string;         // Backend liefert "sentAt"
-  sentDate?: string;       // Alias für Kompatibilität
-  body?: string;           // Alias für Kompatibilität
-  htmlBody?: string;       // Alias für Kompatibilität
-  bodyHtml?: string;       // Backend liefert "bodyHtml"
-  bodyPreview?: string;    // Alias für Kompatibilität
-  attachments?: ProjektEmailAttachment[];
-  parentId?: number;       // Thread: Parent-Email-ID (alt)
-  parentEmailId?: number;  // Thread: Parent-Email-ID (Backend DTO)
-  replyCount?: number;     // Thread: Anzahl Antworten
-  replies?: ProjektEmail[];// Thread: Antworten
-}
-
 export interface ArtikelInProjekt {
   id: number;
   artikelId: number;
@@ -829,7 +763,8 @@ export interface ProjektDetail extends Projekt {
   artikel?: ArtikelInProjekt[];
   produktkategorien?: ProjektProduktkategorie[];
   zeiten?: ProjektZeit[];
-  emails?: ProjektEmail[];
+  /** Zahl der E-Mail-Verläufe für die Reiter-Beschriftung; die Liste lädt der Reiter selbst. */
+  emailAnzahl?: number;
   gesamtKilogramm?: number;
 }
 
@@ -882,40 +817,9 @@ export interface AnfrageDokument {
   bezahlt?: boolean;
 }
 
-export interface AnfrageEmailAttachment {
-  id?: number;
-  originalFilename: string;
-  storedFilename: string;
-  contentId?: string;
-  inline?: boolean;
-}
-
-export interface AnfrageEmail {
-  id: number;
-  /** Nur bei direction 'OUT': 'OFFEN' = kein Fehler bekannt, 'UNZUSTELLBAR' = kam nicht an. */
-  zustellStatus?: 'OFFEN' | 'UNZUSTELLBAR';
-  /** Grund der Ablehnung, z.B. "unknown user / Teilnehmer existiert nicht". */
-  zustellFehler?: string;
-  sender?: string;
-  fromAddress?: string;
-  recipient?: string;
-  recipients?: string[];
-  subject?: string;
-  body?: string;
-  htmlBody?: string;
-  sentAt?: string;
-  attachments?: AnfrageEmailAttachment[];
-  direction?: 'IN' | 'OUT';
-  parentId?: number;
-  parentEmailId?: number;
-  replyCount?: number;
-  replies?: AnfrageEmail[];
-  benutzer?: string;
-  frontendUserId?: number;
-}
-
 export interface AnfrageDetail extends Anfrage {
-  emails?: AnfrageEmail[];
+  /** Zahl der E-Mail-Verläufe für die Reiter-Beschriftung; die Liste lädt der Reiter selbst. */
+  emailAnzahl?: number;
   dokumente?: AnfrageDokument[];
 }
 

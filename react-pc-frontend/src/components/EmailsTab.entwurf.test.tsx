@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import EmailsTab, { type GenericEmail } from './EmailsTab';
+import EmailsTab from './EmailsTab';
+import { istReiterUrl, mitReiter, reiterEintrag } from '../features/email/emailsTab/emailsTabTestApi';
 import type { EmailThread } from './EmailThreadView';
 import { ToastProvider } from './ui/toast';
 import { RUECKGAENGIG_MS } from '../lib/rueckgaengig';
@@ -11,10 +12,10 @@ import { RUECKGAENGIG_MS } from '../lib/rueckgaengig';
  * Ablauf der Frist, danach neu laden; scheitert es, ist der Entwurf wieder da.
  * Dummy-Daten (DSGVO): Max Mustermann, max@example.com.
  */
-const mail: GenericEmail = {
-    id: 7, subject: 'Anfrage Geländer', fromAddress: 'Max Mustermann <max@example.com>',
-    direction: 'IN', sentAt: '2026-10-09T10:05:00', bodyHtml: '<p>Bitte um Angebot</p>',
-};
+const mail = reiterEintrag(7, {
+    subject: 'Anfrage Geländer', fromAddress: 'Max Mustermann <max@example.com>',
+    sentAt: '2026-10-09T10:05:00', bodyHtml: '<p>Bitte um Angebot</p>',
+});
 
 function verlauf(mitEntwurf: boolean): EmailThread {
     const emails: EmailThread['emails'] = [{
@@ -37,14 +38,14 @@ let fetchMock: ReturnType<typeof vi.fn>;
 beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     loeschAntwort = () => json(null);
-    fetchMock = vi.fn((url: string, init?: RequestInit) => {
+    fetchMock = vi.fn(mitReiter([mail], (url: string, init?: RequestInit) => {
         if (url === '/api/emails/drafts/99' && init?.method === 'DELETE') return loeschAntwort();
         if (url === '/api/emails/7/thread') {
             const geloescht = fetchMock.mock.calls.some(c => c[0] === '/api/emails/drafts/99') && loeschAntwort !== fehler;
             return json(verlauf(!geloescht));
         }
         return json(null, false);
-    });
+    }));
     vi.stubGlobal('fetch', fetchMock);
 });
 afterEach(() => {
@@ -55,10 +56,11 @@ afterEach(() => {
 const fehler = () => json({ message: 'Der Entwurf wird gerade gesendet.' }, false);
 const loeschAufrufe = () => fetchMock.mock.calls.filter(c => c[0] === '/api/emails/drafts/99');
 const threadAufrufe = () => fetchMock.mock.calls.filter(c => c[0] === '/api/emails/7/thread');
+const reiterAufrufe = () => fetchMock.mock.calls.filter(c => istReiterUrl(c[0]));
 
 async function oeffneMitEntwurf() {
-    render(<MemoryRouter><ToastProvider><EmailsTab emails={[mail]} projektId={3} /></ToastProvider></MemoryRouter>);
-    fireEvent.click(screen.getByRole('button', { name: 'Anfrage Geländer' }));
+    render(<MemoryRouter><ToastProvider><EmailsTab bezug="projekt" bezugId={3} projektId={3} /></ToastProvider></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Anfrage Geländer' }));
     expect(await screen.findByText('1 Nachricht im Verlauf, 1 Entwurf')).toBeInTheDocument();
     fireEvent.click(screen.getByTitle('Entwurf löschen'));
 }
@@ -75,6 +77,8 @@ describe('EmailsTab – Entwurf löschen mit „Rückgängig“', () => {
         expect(loeschAufrufe()).toHaveLength(1);
         expect(loeschAufrufe()[0][1]).toEqual({ method: 'DELETE' });
         expect(threadAufrufe()).toHaveLength(2);
+        // Ein gelöschter Entwurf ändert nur den Verlauf, nicht die Liste dahinter.
+        expect(reiterAufrufe()).toHaveLength(1);
         expect(screen.queryByText('Entwurf Antwort')).not.toBeInTheDocument();
     });
 

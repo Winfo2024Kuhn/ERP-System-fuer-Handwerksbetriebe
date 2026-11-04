@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
-import { File, FileImage, FileText, Loader2, type LucideIcon } from 'lucide-react';
-import { Button } from '../../components/ui/button';
+import { File, FileImage, FileText, type LucideIcon } from 'lucide-react';
+import { MehrLadenLeiste } from '../../components/ui/mehr-laden-leiste';
 import { LadeAnzeige, VerbindungsHinweis } from '../../components/ui/lade-anzeige';
 import { formatBytes } from '../../lib/dateiGroesse';
 import { DokumentZeilenAktionen, type DokumentAktionen } from './DokumentZeilenAktionen';
@@ -66,15 +66,7 @@ export function DokumentListe(props: DokumentListeProps) {
                     </tbody>
                 </table>
             </div>
-            <div className="flex items-center justify-between gap-3 text-sm text-slate-500">
-                <span className="tabular-nums">{dokumente.length} von {gesamt} angezeigt</span>
-                {dokumente.length < gesamt && (
-                    <Button variant="outline" size="sm" onClick={onMehrLaden} disabled={laedtMehr}>
-                        {laedtMehr && <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />}
-                        Mehr laden
-                    </Button>
-                )}
-            </div>
+            <MehrLadenLeiste angezeigt={dokumente.length} gesamt={gesamt} laedtMehr={laedtMehr} onMehrLaden={onMehrLaden} />
         </div>
     );
 }

@@ -1,8 +1,5 @@
-import type { GenericEmail } from './emailsTabTypes';
-
 /** Datum und Uhrzeit einer Mail für die Liste im E-Mail-Reiter, z. B. „09.10.2026, 10:05“. */
-export function formatEmailDate(email: Pick<GenericEmail, 'sentAt' | 'receivedDate' | 'sentDate'>): string {
-    const dateStr = email.sentAt || email.receivedDate || email.sentDate;
+export function formatEmailDate(dateStr: string | null | undefined): string {
     if (!dateStr) return '-';
     try {
         return new Date(dateStr).toLocaleDateString('de-DE', {

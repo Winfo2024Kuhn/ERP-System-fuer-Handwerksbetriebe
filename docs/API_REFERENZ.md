@@ -227,7 +227,7 @@ Den früheren `AngebotController` unter `/api/angebote` gibt es nicht mehr; Ange
 | `PUT` | `/{id}` | Anfrage ändern (JSON) |
 | `PATCH` | `/{id}/kurzbeschreibung` | Kurzbeschreibung ändern (reiner Text) |
 | `PUT` | `/{id}` | Anfrage mit Bild ändern (multipart) |
-| `GET` | `/{id}` | Einzelne Anfrage |
+| `GET` | `/{id}` | Einzelne Anfrage, mit `emailAnzahl` (Zahl der E-Mail-Verläufe für den Reiter; die Mails selbst: `GET /api/emails/reiter/anfrage/{id}`) |
 | `GET` | `/{id}/projekt-vorlage` | Daten zum Anlegen eines Projekts aus der Anfrage |
 | `GET` | `/{id}/produktkategorien-vorschlag` | Produktkategorien aus Angebot/AB als Vorschlag für das Projekt |
 | `GET` | `/{anfrageId}/notizen` | Notizen der Anfrage |
@@ -289,7 +289,7 @@ Den früheren `AngebotController` unter `/api/angebote` gibt es nicht mehr; Ange
 | `GET` | `/suche` | Schnellsuche (höchstens 10 Treffer) für die Bestellungs-Zuordnung |
 | `GET` | `/naechste-auftragsnummer` | Nächste freie Auftragsnummer (optional je Kunde) |
 | `GET` | `/auftragsnummer-verfuegbar` | Ist eine Auftragsnummer noch frei? |
-| `GET` | `/{id}` | Einzelnes Projekt |
+| `GET` | `/{id}` | Einzelnes Projekt, mit `emailAnzahl` (Zahl der E-Mail-Verläufe für den Reiter, auch in den Antworten der Änderungs-Aufrufe; die Mails selbst: `GET /api/emails/reiter/projekt/{id}`) |
 | `GET` | `/{projektId}/notizen` | Notizen des Projekts (neueste zuerst) |
 | `POST` | `/{projektId}/emails` | E-Mail-Adresse zum Projekt hinzufügen |
 | `POST` | `/{projektId}/notizen` | Notiz anlegen |
@@ -324,7 +324,7 @@ Wartungsläufe ohne Knopf im Frontend, Aufruf siehe `ADMIN_ENDPUNKTE.md`.
 | `POST` | `/` | Kunde anlegen; bei Dubletten-Verdacht `409` mit Trefferliste, bestätigen per Header `X-Duplikat-Bestaetigt: true` |
 | `PUT` | `/{id}` | Kunde ändern |
 | `GET` | `/next-kundennummer` | Nächste freie Kundennummer |
-| `GET` | `/{id}` | Kunde mit Details |
+| `GET` | `/{id}` | Kunde mit Details, mit `emailAnzahl` (Zahl der E-Mail-Verläufe seiner Projekte und Anfragen; die Mails selbst: `GET /api/emails/reiter/kunde/{id}`) |
 | `POST` | `/{id}/emails` | E-Mail-Adresse zum Kunden hinzufügen |
 | `GET` | `/{id}/notizen` | Notizen des Kunden (optional Suche `q`) |
 | `POST` | `/{id}/notizen` | Notiz anlegen |
@@ -490,11 +490,9 @@ Dokumente und Statistiken nur für die Dokumenttypen, die die Abteilung sehen da
 | `GET` | `/` | Lieferanten suchen (`q`, `name`, `typ`, `ort`, `email`, `page`, `size`) |
 | `POST` | `/` | Lieferant anlegen |
 | `PUT` | `/{id}` | Lieferant ändern |
-| `GET` | `/{id}` | Lieferant mit Details (`nurStammdaten=true` für die schnelle Variante) |
+| `GET` | `/{id}` | Lieferant mit Details (`nurStammdaten=true` für die schnelle Variante); `emailAnzahl` zählt E-Mail-Verläufe, die Mails selbst: `GET /api/emails/reiter/lieferant/{id}` |
 | `GET` | `/{id}/statistik` | Kennzahlen des Lieferanten |
-| `GET` | `/{id}/email-verlauf` | Mail-Verlauf mit dem Lieferanten |
 | `GET` | `/{id}/artikelpreise` | Artikelpreise des Lieferanten (seitenweise, Suche, Sortierung) |
-| `GET` | `/{id}/emails` | Mails des Lieferanten (`limit`, `q`) |
 | `POST` | `/{id}/emails` | Mail an den Lieferanten senden (multipart, mit Anhängen) |
 | `PUT` | `/{id}/artikelpreise/{artikelId}` | Artikelpreis ändern |
 | `POST` | `/{id}/artikelpreise` | Artikelpreis anlegen |
@@ -866,9 +864,6 @@ Gemeinsames Postfach. Jeder sieht nur Mails aus Postfächern, die für ihn freig
 | `POST` | `/{emailId}/confirm-newsletter` | Newsletter bestätigen |
 | `POST` | `/spam-model/bootstrap` | Spam-Modell aus einer CSV-Datei anlernen *(nur Admin)* |
 | `GET` | `/spam-model/stats` | Stand des Spam-Lernmodells |
-| `GET` | `/projekt/{projektId}` | Mails eines Projekts |
-| `GET` | `/anfrage/{anfrageId}` | Mails einer Anfrage |
-| `GET` | `/lieferant/{lieferantId}` | Mails eines Lieferanten |
 | `GET` | `/unassigned` | Nicht zugeordnete Mails |
 | `GET` | `/inquiries` | Mails, die nach einer Anfrage aussehen |
 | `GET` | `/new/projekt` | Neue Mails zu Projekten |
@@ -921,6 +916,22 @@ Suche im E-Mail-Center, in einem Ordner oder über alle Ordner, seitenweise.
 | `GET` | `/suche` | Mails durchsuchen: `q` (Pflicht, getrimmt 2–200 Zeichen, höchstens 10 Wörter zählen), `ordner` (Standard `alle`; sonst `inbox`, `sent`, `trash`, `spam`, `newsletter`, `starred`, `projects`, `offers`, `suppliers`, `tax-advisors`, `unassigned`, `inquiries`), `page` ab 0, `size` Standard 25, höchstens 50. Antwort `{eintraege, hatMehr, seite, seitenGroesse}`; `eintraege` wie die Ordnerlisten, mit `folder` |
 
 Jedes Wort muss irgendwo vorkommen (UND): Absender und Empfänger samt Anzeigenamen, Antwortadresse, CC, Betreff, ganzer Text samt zitiertem Verlauf (auch aus dem HTML-Teil), Anhang-Dateinamen. Groß-/Kleinschreibung egal, Umlaut-Schreibweisen in beide Richtungen („Würth“ findet „Wuerth“ und umgekehrt). Mit `ordner` findet die Suche genau die Mails der jeweiligen Ordnerliste. `alle` = alle sichtbaren Mails samt Papierkorb, Spam, Newsletter und Gesendet (ohne Entwürfe). Sortierung fest: neueste zuerst (`sent_at DESC NULLS LAST, id DESC`). Mails aus Postfächern, die der Benutzer nicht sieht, fehlen schon in der Abfrage. 400 mit `message`: „Bitte mindestens 2 Zeichen eingeben.“, „Der Suchbegriff ist zu lang (höchstens 200 Zeichen).“, „Unbekannter Ordner.“ Technik: Spalte `email.suchtext` mit Trigramm-Index (V447), siehe `BACKEND_ARCH.md` → „Suchen, Sortierung, Vergleiche“.
+
+### EmailReiterController
+
+**Basis-URL:** `/api/emails/reiter`
+
+E-Mail-Reiter in Projekt, Anfrage, Kunde und Lieferant: Verläufe seitenweise, Suche und Richtung laufen in der Datenbank. Die Detailseiten liefern nur die Zahl `emailAnzahl` für die Reiter-Beschriftung (dieselbe Zählung ohne Suche und Filter).
+
+| Methode | Pfad | Beschreibung |
+|---|---|---|
+| `GET` | `/{bezug}/{id}` | Verläufe des Datensatzes: `bezug` = `projekt`, `anfrage`, `kunde` oder `lieferant`; `page` ab 0, `size` Standard 25, höchstens 50; `q` optional (getrimmt unter 2 Zeichen = keine Suche, höchstens 200 Zeichen, gleiche Suche wie im E-Mail-Center); `richtung` optional `IN` oder `OUT`. Antwort `{eintraege, gesamt, seite, seitenGroesse}` |
+
+Eine Zeile ist ein Verlauf: die ganze Kette über die Antwort-Verknüpfung ab der obersten Mail, auch wenn diese selbst nicht zum Datensatz gehört. Ein Verlauf erscheint, wenn mindestens eine seiner Mails zum Datensatz gehört – beim Kunden die Mails seiner Projekte, der Anfragen dieser Projekte und seiner Anfragen (an ihn oder mit seiner Kundennummer). Suche und Richtung wirken auf diese Mails; die Zeile zeigt die neueste passende, sortiert wird nach deren Sendezeit (neueste zuerst, ohne Datum zuletzt, dann Wurzel-ID absteigend) – eine neue Antwort holt einen alten Verlauf nach oben. Ein Kreis in der Kette bricht ab. Mails im Papierkorb zählen wie bisher mit.
+
+Je Eintrag: `id` (angezeigte Mail, öffnet `GET /api/emails/{id}/thread`), `subject`, `fromAddress`, `recipient`, `direction`, `sentAt`, `bodyHtml` (HTML-Teil, sonst Klartext, sonst Rohtext, sonst `null`; ungefiltert, nur für die Vorschau), `nachrichtenAnzahl` (Mails im ganzen Verlauf, die der Benutzer öffnen darf, mindestens 1), `mitAnhang` (nicht eingebetteter Anhang an einer Mail des Datensatzes im Verlauf; beim Lieferanten nur Anhänge sichtbarer Dokumenttypen), `zustellStatus`/`zustellFehler` (`UNZUSTELLBAR` samt Grund der neuesten, wenn irgendeine Ausgangsmail des Verlaufs nicht ankam, sonst Wert der angezeigten Mail). `gesamt` = Verläufe passend zu Suche und Richtung.
+
+Rechte: angemeldet; gezählt werden nur Mails, die der Benutzer öffnen darf (wie beim Verlauf). Lieferant zusätzlich wie seine Dokumente: ohne zuzuordnenden Benutzer 401. Fehler mit `message`: 400 „Unbekannter Bereich für E-Mails.“, „Der Suchbegriff ist zu lang (höchstens 200 Zeichen).“, „Unbekannte Richtung.“; 404 „Projekt nicht gefunden.“ / „Anfrage nicht gefunden.“ / „Kunde nicht gefunden.“ / „Lieferant nicht gefunden.“ Technik: Repository-Fragment `EmailReiterRepositoryErweiterung` (Wurzel per `WITH RECURSIVE`), geprüft mit `DatenbankKompatibilitaetEmailReiterTest`.
 
 ### EmailPapierkorbController
 

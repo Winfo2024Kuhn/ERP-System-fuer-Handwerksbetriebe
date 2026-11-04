@@ -14,18 +14,14 @@ import jakarta.persistence.Query;
 import lombok.RequiredArgsConstructor;
 
 /**
- * Baut die Suchabfrage aus festen Bausteinen ({@link EmailOrdnerSql}) und benannten Parametern.
+ * Baut die Suchabfrage aus festen Bausteinen ({@link EmailOrdnerSql}, {@link EmailSichtbarkeitSql}) und
+ * benannten Parametern.
  * Nutzereingaben stehen nie im SQL-Text: die Parameternamen ({@code w0}, {@code w1}, …) zählt der
  * Code selbst hoch.
  */
 @RequiredArgsConstructor
 class EmailSucheRepositoryErweiterungImpl implements EmailSucheRepositoryErweiterung {
 
-    /** Mail ohne Postfach-Zuordnung = Hauptpostfach-Mail, sonst in mindestens einem sichtbaren Postfach. */
-    private static final String SICHTBAR = " AND (NOT EXISTS (SELECT 1 FROM email_postfach_zuordnung z"
-            + " WHERE z.email_id = e.id) OR EXISTS (SELECT 1 FROM email_postfach_zuordnung z"
-            + " WHERE z.email_id = e.id AND z.postfach_id IN (:sichtbarePostfaecher)))";
-    private static final Long KEINE_ID = -1L;
     /** Domains kommen aus {@code EmailAdressen.domainVon} – nur diese Zeichen sind möglich. */
     private static final Pattern DOMAIN = Pattern.compile("[a-z0-9.-]++");
 
@@ -44,9 +40,9 @@ class EmailSucheRepositoryErweiterungImpl implements EmailSucheRepositoryErweite
             parameter.put(EmailOrdnerSql.STEUERBERATER_MUSTER, steuerberaterMuster(abfrage.steuerberaterDomains()));
         }
         if (abfrage.sichtbarePostfachIds() != null) {
-            sql.append(SICHTBAR);
-            parameter.put("sichtbarePostfaecher", abfrage.sichtbarePostfachIds().isEmpty()
-                    ? Set.of(KEINE_ID) : abfrage.sichtbarePostfachIds());
+            sql.append(" AND ").append(EmailSichtbarkeitSql.SIEHT);
+            parameter.put(EmailSichtbarkeitSql.PARAMETER,
+                    EmailSichtbarkeitSql.parameterWert(abfrage.sichtbarePostfachIds()));
         }
         woerterAnhaengen(sql, parameter, abfrage.woerter());
         sql.append(" ORDER BY e.sent_at DESC NULLS LAST, e.id DESC");

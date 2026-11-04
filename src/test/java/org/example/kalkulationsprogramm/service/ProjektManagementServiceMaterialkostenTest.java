@@ -74,6 +74,7 @@ class ProjektManagementServiceMaterialkostenTest {
     @Mock private ProjektPersistenceService projektPersistenceService;
     @Mock private LieferantenRepository lieferantenRepository;
     @Mock private EmailRepository emailRepository;
+    @Mock private org.example.kalkulationsprogramm.repository.EmailReiterRepository emailReiterRepository;
     @Mock private KalenderEintragRepository kalenderEintragRepository;
     @Mock private ApplicationEventPublisher eventPublisher;
 
@@ -89,7 +90,7 @@ class ProjektManagementServiceMaterialkostenTest {
                 projektNotizRepository, produktkategorieRepository, kundeRepository, dateiSpeicherService,
                 projektMapper, anfrageRepository, ausgangsGeschaeftsDokumentRepository, zeitbuchungRepository,
                 artikelRepository, artikelInProjektRepository, projektPersistenceService,
-                lieferantenRepository, emailRepository, kalenderEintragRepository, eventPublisher);
+                lieferantenRepository, emailRepository, emailReiterRepository, kalenderEintragRepository, eventPublisher);
     }
 
     // ==================== Erfassen ====================

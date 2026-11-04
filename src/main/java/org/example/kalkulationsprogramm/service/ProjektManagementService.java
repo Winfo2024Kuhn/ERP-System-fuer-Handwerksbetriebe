@@ -18,6 +18,7 @@ import org.example.kalkulationsprogramm.domain.ArtikelInProjekt;
 import org.example.kalkulationsprogramm.domain.ArtikelWerkstoffe;
 import org.example.kalkulationsprogramm.domain.DokumentGruppe;
 import org.example.kalkulationsprogramm.domain.Email;
+import org.example.kalkulationsprogramm.domain.EmailBezug;
 import org.example.kalkulationsprogramm.domain.Kategorie;
 import org.example.kalkulationsprogramm.domain.KalenderEintrag;
 import org.example.kalkulationsprogramm.domain.Kunde;
@@ -37,8 +38,6 @@ import org.example.kalkulationsprogramm.dto.Materialkosten.MaterialkostenErfasse
 import org.example.kalkulationsprogramm.dto.Projekt.MaterialKilogrammDto;
 import org.example.kalkulationsprogramm.dto.Projekt.ProjektErstellenDto;
 import org.example.kalkulationsprogramm.dto.Projekt.ProjektResponseDto;
-import org.example.kalkulationsprogramm.dto.ProjektEmail.ProjektEmailDto;
-import org.example.kalkulationsprogramm.dto.ProjektEmail.ProjektEmailFileDto;
 import org.example.kalkulationsprogramm.dto.ProjektProduktkategorie.ProjektProduktkategorieErfassenDto;
 import org.example.kalkulationsprogramm.exception.FalscheAuftragsnummerException;
 import org.example.kalkulationsprogramm.exception.NotFoundException;
@@ -48,6 +47,7 @@ import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository;
 import org.example.kalkulationsprogramm.repository.ArtikelInProjektRepository;
 import org.example.kalkulationsprogramm.repository.ArtikelRepository;
+import org.example.kalkulationsprogramm.repository.EmailReiterRepository;
 import org.example.kalkulationsprogramm.repository.EmailRepository;
 import org.example.kalkulationsprogramm.repository.KalenderEintragRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
@@ -106,6 +106,7 @@ ProjektManagementService {
     private final ProjektPersistenceService projektPersistenceService;
     private final LieferantenRepository lieferantenRepository;
     private final EmailRepository emailRepository;
+    private final EmailReiterRepository emailReiterRepository;
     private final KalenderEintragRepository kalenderEintragRepository;
     private final org.springframework.context.ApplicationEventPublisher eventPublisher;
 
@@ -130,6 +131,7 @@ ProjektManagementService {
             ProjektPersistenceService projektPersistenceService,
             LieferantenRepository lieferantenRepository,
             EmailRepository emailRepository,
+            EmailReiterRepository emailReiterRepository,
             KalenderEintragRepository kalenderEintragRepository,
             org.springframework.context.ApplicationEventPublisher eventPublisher) {
         this.projektRepository = projektRepository;
@@ -147,6 +149,7 @@ ProjektManagementService {
         this.projektPersistenceService = projektPersistenceService;
         this.lieferantenRepository = lieferantenRepository;
         this.emailRepository = emailRepository;
+        this.emailReiterRepository = emailReiterRepository;
         this.kalenderEintragRepository = kalenderEintragRepository;
         this.eventPublisher = eventPublisher;
     }
@@ -1288,48 +1291,7 @@ ProjektManagementService {
     private ProjektResponseDto mappeMitKilogramm(Projekt projekt) {
         ProjektResponseDto dto = projektMapper.toProjektResponseDto(projekt);
 
-        // Emails laden und mappen
-        List<Email> emails = emailRepository.findByProjektOrderBySentAtDesc(projekt);
-        List<ProjektEmailDto> emailDtos = emails.stream().map(e -> {
-            ProjektEmailDto ed = new ProjektEmailDto();
-            ed.setId(e.getId());
-            ed.setDirection(e.getDirection());
-            ed.setFrom(e.getFromAddress());
-            ed.setTo(e.getRecipient());
-            ed.setSubject(e.getSubject());
-            ed.setSentAt(e.getSentAt());
-            ed.setBodyHtml(e.getHtmlBody() != null ? e.getHtmlBody() : e.getBody());
-            if (ed.getBodyHtml() == null)
-                ed.setBodyHtml(e.getRawBody());
-
-            // Thread-Info
-            ed.setParentEmailId(e.getParentEmail() != null ? e.getParentEmail().getId() : null);
-            ed.setReplyCount(countAncestors(e) + countAllReplies(e));
-
-            // Zustellstatus: Angebote und Rechnungen haengen am Projekt — hier
-            // muss eine nicht angekommene Mail sichtbar sein.
-            ed.setZustellStatus(e.getZustellStatus() != null ? e.getZustellStatus().name() : null);
-            ed.setZustellFehler(e.getZustellFehler());
-
-            if (e.getAttachments() != null) {
-                final Long emailId = e.getId();
-                ed.setAttachments(e.getAttachments().stream().map(att -> {
-                    ProjektEmailFileDto ad = new ProjektEmailFileDto();
-                    ad.setId(att.getId());
-                    ad.setOriginalFilename(att.getOriginalFilename());
-                    ad.setStoredFilename(att.getStoredFilename());
-                    ad.setContentId(att.getContentId());
-                    ad.setInline(Boolean.TRUE.equals(att.getInlineAttachment()));
-                    // Download-URL setzen
-                    ad.setUrl("/api/emails/" + emailId + "/attachments/" + att.getId());
-                    return ad;
-                }).collect(Collectors.toList()));
-            } else {
-                ed.setAttachments(new ArrayList<>());
-            }
-            return ed;
-        }).collect(Collectors.toList());
-        dto.setEmails(emailDtos);
+        dto.setEmailAnzahl(emailReiterRepository.anzahlVerlaeufe(EmailBezug.PROJEKT, projekt.getId()));
 
         List<MaterialKilogrammDto> kg = artikelInProjektRepository
                 .sumKilogrammByProjektGroupedByWerkstoff(projekt.getId());
@@ -1340,27 +1302,6 @@ ProjektManagementService {
                 .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
         dto.setGesamtKilogramm(total.compareTo(java.math.BigDecimal.ZERO) > 0 ? total : null);
         return dto;
-    }
-
-    private int countAllReplies(Email email) {
-        if (email.getReplies() == null || email.getReplies().isEmpty()) return 0;
-        int count = email.getReplies().size();
-        for (Email reply : email.getReplies()) {
-            count += countAllReplies(reply);
-        }
-        return count;
-    }
-
-    private int countAncestors(Email email) {
-        int count = 0;
-        java.util.Set<Long> visited = new java.util.HashSet<>();
-        Email current = email.getParentEmail();
-        while (current != null && !visited.contains(current.getId())) {
-            visited.add(current.getId());
-            count++;
-            current = current.getParentEmail();
-        }
-        return count;
     }
 
     private void ensureProjektHatZugewiesenenKunden(ProjektErstellenDto dto, Projekt projekt) {

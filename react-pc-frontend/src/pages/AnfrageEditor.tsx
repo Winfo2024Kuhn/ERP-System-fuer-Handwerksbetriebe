@@ -1086,7 +1086,7 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                     )}
                 >
                     <Mail className="w-4 h-4 inline-block mr-2" />
-                    E-Mails ({anfrage.emails?.length || 0})
+                    E-Mails ({anfrage.emailAnzahl ?? 0})
                 </button>
                 <button
                     onClick={() => setActiveTab('geschaeftsdokumente')}
@@ -1171,28 +1171,8 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
             {/* Tab Content: E-Mails */}
             {activeTab === 'emails' && (
                 <EmailsTab
-                    emails={(anfrage.emails || []).map((e) => ({
-                        id: e.id,
-                        subject: e.subject,
-                        from: e.sender || e.fromAddress,
-                        fromAddress: e.fromAddress || e.sender,
-                        to: e.recipient || e.recipients?.join(', '),
-                        bodyHtml: e.htmlBody || e.body,
-                        bodyPreview: e.body,
-                        direction: e.direction as 'IN' | 'OUT',
-                        sentAt: e.sentAt,
-                        zustellStatus: e.zustellStatus,
-                        zustellFehler: e.zustellFehler,
-                        parentEmailId: e.parentEmailId ?? e.parentId,
-                        replyCount: e.replyCount,
-                        attachments: e.attachments?.map((att) => ({
-                            id: att.id,
-                            originalFilename: att.originalFilename,
-                            storedFilename: att.storedFilename,
-                            contentId: att.contentId,
-                            inline: att.inline,
-                        })),
-                    }))}
+                    bezug="anfrage"
+                    bezugId={anfrage.id}
                     anfrageId={anfrage.id}
                     anfrage={{
                         bauvorhaben: anfrage.bauvorhaben,
@@ -1603,18 +1583,15 @@ export default function AnfrageEditor() {
         (async () => {
             try {
                 setLoading(true);
-                const [anfrageRes, emailsRes, dokumenteRes] = await Promise.all([
+                const [anfrageRes, dokumenteRes] = await Promise.all([
                     fetch(`/api/anfragen/${anfrageId}`),
-                    fetch(`/api/emails/anfrage/${anfrageId}`),
                     fetch(`/api/anfragen/${anfrageId}/dokumente`),
                 ]);
                 if (anfrageRes.ok) {
                     const anfrageData = await anfrageRes.json();
-                    const emails = emailsRes.ok ? await emailsRes.json() : [];
                     const dokumente = dokumenteRes.ok ? await dokumenteRes.json() : [];
                     setSelectedAnfrage({
                         ...anfrageData,
-                        emails: Array.isArray(emails) ? emails : [],
                         dokumente: Array.isArray(dokumente) ? dokumente : [],
                     });
                     setViewMode('detail');
@@ -1817,18 +1794,15 @@ export default function AnfrageEditor() {
     const loadDetails = async (id: number) => {
         try {
             setLoading(true);
-            const [anfrageRes, emailsRes, dokumenteRes] = await Promise.all([
+            const [anfrageRes, dokumenteRes] = await Promise.all([
                 fetch(`/api/anfragen/${id}`),
-                fetch(`/api/emails/anfrage/${id}`),
                 fetch(`/api/anfragen/${id}/dokumente`),
             ]);
             if (anfrageRes.ok) {
                 const anfrageData = await anfrageRes.json();
-                const emails = emailsRes.ok ? await emailsRes.json() : [];
                 const dokumente = dokumenteRes.ok ? await dokumenteRes.json() : [];
                 setSelectedAnfrage({
                     ...anfrageData,
-                    emails: Array.isArray(emails) ? emails : [],
                     dokumente: Array.isArray(dokumente) ? dokumente : [],
                 });
                 setViewMode('detail');

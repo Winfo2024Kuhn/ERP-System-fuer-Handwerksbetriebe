@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Loader2, PhoneOff, RefreshCw, Search, Voicemail, X } from 'lucide-react';
+import { PhoneOff, RefreshCw, Search, Voicemail, X } from 'lucide-react';
 import { Button } from '../../components/ui/button';
+import { MehrLadenLeiste } from '../../components/ui/mehr-laden-leiste';
 import { Select } from '../../components/ui/select-custom';
 import { cn } from '../../lib/utils';
 import { ladeAnrufe } from './api';
@@ -370,15 +371,11 @@ export function AnrufListe({ anrufbeantworter, aktualisierung }: AnrufListeProps
             </div>
 
             {!fehler && anrufe.length > 0 && (
-                <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-500">
-                    <span>{anrufe.length} von {gesamt} Anrufen</span>
-                    {seite + 1 < seiten && (
-                        <Button variant="outline" size="sm" onClick={ladeWeitere} disabled={laedtMehr}>
-                            {laedtMehr && <Loader2 aria-hidden="true" className="h-4 w-4 motion-safe:animate-spin" />}
-                            Weitere Anrufe laden
-                        </Button>
-                    )}
-                </div>
+                <MehrLadenLeiste
+                    angezeigt={anrufe.length} gesamt={gesamt} hatMehr={seite + 1 < seiten}
+                    laedtMehr={laedtMehr} onMehrLaden={ladeWeitere}
+                    zaehlerText={`${anrufe.length} von ${gesamt} Anrufen`} knopfText="Weitere Anrufe laden"
+                />
             )}
 
             {zuordnen.dialogElement}
