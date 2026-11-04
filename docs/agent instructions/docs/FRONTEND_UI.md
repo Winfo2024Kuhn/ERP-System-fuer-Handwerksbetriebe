@@ -106,7 +106,7 @@ PC-Frontend (`react-pc-frontend/src`):
 - `useToast()` -> `src/components/ui/toast.tsx` (siehe Toast-Pflicht)
 - `<ImageViewer>` -> `src/components/ui/image-viewer.tsx`
 - `<DetailLayout>` -> `src/components/DetailLayout.tsx` (2-Spalten-Layout)
-- `<EmailsTab>` -> `src/components/EmailsTab.tsx` (E-Mail-Verlauf in Kunde, Projekt, Anfrage, Lieferant)
+- `<EmailsTab>` -> `src/components/EmailsTab.tsx` (E-Mail-Verlauf in Kunde, Projekt, Anfrage, Lieferant). Teile und Logik liegen in `src/features/email/emailsTab/` (Listenzeile, Kopfleiste, Verlaufs-Dialog, Anhang-Vorschau, Hooks für Verlauf und Antwort, reine Funktionen für Verläufe und Filter); dort erweitern, nicht in `EmailsTab.tsx`.
 - `<GoogleMapsEmbed>` -> `src/components/GoogleMapsEmbed.tsx`
 - `<DocumentPreviewModal>` -> `src/components/DocumentPreviewModal.tsx` (für PDFs)
 - `<InfoButton>` -> `src/components/ui/info-button.tsx` (Erklärungen an komplexen Stellen, siehe unten)

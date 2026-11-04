@@ -1,57 +1,20 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, Mail, Search, Paperclip, Plus, Reply, MessagesSquare, X, ArrowLeft } from 'lucide-react';
-import { klartextGrund } from '../lib/zustellGrund';
-import { escapeHtml, extractDisplayName, extractEmailAddress } from '../lib/emailAddress';
-import { buildReplyAddressing } from '../features/email/emailCenterModel';
-import { Button } from './ui/button';
-import { cn } from '../lib/utils';
+import { Mail } from 'lucide-react';
 import { getThreadPreview } from '../features/email/threadQuotes';
 import { EmailComposeModal } from './EmailComposeModal';
-import { EmailThreadView } from './EmailThreadView';
-import { EmailComposeForm } from './EmailComposeForm';
-import type { EmailThread, EmailThreadEntry } from './EmailThreadView';
+import type { EmailThreadEntry } from './EmailThreadView';
 import type { ProjektDetail } from '../types';
+import { buildThreadRoots, filterThreadRoots } from '../features/email/emailsTab/emailsTabThreadRoots';
+import { useEmailsTabThread } from '../features/email/emailsTab/useEmailsTabThread';
+import { useEmailsTabReply } from '../features/email/emailsTab/useEmailsTabReply';
+import { EmailsTabToolbar } from '../features/email/emailsTab/EmailsTabToolbar';
+import { EmailsTabListItem } from '../features/email/emailsTab/EmailsTabListItem';
+import { EmailsTabThreadDialog } from '../features/email/emailsTab/EmailsTabThreadDialog';
+import { EmailsTabAttachmentPreview, type EmailsTabAttachment } from '../features/email/emailsTab/EmailsTabAttachmentPreview';
+import type { EmailsTabFilter, GenericEmail } from '../features/email/emailsTab/emailsTabTypes';
 
-// Generic email type that works across different entities
-export interface GenericEmail {
-    id: number;
-    /** Nur bei direction 'OUT': 'OFFEN' = kein Fehler bekannt, 'UNZUSTELLBAR' = kam nicht an. */
-    zustellStatus?: 'OFFEN' | 'UNZUSTELLBAR';
-    /** Grund der Ablehnung, z.B. "unknown user / Teilnehmer existiert nicht". */
-    zustellFehler?: string;
-    subject?: string;
-    from?: string;
-    fromAddress?: string;
-    to?: string;
-    /** Felder aus /api/emails/{id} (UnifiedEmailDto) */
-    recipient?: string;
-    cc?: string;
-    replyToAddress?: string;
-    bodyHtml?: string;
-    bodyPreview?: string;
-    body?: string;
-    direction?: 'IN' | 'OUT';
-    sentAt?: string;
-    sentDate?: string;
-    receivedDate?: string;
-    attachments?: Array<{
-        id?: number;
-        originalFilename?: string;
-        storedFilename?: string;
-        filename?: string;  // From Kommunikation API
-        url?: string;       // From Kommunikation API
-        contentId?: string;
-        inline?: boolean;
-    }>;
-    sender?: string;
-    recipients?: string[];
-    // Thread support
-    parentEmailId?: number;
-    parentId?: number;
-    replyCount?: number;
-    replies?: GenericEmail[];
-}
+export type { GenericEmail };
 
 export interface EmailsTabProps {
     // Required
@@ -96,16 +59,11 @@ export interface EmailsTabProps {
     showReplyButton?: boolean;
 }
 
-// ─── Helper: count replies recursively ────────────────────────
-function countReplies(email: GenericEmail): number {
-    if (!email.replies || email.replies.length === 0) return 0;
-    let count = email.replies.length;
-    for (const r of email.replies) {
-        count += countReplies(r);
-    }
-    return count;
-}
-
+/**
+ * E-Mail-Reiter in Kunde, Projekt, Anfrage und Lieferant: Mailliste nach Verläufen,
+ * Suche und Filter, Verlauf im Vollbild mit Antwort, neue E-Mail.
+ * Bausteine und Logik liegen unter `features/email/emailsTab/`.
+ */
 export const EmailsTab: React.FC<EmailsTabProps> = ({
     emails,
     projektId,
@@ -118,173 +76,21 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
 }) => {
     const navigate = useNavigate();
 
-    // State
-    const [emailFilter, setEmailFilter] = useState<'all' | 'in' | 'out'>('all');
+    const [emailFilter, setEmailFilter] = useState<EmailsTabFilter>('all');
     const [emailSearch, setEmailSearch] = useState('');
     const [showComposeModal, setShowComposeModal] = useState(false);
-
-    // Thread view state
     const [selectedEmailId, setSelectedEmailId] = useState<number | null>(null);
-    const [thread, setThread] = useState<EmailThread | null>(null);
-    const [threadLoading, setThreadLoading] = useState(false);
+    const [previewAttachment, setPreviewAttachment] = useState<EmailsTabAttachment | null>(null);
 
-    // Reply state (inline compose within thread dialog)
-    const [isReplying, setIsReplying] = useState(false);
-    const [replyToEmail, setReplyToEmail] = useState<GenericEmail | null>(null);
-    const [replyToEmailId, setReplyToEmailId] = useState<number | undefined>(undefined);
+    const { thread, threadLoading, reloadThread } = useEmailsTabThread(selectedEmailId);
+    const reply = useEmailsTabReply();
+    const { cancelReply } = reply;
 
-    // Attachment preview
-    const [previewAttachment, setPreviewAttachment] = useState<{ url: string; type: 'image' | 'pdf'; name: string } | null>(null);
-
-    // Determine the entity context
-    const contextProjektId = projektId;
-    const contextAnfrageId = anfrageId;
-
-    // ─── Thread-grouped emails: show only roots ───────────────
-    const threadRoots = useMemo(() => {
-        if (!emails) return [];
-        const parentIdOf = (e: GenericEmail) => e.parentEmailId ?? e.parentId;
-        const emailMap = new Map<number, GenericEmail>();
-        for (const e of emails) emailMap.set(e.id, e);
-
-        // Build reply counts by walking to root
-        const replyCounts = new Map<number, number>();
-        for (const e of emails) {
-            const pid = parentIdOf(e);
-            if (pid != null) {
-                let rootId = pid;
-                const visited = new Set<number>();
-                while (emailMap.has(rootId)) {
-                    const parent = emailMap.get(rootId)!;
-                    const ppid = parentIdOf(parent);
-                    if (ppid == null || !emailMap.has(ppid) || visited.has(ppid)) break;
-                    visited.add(rootId);
-                    rootId = ppid;
-                }
-                replyCounts.set(rootId, (replyCounts.get(rootId) || 0) + 1);
-            }
-        }
-
-        // Roots = emails without parentId OR whose parent is not in this list
-        const roots = emails.filter(e => {
-            const pid = parentIdOf(e);
-            return pid == null || !emailMap.has(pid);
-        });
-
-        return roots.map(root => ({
-            ...root,
-            // Prefer server-provided replyCount (counts full thread chain regardless of entity assignment).
-            // Fall back to client-side flat-list traversal for older endpoints that don't send replyCount.
-            _replyCount: (root.replyCount != null && root.replyCount > 0)
-                ? root.replyCount
-                : (replyCounts.get(root.id) || 0) + countReplies(root),
-        }));
-    }, [emails]);
-
-    // Filter thread roots
-    const filteredEmails = useMemo(() => {
-        return threadRoots.filter(email => {
-            if (emailFilter === 'in' && email.direction !== 'IN') return false;
-            if (emailFilter === 'out' && email.direction !== 'OUT') return false;
-            if (emailSearch.trim()) {
-                const search = emailSearch.toLowerCase();
-                const subject = (email.subject || '').toLowerCase();
-                const from = (email.from || email.fromAddress || email.sender || '').toLowerCase();
-                const body = (email.bodyHtml || email.bodyPreview || email.body || '').toLowerCase();
-                if (!subject.includes(search) && !from.includes(search) && !body.includes(search)) {
-                    return false;
-                }
-            }
-            return true;
-        });
-    }, [threadRoots, emailFilter, emailSearch]);
-
-    // ─── Load thread when email is selected ───────────────────
-    useEffect(() => {
-        if (!selectedEmailId) return;
-        let active = true;
-        (async () => {
-            setThreadLoading(true);
-            try {
-                const r = await fetch(`/api/emails/${selectedEmailId}/thread`);
-                if (!r.ok) throw new Error('Thread not found');
-                const data: EmailThread = await r.json();
-                if (active) setThread(data);
-            } catch {
-                if (active) setThread(null);
-            } finally {
-                if (active) setThreadLoading(false);
-            }
-        })();
-        return () => { active = false; setThread(null); };
-    }, [selectedEmailId]);
-
-    const handleEmailClick = (email: GenericEmail) => {
-        setSelectedEmailId(email.id);
-        setIsReplying(false);
-        setReplyToEmail(null);
-    };
-
-    // ─── Handle reply from thread view ────────────────────────
-    const handleThreadReply = useCallback(async (entry: EmailThreadEntry) => {
-        let fullEmail: GenericEmail | null = null;
-        try {
-            const res = await fetch(`/api/emails/${entry.id}`);
-            if (res.ok) fullEmail = await res.json();
-        } catch { /* fallback */ }
-        if (!fullEmail) {
-            fullEmail = {
-                id: entry.id, subject: entry.subject, fromAddress: entry.fromAddress,
-                to: entry.recipient, recipient: entry.recipient, cc: entry.cc, replyToAddress: entry.replyToAddress,
-                bodyHtml: entry.htmlBody, body: entry.snippet,
-                direction: entry.direction, sentAt: entry.sentAt,
-            };
-        }
-        setReplyToEmail(fullEmail);
-        setReplyToEmailId(entry.id);
-        setIsReplying(true);
-    }, []);
-
-    // ─── Handle reply success ─────────────────────────────────
-    const handleReplySuccess = useCallback(() => {
-        setIsReplying(false);
-        setReplyToEmail(null);
-        setReplyToEmailId(undefined);
-        // Reload thread
-        if (selectedEmailId) {
-            setThreadLoading(true);
-            fetch(`/api/emails/${selectedEmailId}/thread`)
-                .then(r => r.ok ? r.json() : null)
-                .then((data: EmailThread | null) => setThread(data))
-                .catch(() => {})
-                .finally(() => setThreadLoading(false));
-        }
-        if (onEmailSent) onEmailSent();
-    }, [selectedEmailId, onEmailSent]);
-
-    const closeThreadView = () => {
-        setSelectedEmailId(null);
-        setThread(null);
-        setIsReplying(false);
-        setReplyToEmail(null);
-    };
-
-    const handleComposeClose = () => { setShowComposeModal(false); };
-    const handleComposeSent = () => {
-        setShowComposeModal(false);
-        if (onEmailSent) onEmailSent();
-    };
-
-    const formatDate = (email: GenericEmail) => {
-        const dateStr = email.sentAt || email.receivedDate || email.sentDate;
-        if (!dateStr) return '-';
-        try {
-            return new Date(dateStr).toLocaleDateString('de-DE', {
-                day: '2-digit', month: '2-digit', year: 'numeric',
-                hour: '2-digit', minute: '2-digit'
-            });
-        } catch { return dateStr; }
-    };
+    // Nur Wurzeln der Verläufe anzeigen
+    const threadRoots = useMemo(() => buildThreadRoots(emails), [emails]);
+    const filteredEmails = useMemo(
+        () => filterThreadRoots(threadRoots, emailFilter, emailSearch),
+        [threadRoots, emailFilter, emailSearch]);
 
     /**
      * Vorschauzeile ohne zitierten Verlauf, dieselbe Erkennung wie im E-Mail-Center.
@@ -293,289 +99,81 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
     const textPreviews = useMemo(() => new Map(threadRoots.map(email =>
         [email.id, getThreadPreview(email.bodyHtml || email.bodyPreview || email.body || '')])), [threadRoots]);
 
-    // ─── Build reply quote ────────────────────────────────────
-    const replyQuote = useMemo(() => {
-        if (!replyToEmail) return undefined;
-        const senderName = extractDisplayName(replyToEmail.fromAddress || replyToEmail.from || replyToEmail.sender);
-        const date = replyToEmail.sentAt
-            ? new Date(replyToEmail.sentAt).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
-              + ', ' + new Date(replyToEmail.sentAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) + ' Uhr'
-            : '';
-        let cleanBody = replyToEmail.bodyHtml || replyToEmail.body || '';
+    const handleEmailClick = (email: GenericEmail) => {
+        setSelectedEmailId(email.id);
+        cancelReply();
+    };
+
+    const closeThreadView = () => {
+        setSelectedEmailId(null);
+        cancelReply();
+    };
+
+    const handleReplySuccess = useCallback(() => {
+        cancelReply();
+        reloadThread();
+        if (onEmailSent) onEmailSent();
+    }, [cancelReply, reloadThread, onEmailSent]);
+
+    const handleOpenDraft = (entry: EmailThreadEntry) => {
+        if (entry.draftId) {
+            navigate(`/emails/drafts?draft=${encodeURIComponent(entry.draftId)}`);
+        }
+    };
+
+    const handleDeleteDraft = async (draftId: number) => {
         try {
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(cleanBody, 'text/html');
-            doc.querySelectorAll('script, style, link').forEach(el => el.remove());
-            cleanBody = doc.body.innerHTML;
+            await fetch(`/api/emails/drafts/${draftId}`, { method: 'DELETE' });
+            // Reload thread to reflect deletion
+            reloadThread();
         } catch { /* ignore */ }
-        return `<div class="email-quote" style="border-left:3px solid #e2e8f0;padding-left:1rem;color:#64748b;margin-top:0.5rem">
-            <p style="font-size:0.8125rem;color:#94a3b8;margin-bottom:0.5rem">Am ${escapeHtml(date)} schrieb ${escapeHtml(senderName)}:</p>
-            ${cleanBody}
-        </div>`;
-    }, [replyToEmail]);
+    };
 
-    const replyInitialRecipient = useMemo(() => {
-        if (!replyToEmail) return '';
-        const fromAddress = replyToEmail.fromAddress || replyToEmail.from || replyToEmail.sender || '';
-        // Auf eine eigene gesendete Mail antworten heißt: an deren Empfänger, nie an uns selbst.
-        const ownSender = replyToEmail.direction === 'OUT' ? extractEmailAddress(fromAddress).toLowerCase() : '';
-        return buildReplyAddressing({
-            direction: replyToEmail.direction ?? 'IN',
-            fromAddress,
-            replyToAddress: replyToEmail.replyToAddress,
-            recipient: replyToEmail.recipient || replyToEmail.to || replyToEmail.recipients?.join(', '),
-            cc: replyToEmail.cc,
-        }, 'reply', address => !!ownSender && address === ownSender).to;
-    }, [replyToEmail]);
-
-    const replyInitialSubject = useMemo(() => {
-        if (!replyToEmail?.subject) return 'AW: ';
-        return /^(\s*)(aw|re):\s*/i.test(replyToEmail.subject) ? replyToEmail.subject : `AW: ${replyToEmail.subject}`;
-    }, [replyToEmail]);
+    const handleComposeSent = () => {
+        setShowComposeModal(false);
+        if (onEmailSent) onEmailSent();
+    };
 
     return (
         <div className="space-y-4">
-            {/* ─── Thread Detail View ── */}
             {selectedEmailId && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-                    <div className="bg-white rounded-2xl shadow-2xl w-[75vw] max-w-5xl h-[90vh] flex flex-col overflow-hidden">
-                        {/* Header */}
-                        <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 bg-slate-50 shrink-0">
-                            <div className="flex items-center gap-3">
-                                <button onClick={closeThreadView} className="p-1.5 rounded-lg hover:bg-slate-200 transition-colors">
-                                    <ArrowLeft className="w-5 h-5 text-slate-600" />
-                                </button>
-                                <div>
-                                    <h3 className="font-semibold text-slate-900 text-sm truncate max-w-md">
-                                        {threadRoots.find(e => e.id === selectedEmailId)?.subject || '(kein Betreff)'}
-                                    </h3>
-                                    {thread && (
-                                        <p className="text-xs text-slate-500">
-                                            {thread.emails.length} {thread.emails.length === 1 ? 'Nachricht' : 'Nachrichten'} im Thread
-                                        </p>
-                                    )}
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                {showReplyButton && !isReplying && thread && (
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => {
-                                            if (thread.emails.length > 0) {
-                                                handleThreadReply(thread.emails[thread.emails.length - 1]);
-                                            }
-                                        }}
-                                        className="gap-1.5 text-slate-700 border-slate-300 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
-                                    >
-                                        <Reply className="w-4 h-4" /> Antworten
-                                    </Button>
-                                )}
-                                <button onClick={closeThreadView} className="p-1.5 rounded-lg hover:bg-slate-200 transition-colors">
-                                    <X className="w-5 h-5 text-slate-500" />
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Content */}
-                        {isReplying && replyToEmail ? (
-                            <div className="flex-1 overflow-hidden flex flex-col">
-                                <EmailComposeForm
-                                    onClose={() => { setIsReplying(false); setReplyToEmail(null); setReplyToEmailId(undefined); }}
-                                    onSuccess={handleReplySuccess}
-                                    initialRecipient={replyInitialRecipient}
-                                    initialSubject={replyInitialSubject}
-                                    replyQuote={replyQuote}
-                                    replyEmailId={replyToEmailId}
-                                    projektId={contextProjektId}
-                                    anfrageId={contextAnfrageId}
-                                    variant="modal"
-                                />
-                            </div>
-                        ) : threadLoading ? (
-                            <div className="flex-1 overflow-auto bg-slate-50 px-6 py-6 space-y-2">
-                                {[false, true, false].map((right, i) => (
-                                    <div key={i} className={`flex items-end gap-2 mb-2 ${right ? 'flex-row-reverse' : ''}`}>
-                                        <div className="w-8 h-8 rounded-full bg-slate-200 animate-pulse shrink-0" />
-                                        <div className={`animate-pulse bg-slate-200 rounded-2xl h-16 ${right ? 'rounded-br-sm w-56' : 'rounded-bl-sm w-64'}`} />
-                                    </div>
-                                ))}
-                            </div>
-                        ) : thread ? (
-                            <EmailThreadView
-                                thread={thread}
-                                onPreview={(url, type, name) => setPreviewAttachment({ url, type, name })}
-                                onReply={showReplyButton ? (entry) => handleThreadReply(entry) : undefined}
-                                onOpenDraft={(entry) => {
-                                    if (entry.draftId) {
-                                        navigate(`/emails/drafts?draft=${encodeURIComponent(entry.draftId)}`);
-                                    }
-                                }}
-                                onDeleteDraft={async (draftId) => {
-                                    try {
-                                        await fetch(`/api/emails/drafts/${draftId}`, { method: 'DELETE' });
-                                        // Reload thread to reflect deletion
-                                        if (selectedEmailId) {
-                                            setThreadLoading(true);
-                                            fetch(`/api/emails/${selectedEmailId}/thread`)
-                                                .then(r => r.ok ? r.json() : null)
-                                                .then((data: EmailThread | null) => setThread(data))
-                                                .catch(() => {})
-                                                .finally(() => setThreadLoading(false));
-                                        }
-                                    } catch { /* ignore */ }
-                                }}
-                            />
-                        ) : (
-                            <div className="flex-1 flex items-center justify-center p-6">
-                                <p className="text-sm text-slate-400 italic">Thread konnte nicht geladen werden.</p>
-                            </div>
-                        )}
-                    </div>
-                </div>
+                <EmailsTabThreadDialog
+                    subject={threadRoots.find(e => e.id === selectedEmailId)?.subject || '(kein Betreff)'}
+                    thread={thread}
+                    threadLoading={threadLoading}
+                    showReplyButton={showReplyButton}
+                    reply={reply}
+                    projektId={projektId}
+                    anfrageId={anfrageId}
+                    onClose={closeThreadView}
+                    onReplySuccess={handleReplySuccess}
+                    onPreview={(url, type, name) => setPreviewAttachment({ url, type, name })}
+                    onOpenDraft={handleOpenDraft}
+                    onDeleteDraft={handleDeleteDraft}
+                />
             )}
 
-            {/* ─── Attachment Preview ───────────────────────── */}
-            {previewAttachment && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60" onClick={() => setPreviewAttachment(null)}>
-                    <div className="bg-white rounded-xl shadow-2xl max-w-4xl max-h-[90vh] overflow-auto p-2" onClick={e => e.stopPropagation()}>
-                        <div className="flex justify-between items-center px-3 py-2 border-b border-slate-100">
-                            <p className="text-sm font-medium text-slate-700">{previewAttachment.name}</p>
-                            <button onClick={() => setPreviewAttachment(null)} className="p-1 hover:bg-slate-100 rounded">
-                                <X className="w-4 h-4" />
-                            </button>
-                        </div>
-                        {previewAttachment.type === 'image' ? (
-                            <img src={previewAttachment.url} alt={previewAttachment.name} className="max-w-full max-h-[80vh]" />
-                        ) : (
-                            <iframe src={previewAttachment.url} className="w-[800px] h-[80vh]" title={previewAttachment.name} />
-                        )}
-                    </div>
-                </div>
-            )}
+            <EmailsTabAttachmentPreview attachment={previewAttachment} onClose={() => setPreviewAttachment(null)} />
 
-            {/* ─── Header with filters and compose button ──── */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
-                <h3 className="text-lg font-medium text-slate-900">E-Mails</h3>
-                <div className="flex flex-wrap items-center gap-3">
-                    <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                        <input
-                            type="text"
-                            placeholder="E-Mails durchsuchen..."
-                            value={emailSearch}
-                            onChange={e => setEmailSearch(e.target.value)}
-                            className="pl-9 pr-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500 w-48"
-                        />
-                    </div>
-                    <div className="flex rounded-lg border border-slate-200 overflow-hidden">
-                        <button
-                            onClick={() => setEmailFilter('all')}
-                            className={cn("px-3 py-1.5 text-sm font-medium transition-colors",
-                                emailFilter === 'all' ? "bg-rose-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
-                            )}
-                        >Alle</button>
-                        <button
-                            onClick={() => setEmailFilter('in')}
-                            className={cn("px-3 py-1.5 text-sm font-medium transition-colors border-l border-slate-200",
-                                emailFilter === 'in' ? "bg-blue-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
-                            )}
-                        >Eingang</button>
-                        <button
-                            onClick={() => setEmailFilter('out')}
-                            className={cn("px-3 py-1.5 text-sm font-medium transition-colors border-l border-slate-200",
-                                emailFilter === 'out' ? "bg-green-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
-                            )}
-                        >Ausgang</button>
-                    </div>
-                    {showComposeButton && (projektId || anfrageId) && (
-                        <Button onClick={() => setShowComposeModal(true)} className="bg-rose-600 text-white hover:bg-rose-700">
-                            <Plus className="w-4 h-4 mr-2" /> Neue E-Mail
-                        </Button>
-                    )}
-                </div>
-            </div>
+            <EmailsTabToolbar
+                search={emailSearch}
+                onSearchChange={setEmailSearch}
+                filter={emailFilter}
+                onFilterChange={setEmailFilter}
+                showCompose={showComposeButton && !!(projektId || anfrageId)}
+                onCompose={() => setShowComposeModal(true)}
+            />
 
-            {/* ─── Thread list (roots only) ─────────────────── */}
             {filteredEmails.length > 0 ? (
                 <div className="space-y-3">
-                    {filteredEmails.map((email) => {
-                        const isThread = email._replyCount > 0;
-                        return (
-                            <div
-                                key={email.id}
-                                className={cn(
-                                    "rounded-xl border transition-all cursor-pointer group relative overflow-hidden",
-                                    isThread
-                                        ? "bg-white border-rose-200 hover:border-rose-400 hover:shadow-md shadow-sm"
-                                        : "bg-white border-slate-200 hover:border-rose-300 hover:shadow-md"
-                                )}
-                                onClick={() => handleEmailClick(email)}
-                            >
-                                {/* Linker Akzent-Balken für Threads */}
-                                {isThread && (
-                                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-rose-400" />
-                                )}
-                                <div className={cn("p-4", isThread && "pl-5")}>
-                                    <div className="flex items-start justify-between gap-4">
-                                        <div className="flex items-start gap-3 flex-1 min-w-0">
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                                                    <span className={cn(
-                                                        "text-xs font-medium px-2 py-0.5 rounded-full",
-                                                        email.direction === 'IN' ? "bg-blue-50 text-blue-700" : "bg-green-50 text-green-700"
-                                                    )}>
-                                                        {email.direction === 'IN' ? 'Eingang' : 'Ausgang'}
-                                                    </span>
-                                                    {isThread && (
-                                                        <span
-                                                            className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-0.5 rounded-full bg-rose-600 text-white shadow-sm"
-                                                            title={`${email._replyCount + 1} Nachrichten in diesem Thread`}
-                                                        >
-                                                            <MessagesSquare className="w-3 h-3" />
-                                                            {email._replyCount + 1} Nachrichten
-                                                        </span>
-                                                    )}
-                                                    <span className="text-xs text-slate-400">{formatDate(email)}</span>
-                                                </div>
-                                                <h4 className="font-medium text-slate-900 truncate">{email.subject || '(kein Betreff)'}</h4>
-                                                <p className="text-sm text-slate-500 truncate">
-                                                    {email.direction === 'IN' ? 'Von: ' : 'An: '}
-                                                    {email.from || email.fromAddress || email.sender || 'Unbekannt'}
-                                                </p>
-                                                {(email.bodyHtml || email.bodyPreview || email.body) && (
-                                                    <p className="text-sm text-slate-400 mt-1 line-clamp-2">{textPreviews.get(email.id)}</p>
-                                                )}
-                                                {/* Rueckläufer-Warnung: Ohne diesen Hinweis sieht eine nie
-                                                    angekommene Mail exakt aus wie eine erfolgreich versendete —
-                                                    der Fehler faellt im Alltag sonst gar nicht auf. */}
-                                                {email.zustellStatus === 'UNZUSTELLBAR' && (
-                                                    <div className="mt-2 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2">
-                                                        <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                                                        <div className="min-w-0">
-                                                            <p className="text-sm font-semibold text-rose-700">Nicht angekommen</p>
-                                                            <p className="text-xs text-rose-600 break-words" title={email.zustellFehler}>
-                                                                {klartextGrund(email.zustellFehler)}
-                                                            </p>
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                        <div className="flex flex-col items-end gap-2 shrink-0">
-                                            {isThread
-                                                ? <MessagesSquare className="w-5 h-5 text-rose-300 group-hover:text-rose-500 transition-colors" />
-                                                : <Mail className="w-5 h-5 text-slate-300 group-hover:text-rose-400 transition-colors" />
-                                            }
-                                            {email.attachments && email.attachments.filter(a => !a.inline).length > 0 && (
-                                                <Paperclip className="w-4 h-4 text-slate-400" />
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        );
-                    })}
+                    {filteredEmails.map(email => (
+                        <EmailsTabListItem
+                            key={email.id}
+                            email={email}
+                            preview={textPreviews.get(email.id)}
+                            onOpen={handleEmailClick}
+                        />
+                    ))}
                 </div>
             ) : (
                 <div className="flex flex-col items-center justify-center py-12 text-slate-500">
@@ -584,11 +182,10 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
                 </div>
             )}
 
-            {/* Compose Modal */}
             {showComposeModal && (
                 <EmailComposeModal
                     isOpen={showComposeModal}
-                    onClose={handleComposeClose}
+                    onClose={() => setShowComposeModal(false)}
                     projektId={projektId}
                     projekt={projekt as unknown as ProjektDetail}
                     anfrageId={anfrageId}
