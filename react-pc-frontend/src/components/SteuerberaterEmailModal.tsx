@@ -6,6 +6,7 @@ import { Label } from './ui/label';
 import { Select } from './ui/select-custom';
 import { htmlFuerVersand, ladeStandardSignatur, setzeEditorHtml } from '../features/email/mailEditorHtml';
 import { escapeHtml } from '../lib/emailAddress';
+import { briefanrede } from '../lib/briefanrede';
 
 interface MitarbeiterStunden {
     mitarbeiterId: number;
@@ -66,25 +67,6 @@ const getCurrentFrontendUser = (): FrontendUserSelection | null => {
         console.warn('Frontend-Profil konnte nicht gelesen werden:', err);
     }
     return null;
-};
-
-/**
- * Baut die Anrede-Zeile aus Anrede + Nachname.
- * Bei DAMEN_HERREN entfällt der Nachname; bei FAMILIE wird der Nachname angehängt.
- */
-const buildAnredeZeile = (anrede: string | null | undefined, nachname: string | undefined): string => {
-    const safeNachname = escapeHtml((nachname || '').trim());
-    switch (anrede) {
-        case 'HERR':
-            return safeNachname ? `Sehr geehrter Herr ${safeNachname},` : 'Sehr geehrter Herr,';
-        case 'FRAU':
-            return safeNachname ? `Sehr geehrte Frau ${safeNachname},` : 'Sehr geehrte Frau,';
-        case 'FAMILIE':
-            return safeNachname ? `Sehr geehrte Familie ${safeNachname},` : 'Sehr geehrte Familie,';
-        case 'DAMEN_HERREN':
-        default:
-            return 'Sehr geehrte Damen und Herren,';
-    }
 };
 
 export function SteuerberaterEmailModal({
@@ -298,9 +280,8 @@ ${sig}
         const key = `${selectedSteuerberaterId}|${selectedAnsprechpartnerId}|${monat}|${jahr}|${mitarbeiterDaten.length}`;
         if (lastRenderedKeyRef.current === key) return;
 
-        const anredeZeile = selectedAnsprechpartner
-            ? buildAnredeZeile(selectedAnsprechpartner.anrede, selectedAnsprechpartner.nachname)
-            : 'Sehr geehrte Damen und Herren,';
+        // Kein Ansprechpartner: briefanrede liefert „Sehr geehrte Damen und Herren“.
+        const anredeZeile = `${escapeHtml(briefanrede(selectedAnsprechpartner?.anrede, selectedAnsprechpartner?.nachname))},`;
 
         const body = generateEmailBody(signatureRef.current, anredeZeile);
         setzeEditorHtml(editorRef.current, body);

@@ -952,6 +952,8 @@ Versand von Geschäftsdokumenten per Mail.
 |---|---|---|
 | `POST` | `/` | Betreff und Text für eine Dokument-Mail erzeugen (bei Angebot und Nachtragsangebot mit Freigabe-Link) |
 
+`anrede` im Request ist die Anrede-Art des Kunden als Rohwert (`HERR`, `FRAU`, `FAMILIE`, `FIRMA`, `DAMEN_HERREN`), kein fertiger Text; leer oder unbekannt gilt als „Sehr geehrte Damen und Herren“. Daraus entsteht die Briefanrede (`util/Briefanrede`): `{{ANREDE}} {{KUNDENNAME}},` in der Vorlage wird bei Herr/Frau/Familie mit Namen zu „Sehr geehrter Herr Max Mustermann,“, sonst zu „Sehr geehrte Damen und Herren,“. Dieselbe Regel gilt für die festen Texte, wenn keine Vorlage hinterlegt ist. Antwort `{subject, body}` wie bisher.
+
 ### EmailTextTemplateController
 
 **Basis-URL:** `/api/email-textvorlagen`

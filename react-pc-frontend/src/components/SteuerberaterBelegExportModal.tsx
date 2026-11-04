@@ -5,6 +5,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Select } from './ui/select-custom';
 import { htmlFuerVersand, ladeStandardSignatur, setzeEditorHtml } from '../features/email/mailEditorHtml';
+import { briefanrede } from '../lib/briefanrede';
 
 /**
  * Issue #58 – Steuerberater-Beleg-Export.
@@ -85,21 +86,6 @@ const getCurrentFrontendUser = (): FrontendUserSelection | null => {
         console.warn('Frontend-Profil konnte nicht gelesen werden:', err);
     }
     return null;
-};
-
-const buildAnredeZeile = (anrede: string | null | undefined, nachname: string | undefined): string => {
-    const safeNachname = escapeHtml((nachname || '').trim());
-    switch (anrede) {
-        case 'HERR':
-            return safeNachname ? `Sehr geehrter Herr ${safeNachname},` : 'Sehr geehrter Herr,';
-        case 'FRAU':
-            return safeNachname ? `Sehr geehrte Frau ${safeNachname},` : 'Sehr geehrte Frau,';
-        case 'FAMILIE':
-            return safeNachname ? `Sehr geehrte Familie ${safeNachname},` : 'Sehr geehrte Familie,';
-        case 'DAMEN_HERREN':
-        default:
-            return 'Sehr geehrte Damen und Herren,';
-    }
 };
 
 const MONATSNAMEN = [
@@ -445,9 +431,8 @@ ${sig}
         const key = `${selectedSteuerberaterId}|${selectedAnsprechpartnerId}|${monat}|${jahr}|${entriesFingerprint}|${loadingEntries}`;
         if (lastRenderedKeyRef.current === key) return;
 
-        const anredeZeile = selectedAnsprechpartner
-            ? buildAnredeZeile(selectedAnsprechpartner.anrede, selectedAnsprechpartner.nachname)
-            : 'Sehr geehrte Damen und Herren,';
+        // Kein Ansprechpartner: briefanrede liefert „Sehr geehrte Damen und Herren“.
+        const anredeZeile = `${escapeHtml(briefanrede(selectedAnsprechpartner?.anrede, selectedAnsprechpartner?.nachname))},`;
 
         const body = anhang
             ? `<p>${anredeZeile}</p><p>anbei die Kassenunterlagen für ${MONATSNAMEN[paketMonat - 1]} ${paketJahr} als ZIP-Datei. Sie enthält das Kassenbuch als PDF, die Buchungen als DATEV-Datei, die Belegliste und alle Belegbilder.</p><p>Mit freundlichen Grüßen,</p>${signatureRef.current}`

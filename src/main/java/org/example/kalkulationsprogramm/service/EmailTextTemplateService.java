@@ -5,26 +5,31 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.function.UnaryOperator;
 import lombok.RequiredArgsConstructor;
 import org.example.email.EmailService;
 import org.example.kalkulationsprogramm.domain.EmailTextTemplate;
 import org.example.kalkulationsprogramm.dto.Email.EmailTextTemplateDto;
 import org.example.kalkulationsprogramm.dto.FirmeninformationDto;
 import org.example.kalkulationsprogramm.repository.EmailTextTemplateRepository;
+import org.example.kalkulationsprogramm.util.Briefanrede;
 import org.example.kalkulationsprogramm.util.EmailButtonHtml;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.util.HtmlUtils;
 
 @Service
 @RequiredArgsConstructor
 public class EmailTextTemplateService {
 
     private static final Logger log = LoggerFactory.getLogger(EmailTextTemplateService.class);
-    private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("\\{\\{\\s*([A-Z0-9_]+)\\s*\\}\\}");
+    /**
+     * Einzel-Platzhalter in E-Mail-Vorlagen: nur Großbuchstaben ({@code {{KUNDENNAME}}}). Das Paar
+     * {@code {{ANREDE}} {{KUNDENNAME}}} erkennt {@link Briefanrede} zusätzlich Groß/klein-unabhängig.
+     */
+    private static final Briefanrede.Muster PLATZHALTER = Briefanrede.muster("\\{\\{\\s*+([A-Z0-9_]++)\\s*+\\}\\}");
 
     /**
      * Platzhalter, deren Wert bereits fertiges, abgesichertes HTML ist (z. B. der
@@ -143,24 +148,22 @@ public class EmailTextTemplateService {
      * Setzt die Platzhalter ein. Im HTML-Body werden Klartext-Werte maskiert, damit
      * Kundennamen, Bauvorhaben oder Freitext aus dem Anfrage-Formular kein Markup in die
      * Mail schmuggeln. Der Betreff ist Klartext und bleibt unverändert.
+     * <p>
+     * Hat der Aufrufer die Anrede-Art über {@link Briefanrede#inKontext} mitgegeben, wird
+     * {@code {{ANREDE}} {{KUNDENNAME}}} bzw. {@code {{ANREDE}} {{ANSPRECHPARTNER}}} im selben Durchlauf
+     * als Paar zur Briefanrede („Sehr geehrter Herr Müller“, bei Firmen „Sehr geehrte Damen und Herren“).
+     * Eingesetzte Werte werden nicht noch einmal nach Platzhaltern durchsucht.
      */
     private String replacePlaceholders(String input, Map<String, String> context, boolean html) {
-        if (input == null || input.isEmpty()) {
-            return input;
-        }
-        Matcher matcher = PLACEHOLDER_PATTERN.matcher(input);
-        StringBuilder out = new StringBuilder();
-        while (matcher.find()) {
-            String token = matcher.group(1);
-            String value = context != null ? context.getOrDefault(token, "") : "";
+        UnaryOperator<String> maskierung = html
+                ? wert -> HtmlUtils.htmlEscape(wert, "UTF-8")
+                : UnaryOperator.identity();
+        return Briefanrede.ersetze(input, context, PLATZHALTER, token -> {
+            String value = context != null ? context.get(token) : null;
             if (value == null) {
-                value = "";
-            } else if (html && !HTML_PLATZHALTER.contains(token)) {
-                value = org.springframework.web.util.HtmlUtils.htmlEscape(value, "UTF-8");
+                return "";
             }
-            matcher.appendReplacement(out, Matcher.quoteReplacement(value));
-        }
-        matcher.appendTail(out);
-        return out.toString();
+            return HTML_PLATZHALTER.contains(token) ? value : maskierung.apply(value);
+        }, maskierung);
     }
 }

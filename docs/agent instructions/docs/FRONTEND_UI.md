@@ -109,6 +109,7 @@ PC-Frontend (`react-pc-frontend/src`):
 - `<GoogleMapsEmbed>` -> `src/components/GoogleMapsEmbed.tsx`
 - `<DocumentPreviewModal>` -> `src/components/DocumentPreviewModal.tsx` (für PDFs)
 - `<InfoButton>` -> `src/components/ui/info-button.tsx` (Erklärungen an komplexen Stellen, siehe unten)
+- `anredeText()`, `briefanrede()`, `ANREDE_AUSWAHL` -> `src/lib/briefanrede.ts`: einzige Quelle für Anredetexte („Sehr geehrter Herr Mustermann“, sonst „Sehr geehrte Damen und Herren“) und die Anrede-Auswahlliste. Keine eigene Anrede-Tabelle pro Seite; das Backend (`util/Briefanrede.java`) setzt dieselbe Regel um, an `/api/email/template` geht nur der Rohwert (`HERR`, `DAMEN_HERREN` …). Platzhalter im Dokumenteditor löst `components/document-editor/platzhalterAufloesen.ts` auf (`{{Anrede}} {{Ansprechpartner}}` als Paar).
 
 Handy-App (`react-zeiterfassung/src`):
 - `<Select>` -> `components/ui/select-custom.tsx`

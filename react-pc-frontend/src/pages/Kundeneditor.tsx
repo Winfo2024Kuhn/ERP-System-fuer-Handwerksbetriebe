@@ -48,14 +48,9 @@ import { useKontaktAnrufAnzahl } from '../features/telefon/useKontaktAnrufAnzahl
 import { useTelefonBerechtigung } from '../features/telefon/useTelefonBerechtigung';
 import { KundeGesperrtBand, KundeLoeschenKnopf } from '../features/kunden/KundeDatenschutz';
 import { useOptionalAuth } from '../auth/AuthContext';
+import { ANREDE_AUSWAHL } from '../lib/briefanrede';
 
-const ANREDE_OPTIONS = [
-    { value: '', label: 'Bitte wählen' },
-    { value: 'HERR', label: 'Sehr geehrter Herr' },
-    { value: 'FRAU', label: 'Sehr geehrte Frau' },
-    { value: 'FAMILIE', label: 'Sehr geehrte Familie' },
-    { value: 'DAMEN_HERREN', label: 'Sehr geehrte Damen und Herren' }
-];
+const ANREDE_OPTIONS = [{ value: '', label: 'Bitte wählen' }, ...ANREDE_AUSWAHL];
 
 const PAGE_SIZE = 12;
 

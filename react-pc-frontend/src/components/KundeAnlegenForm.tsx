@@ -9,6 +9,7 @@ import { KundeDuplikatHinweis, type KundeDuplikatTreffer } from './KundeDuplikat
 import { KundeDuplikatBestaetigungModal } from './KundeDuplikatBestaetigungModal';
 import type { Kunde } from '../types';
 import { pruefeZahlungszielTage } from '../lib/zahlungsziel';
+import { ANREDE_AUSWAHL } from '../lib/briefanrede';
 
 interface KundeAnlegenFormProps {
     onSuccess: (kunde: Kunde) => void;
@@ -16,13 +17,6 @@ interface KundeAnlegenFormProps {
     /** Kompakte Variante (z.B. innerhalb eines Modals): kein "Zurück"-Header. */
     headerVariant?: 'voll' | 'kompakt';
 }
-
-const ANREDE_OPTIONS = [
-    { value: 'HERR', label: 'Sehr geehrter Herr' },
-    { value: 'FRAU', label: 'Sehr geehrte Frau' },
-    { value: 'DAMEN_HERREN', label: 'Sehr geehrte Damen und Herren' },
-    { value: 'FAMILIE', label: 'Sehr geehrte Familie' },
-];
 
 /**
  * Geteiltes Formular zum Anlegen eines neuen Kunden – verwendet von
@@ -244,7 +238,7 @@ export const KundeAnlegenForm: React.FC<KundeAnlegenFormProps> = ({
                     <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Anrede</label>
                         <Select
-                            options={ANREDE_OPTIONS}
+                            options={[...ANREDE_AUSWAHL]}
                             value={formData.anrede}
                             onChange={val => setFormData(prev => ({ ...prev, anrede: val }))}
                             placeholder="Anrede wählen"

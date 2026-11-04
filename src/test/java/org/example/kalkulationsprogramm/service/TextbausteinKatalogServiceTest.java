@@ -64,4 +64,20 @@ class TextbausteinKatalogServiceTest {
                 .isEqualTo(new TextbausteinPlatzhalterDto("{{KUNDENNAME}}", "Kundenname",
                         "Name bzw. Firma des Kunden", "Max Mustermann", "Kunde"));
     }
+
+    @Test
+    @DisplayName("Anrede erklärt die Briefanrede-Regel: mit Ansprechpartner bzw. Kundenname, bei Firmen Damen und Herren")
+    void anredeErklaertBriefanrede() {
+        TextbausteinPlatzhalterDto anrede = katalog.platzhalter().stream()
+                .filter(p -> p.token().equals("{{Anrede}}")).findFirst().orElseThrow();
+        assertThat(anrede.beschreibung())
+                .contains("Ansprechpartner")
+                .contains("Sehr geehrter Herr Müller")
+                .contains("Sehr geehrte Damen und Herren");
+        TextbausteinPlatzhalterDto ansprechpartner = katalog.platzhalter().stream()
+                .filter(p -> p.token().equals("{{Ansprechpartner}}")).findFirst().orElseThrow();
+        assertThat(ansprechpartner.beschreibung()).contains("{{Anrede}}");
+        // Texte für Nutzer: keine Gedankenstriche als Satzzeichen.
+        assertThat(katalog.platzhalter()).allSatisfy(p -> assertThat(p.beschreibung()).doesNotContain("–"));
+    }
 }

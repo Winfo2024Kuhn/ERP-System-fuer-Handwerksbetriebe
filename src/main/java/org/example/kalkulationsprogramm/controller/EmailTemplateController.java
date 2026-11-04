@@ -6,10 +6,12 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.example.email.EmailService;
+import org.example.kalkulationsprogramm.domain.Anrede;
 import org.example.kalkulationsprogramm.dto.FirmeninformationDto;
 import org.example.kalkulationsprogramm.service.DokumentFreigabeService;
 import org.example.kalkulationsprogramm.service.EmailTextTemplateService;
 import org.example.kalkulationsprogramm.service.FirmeninformationService;
+import org.example.kalkulationsprogramm.util.Briefanrede;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -81,7 +83,8 @@ public class EmailTemplateController {
 
     private EmailService.EmailContent renderFromDbTemplate(String dokumentTyp, EmailTemplateRequest req) {
         Map<String, String> ctx = new HashMap<>();
-        ctx.put("ANREDE", nullToEmpty(req.getAnrede(), "Sehr geehrte Damen und Herren"));
+        // ANREDE = Anredetext; die Anrede-Art macht aus "{{ANREDE}} {{KUNDENNAME}}" die Briefanrede.
+        Briefanrede.inKontext(ctx, Anrede.fromString(req.getAnrede()));
         ctx.put("KUNDENNAME", nullToEmpty(req.getKundenName(), ""));
         ctx.put("ANSPRECHPARTNER", nullToEmpty(req.getAnsprechpartner(), ""));
         ctx.put("BAUVORHABEN", nullToEmpty(req.getBauvorhaben(), ""));
@@ -97,7 +100,8 @@ public class EmailTemplateController {
     }
 
     private EmailService.EmailContent renderFallback(String dokumentTyp, EmailTemplateRequest request) {
-        String anrede = request.getAnrede() != null ? request.getAnrede() : "Sehr geehrte Damen und Herren";
+        // Die festen Texte setzen Anrede + Name zusammen: Briefanrede fertig übergeben, Name leer.
+        String anrede = Briefanrede.briefanrede(Anrede.fromString(request.getAnrede()), request.getKundenName());
         String bauvorhaben = request.getBauvorhaben() != null ? request.getBauvorhaben() : "";
         String projektnummer = request.getProjektnummer() != null ? request.getProjektnummer() : "";
         String benutzer = request.getBenutzer() != null ? request.getBenutzer() : "";
@@ -108,9 +112,8 @@ public class EmailTemplateController {
                 LocalDate rechnungsdatum = parseDate(request.getRechnungsdatum(), LocalDate.now());
                 LocalDate faelligkeitsdatum = parseDate(request.getFaelligkeitsdatum(), LocalDate.now().plusDays(14));
                 String betrag = request.getBetrag() != null ? request.getBetrag() : "0,00 €";
-                String kundenName = request.getKundenName() != null ? request.getKundenName() : "";
                 return EmailService.buildInvoiceEmailWithTypeHints(
-                        dokumentTyp.toLowerCase(), anrede, kundenName, bauvorhaben, projektnummer,
+                        dokumentTyp.toLowerCase(), anrede, "", bauvorhaben, projektnummer,
                         dokumentnummer, rechnungsdatum, faelligkeitsdatum, betrag, benutzer,
                         firmeninformationService.firmenangabenFuerEmail(), dokumentTyp);
             }
@@ -119,9 +122,8 @@ public class EmailTemplateController {
                 LocalDate rechnungsdatum = parseDate(request.getRechnungsdatum(), LocalDate.now());
                 LocalDate faelligkeitsdatum = parseDate(request.getFaelligkeitsdatum(), LocalDate.now().plusDays(14));
                 String betrag = request.getBetrag() != null ? request.getBetrag() : "0,00 €";
-                String kundenName = request.getKundenName() != null ? request.getKundenName() : "";
                 return EmailService.buildInvoiceEmailWithTypeHints(
-                        "mahnung", anrede, kundenName, bauvorhaben, projektnummer, dokumentnummer,
+                        "mahnung", anrede, "", bauvorhaben, projektnummer, dokumentnummer,
                         rechnungsdatum, faelligkeitsdatum, betrag, benutzer,
                         firmeninformationService.firmenangabenFuerEmail(), dokumentTyp);
             }
@@ -130,15 +132,13 @@ public class EmailTemplateController {
                 // damit der erste Versand auch ohne hinterlegte E-Mail-Vorlage einen
                 // sinnvollen Inhalt hat und nicht nur den Freigabe-Block.
                 String anfragesnummer = request.getDokumentnummer() != null ? request.getDokumentnummer() : "";
-                String kundenName = request.getKundenName() != null ? request.getKundenName() : "";
-                return EmailService.buildOfferEmail(anrede, kundenName, bauvorhaben, anfragesnummer, benutzer, null);
+                return EmailService.buildOfferEmail(anrede, "", bauvorhaben, anfragesnummer, benutzer, null);
             }
             case "AUFTRAGSBESTAETIGUNG" -> {
                 String auftragsnummer = request.getDokumentnummer() != null ? request.getDokumentnummer() : projektnummer;
                 String betrag = request.getBetrag() != null ? request.getBetrag() : null;
-                String kundenName = request.getKundenName() != null ? request.getKundenName() : "";
                 return EmailService.buildOrderConfirmationEmail(
-                        null, anrede, kundenName, bauvorhaben, projektnummer, auftragsnummer, betrag, benutzer);
+                        null, anrede, "", bauvorhaben, projektnummer, auftragsnummer, betrag, benutzer);
             }
             case "ZEICHNUNG" -> {
                 return EmailService.buildDrawingEmail(anrede, benutzer, bauvorhaben);
@@ -196,6 +196,10 @@ public class EmailTemplateController {
     @Data
     public static class EmailTemplateRequest {
         private String dokumentTyp;
+        /**
+         * Anrede-Art des Kunden als Rohwert ({@code HERR}, {@code FRAU}, {@code FAMILIE}, {@code FIRMA},
+         * {@code DAMEN_HERREN}); leer oder unbekannt = „Sehr geehrte Damen und Herren“. Kein fertiger Text.
+         */
         private String anrede;
         private String kundenName;
         private String ansprechpartner;

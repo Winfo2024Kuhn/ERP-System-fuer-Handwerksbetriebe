@@ -36,9 +36,12 @@ public class TextbausteinKatalogService {
 
     /** Reihenfolge = Anzeige-Reihenfolge in der Oberfläche. */
     private static final List<TextbausteinPlatzhalterDto> PLATZHALTER = List.of(
-            p("{{Anrede}}", "Anrede", "Briefanrede passend zum Kunden", "Sehr geehrter Herr", KUNDE),
+            p("{{Anrede}}", "Anrede", "Briefanrede passend zum Kunden. Direkt vor dem Ansprechpartner bzw. "
+                    + "Kundennamen entsteht „Sehr geehrter Herr Müller“, bei Firmen oder ohne Namen "
+                    + "„Sehr geehrte Damen und Herren“.", "Sehr geehrter Herr", KUNDE),
             p("{{KUNDENNAME}}", "Kundenname", "Name bzw. Firma des Kunden", "Max Mustermann", KUNDE),
-            p("{{Ansprechpartner}}", "Ansprechpartner", "Ansprechpartner beim Kunden", "Erika Musterfrau", KUNDE),
+            p("{{Ansprechpartner}}", "Ansprechpartner", "Ansprechpartner beim Kunden. Für die Briefanrede "
+                    + "{{Anrede}} {{Ansprechpartner}} schreiben.", "Erika Musterfrau", KUNDE),
             p("{{KUNDENNUMMER}}", "Kundennummer", "Kundennummer aus den Kundendaten", "K-1001", KUNDE),
             p("{{KUNDENADRESSE}}", "Kundenadresse", "Straße, PLZ und Ort des Kunden",
                     "Musterstraße 1, 12345 Musterstadt", KUNDE),

@@ -1,9 +1,11 @@
 package org.example.kalkulationsprogramm.service;
 
 import tools.jackson.databind.json.JsonMapper;
+import org.example.kalkulationsprogramm.domain.Anrede;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp;
 import org.example.kalkulationsprogramm.domain.DokumentFreigabe;
+import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.dto.FirmeninformationDto;
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository;
 import org.example.kalkulationsprogramm.service.RechnungPdfService.ContentBlockDto;
@@ -521,6 +523,13 @@ class AutoAuftragsbestaetigungVersandServiceTest {
     @SuppressWarnings("unchecked")
     private java.util.List<org.example.email.EmailService.Attachment> versendeUndHoleAnhaenge(
             AutoAuftragsbestaetigungVersandService service, DokumentFreigabe freigabe, boolean[] erfolg) {
+        return versendeUndHoleAnhaenge(service, freigabe, erfolg, baueAbMitProjekt());
+    }
+
+    @SuppressWarnings("unchecked")
+    private java.util.List<org.example.email.EmailService.Attachment> versendeUndHoleAnhaenge(
+            AutoAuftragsbestaetigungVersandService service, DokumentFreigabe freigabe, boolean[] erfolg,
+            AusgangsGeschaeftsDokument ab) {
         when(systemSettingsService.getDokumentMailKonto()).thenReturn(new SystemSettingsService.MailKonto(
                 "smtp.example.com", 465, "info@example.com", "geheim", "info@example.com", "Musterbetrieb"));
         when(rechnungPdfService.generatePdfBytes(org.mockito.ArgumentMatchers.any()))
@@ -541,7 +550,7 @@ class AutoAuftragsbestaetigungVersandServiceTest {
             throw new AssertionError(e);
         }
         service.emailServiceFabrik = konto -> mail;
-        erfolg[0] = service.versende(baueAbMitProjekt(), "max@example.com", freigabe);
+        erfolg[0] = service.versende(ab, "max@example.com", freigabe);
         assertThat(gesendet).hasSize(1);
         return gesendet.get(0);
     }
@@ -844,5 +853,89 @@ class AutoAuftragsbestaetigungVersandServiceTest {
         org.example.email.EmailService.EmailContent ohneText = service.mitAnnahmeBeleg(
                 new org.example.email.EmailService.EmailContent("Betreff", null), angenommeneFreigabe());
         assertThat(ohneText.htmlBody()).startsWith("<div").contains("Waren Sie das nicht?");
+    }
+
+    // ------------- Briefanrede: {{Anrede}} {{Ansprechpartner}} / {{ANREDE}} {{KUNDENNAME}} -------------
+
+    private static Kunde kunde(Anrede anrede, String name, String ansprechpartner) {
+        Kunde k = new Kunde();
+        k.setAnrede(anrede);
+        k.setName(name);
+        k.setAnsprechspartner(ansprechpartner);
+        return k;
+    }
+
+    private String materialisiereVortext(Kunde kunde, String vortextHtml)
+            throws Exception {
+        AusgangsGeschaeftsDokument ab = new AusgangsGeschaeftsDokument();
+        ab.setId(7L);
+        ab.setTyp(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG);
+        ab.setKunde(kunde);
+        ab.setPositionenJson("{\"blocks\":[{\"type\":\"SERVICE\",\"title\":\"Gitterrost\",\"quantity\":1,\"price\":100}]}");
+        when(ausgangsGeschaeftsDokumentRepository.findById(7L)).thenReturn(Optional.of(ab));
+        when(formularTemplateService.getPreferredTemplateForDokumenttyp("Auftragsbestätigung", null))
+                .thenReturn(Optional.of("standard-briefpapier"));
+        when(formularTextbausteinDefaultService.loadForDokumenttyp("standard-briefpapier", "Auftragsbestätigung"))
+                .thenReturn(defaults(textbaustein(1L, vortextHtml), null));
+
+        neuService().materialisiereStandardtexte(7L);
+
+        return JsonMapper.builderWithJackson2Defaults().build().readTree(ab.getPositionenJson())
+                .get("blocks").get(0).get("content").asString("");
+    }
+
+    @Test
+    void briefanrede_behoerdeOhneAnsprechpartnerWirdDamenUndHerren() throws Exception {
+        String text = materialisiereVortext(
+                kunde(Anrede.DAMEN_HERREN, "Landkreis Musterstadt Abfallwirtschaft", null),
+                "<p>{{Anrede}} {{Ansprechpartner}},</p><p>{{ANREDE}} {{KUNDENNAME}},</p>");
+
+        assertThat(text).isEqualTo("<p>Sehr geehrte Damen und Herren,</p><p>Sehr geehrte Damen und Herren,</p>");
+    }
+
+    @Test
+    void briefanrede_herrMitAnsprechpartnerUndAnredeAllein() throws Exception {
+        String text = materialisiereVortext(
+                kunde(Anrede.HERR, "Musterbau GmbH", "Herr Max Mustermann"),
+                "<p>{{Anrede}}&nbsp;{{Ansprechpartner}},</p><p>{{ANREDE}}</p>");
+
+        assertThat(text).isEqualTo("<p>Sehr geehrter Herr Max Mustermann,</p><p>Sehr geehrter Herr</p>");
+    }
+
+    @Test
+    void briefanrede_ohneKundeWirdDamenUndHerren() throws Exception {
+        String text = materialisiereVortext(null, "<p>{{ANREDE}} {{ANSPRECHPARTNER}},</p>");
+
+        assertThat(text).isEqualTo("<p>Sehr geehrte Damen und Herren,</p>");
+    }
+
+    @Test
+    void briefanrede_aufloesenOhneAnredeArtBleibtWieBisher() {
+        assertThat(AutoAuftragsbestaetigungVersandService.aufloesePlatzhalter(
+                "{{ANREDE}} {{KUNDENNAME}}",
+                java.util.Map.of("ANREDE", "Hallo", "KUNDENNAME", "Max Mustermann")))
+                .isEqualTo("Hallo Max Mustermann");
+    }
+
+    @Test
+    void briefanrede_mailOhneVorlageNutztBriefanredeStattDamenUndHerrenMitFirmenname() {
+        AutoAuftragsbestaetigungVersandService service = neuService();
+        AusgangsGeschaeftsDokument ab = baueAbMitProjekt();
+        ab.setKunde(kunde(Anrede.FIRMA, "Landkreis Musterstadt", null));
+
+        versendeUndHoleAnhaenge(service, null, new boolean[1], ab);
+
+        org.mockito.ArgumentCaptor<String> body = org.mockito.ArgumentCaptor.forClass(String.class);
+        org.mockito.Mockito.verify(emailSignatureService).appendSystemSignatureIfConfigured(body.capture());
+        assertThat(body.getValue()).startsWith("Sehr geehrte Damen und Herren,<br><br>");
+    }
+
+    @Test
+    void briefanrede_platzhalterImNamenWirdNichtNochmalErsetzt() throws Exception {
+        String text = materialisiereVortext(
+                kunde(Anrede.HERR, "Musterbau GmbH", "{{DOKUMENTNUMMER}}"),
+                "<p>{{Anrede}} {{Ansprechpartner}},</p>");
+
+        assertThat(text).isEqualTo("<p>Sehr geehrter Herr {{DOKUMENTNUMMER}},</p>");
     }
 }
