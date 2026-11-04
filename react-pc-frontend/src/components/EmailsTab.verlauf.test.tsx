@@ -12,23 +12,35 @@ import { ToastProvider } from './ui/toast';
  * laden, antworten, schließen. Das Formular selbst ist ersetzt, es geht um die Verdrahtung.
  * Dummy-Daten (DSGVO): Max Mustermann, max@example.com.
  */
-const formular = vi.hoisted(() => ({ speichernGelingt: true, gespeichert: 0 }));
+const formular = vi.hoisted(() => ({
+    speichernGelingt: true, gespeichert: 0,
+    /** Speichern hängt, bis der Test `freigeben()` ruft. */
+    warten: false, freigeben: undefined as (() => void) | undefined,
+}));
 vi.mock('./EmailComposeForm', () => ({
     EmailComposeForm: (props: {
         initialSubject?: string; initialRecipient?: string; replyEmailId?: number;
         onSuccess: () => void; onClose: () => void;
         onBeforeLeave?: (save: (() => Promise<boolean>) | null) => void;
+        kopf?: string; schliessenText?: string;
+        onKopfDaten?: (daten: { betreff: string; gesperrt: string | null } | null) => void;
     }) => {
         const { onBeforeLeave } = props;
         useEffect(() => {
-            onBeforeLeave?.(() => { formular.gespeichert++; return Promise.resolve(formular.speichernGelingt); });
+            onBeforeLeave?.(() => {
+                formular.gespeichert++;
+                if (!formular.warten) return Promise.resolve(formular.speichernGelingt);
+                return new Promise<boolean>(resolve => { formular.freigeben = () => resolve(formular.speichernGelingt); });
+            });
             return () => onBeforeLeave?.(null);
         }, [onBeforeLeave]);
         return (
-            <div data-testid="antwort-formular">
+            <div data-testid="antwort-formular" data-kopf={props.kopf} data-schliessen={props.schliessenText}>
                 <span>{`${props.initialSubject}|${props.initialRecipient}|${props.replyEmailId}`}</span>
                 <button onClick={props.onSuccess}>Formular gesendet</button>
                 <button onClick={props.onClose}>Formular abbrechen</button>
+                <button onClick={() => props.onKopfDaten?.({ betreff: 'AW: Anfrage Geländer – Termin', gesperrt: null })}>Betreff ändern</button>
+                <button onClick={() => props.onKopfDaten?.({ betreff: props.initialSubject ?? '', gesperrt: 'Wird gesendet…' })}>Formular sendet</button>
             </div>
         );
     },
@@ -56,7 +68,19 @@ afterEach(() => {
     vi.unstubAllGlobals();
     formular.speichernGelingt = true;
     formular.gespeichert = 0;
+    formular.warten = false;
+    formular.freigeben = undefined;
 });
+
+/** Öffnet den Verlauf und startet über den Kopfknopf eine Antwort. */
+async function antwortOeffnen() {
+    vi.stubGlobal('fetch', vi.fn((url: string) => url.endsWith('/thread') ? json(verlauf()) : json(null, false)));
+    rendere();
+    fireEvent.click(zeile());
+    fireEvent.click((await screen.findAllByRole('button', { name: /Antworten/ }))[0]);
+    await screen.findByTestId('antwort-formular');
+    return screen.getByRole('button', { name: 'Zurück zum Verlauf' });
+}
 
 function rendere(onEmailSent = vi.fn()) {
     render(
@@ -140,6 +164,98 @@ describe('EmailsTab – geöffneter Verlauf', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Fenster schließen' }));
         await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
         expect(formular.gespeichert).toBe(2);
+    });
+
+    it('zeigt beim Antworten einen Kopf „Antwort“ mit Betreff, genau ein X und führt per Pfeil zurück', async () => {
+        vi.stubGlobal('fetch', vi.fn((url: string) => url.endsWith('/thread') ? json(verlauf()) : json(null, false)));
+        rendere();
+        fireEvent.click(zeile());
+        fireEvent.click((await screen.findAllByRole('button', { name: /Antworten/ }))[0]);
+        await screen.findByTestId('antwort-formular');
+
+        const dialog = screen.getByRole('dialog', { name: 'Antwort' });
+        expect(dialog).toHaveAccessibleDescription('AW: Anfrage Geländer');
+        expect(screen.getAllByRole('button', { name: 'Fenster schließen' })).toHaveLength(1);
+        const zurueck = screen.getByRole('button', { name: 'Zurück zum Verlauf' });
+        expect(zurueck).toHaveAttribute('title', 'Zurück zum Verlauf');
+
+        // Speichern scheitert: die Antwort bleibt offen
+        formular.speichernGelingt = false;
+        fireEvent.click(zurueck);
+        await waitFor(() => expect(formular.gespeichert).toBe(1));
+        expect(screen.getByTestId('antwort-formular')).toBeInTheDocument();
+
+        formular.speichernGelingt = true;
+        fireEvent.click(zurueck);
+        await waitFor(() => expect(screen.queryByTestId('antwort-formular')).not.toBeInTheDocument());
+        expect(formular.gespeichert).toBe(2);
+        expect(screen.getByRole('dialog', { name: 'Anfrage Geländer' })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Zurück zum Verlauf' })).not.toBeInTheDocument();
+    });
+
+    it('gibt dem Formular im Verlauf keinen eigenen Kopf und „Zurück zum Verlauf“ als Knopf', async () => {
+        vi.stubGlobal('fetch', vi.fn((url: string) => url.endsWith('/thread') ? json(verlauf()) : json(null, false)));
+        rendere();
+        fireEvent.click(zeile());
+        fireEvent.click((await screen.findAllByRole('button', { name: /Antworten/ }))[0]);
+        expect(await screen.findByTestId('antwort-formular')).toHaveAttribute('data-kopf', 'ohne');
+        expect(screen.getByTestId('antwort-formular')).toHaveAttribute('data-schliessen', 'Zurück zum Verlauf');
+    });
+
+    it('setzt den Fokus beim Antworten auf den Pfeil und beim Zurück auf „Antworten“', async () => {
+        const pfeil = await antwortOeffnen();
+        await waitFor(() => expect(document.activeElement).toBe(pfeil));
+
+        fireEvent.click(pfeil);
+        await waitFor(() => expect(screen.queryByTestId('antwort-formular')).not.toBeInTheDocument());
+        await waitFor(() => expect(document.activeElement).toBe(screen.getAllByRole('button', { name: 'Antworten' })[0]));
+
+        // Antwort über den Knopf an der Nachricht, zurück über den Fußknopf des Formulars
+        fireEvent.click(screen.getAllByRole('button', { name: 'Antworten' })[1]);
+        await screen.findByTestId('antwort-formular');
+        await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Zurück zum Verlauf' })));
+        fireEvent.click(screen.getByText('Formular abbrechen'));
+        await waitFor(() => expect(document.activeElement).toBe(screen.getAllByRole('button', { name: 'Antworten' })[0]));
+    });
+
+    it('speichert bei Doppelklick auf den Pfeil nur einmal', async () => {
+        const pfeil = await antwortOeffnen();
+        formular.warten = true;
+        fireEvent.click(pfeil);
+        fireEvent.click(pfeil);
+        expect(formular.gespeichert).toBe(1);
+        formular.freigeben?.();
+        await waitFor(() => expect(screen.queryByTestId('antwort-formular')).not.toBeInTheDocument());
+        expect(formular.gespeichert).toBe(1);
+    });
+
+    it('speichert nur einmal, wenn während des Speicherns Escape kommt', async () => {
+        const pfeil = await antwortOeffnen();
+        formular.warten = true;
+        fireEvent.click(pfeil);
+        fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+        expect(formular.gespeichert).toBe(1);
+        formular.freigeben?.();
+        await waitFor(() => expect(screen.queryByTestId('antwort-formular')).not.toBeInTheDocument());
+        expect(formular.gespeichert).toBe(1);
+        expect(screen.getByRole('dialog', { name: 'Anfrage Geländer' })).toBeInTheDocument();
+    });
+
+    it('sperrt den Pfeil mit Grund, solange das Formular sendet', async () => {
+        const pfeil = await antwortOeffnen();
+        fireEvent.click(screen.getByText('Formular sendet'));
+        expect(pfeil).toBeDisabled();
+        expect(pfeil).toHaveAttribute('aria-busy', 'true');
+        expect(pfeil).toHaveAttribute('title', 'Wird gesendet…');
+        fireEvent.click(pfeil);
+        expect(formular.gespeichert).toBe(0);
+        expect(screen.getByTestId('antwort-formular')).toBeInTheDocument();
+    });
+
+    it('zeigt im Kopf den Betreff, den das Formular gerade hat', async () => {
+        await antwortOeffnen();
+        fireEvent.click(screen.getByText('Betreff ändern'));
+        expect(screen.getByRole('dialog', { name: 'Antwort' })).toHaveAccessibleDescription('AW: Anfrage Geländer – Termin');
     });
 
     it('lädt einen Verlauf nach einem Fehler per „Erneut laden“', async () => {

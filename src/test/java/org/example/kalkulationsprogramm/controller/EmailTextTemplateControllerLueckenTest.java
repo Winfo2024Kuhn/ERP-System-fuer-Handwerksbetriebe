@@ -161,6 +161,11 @@ class EmailTextTemplateControllerLueckenTest {
         mvc.perform(get("/api/email-textvorlagen/placeholders"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[?(@.token=='{{ANREDE}}')]").exists())
+                .andExpect(jsonPath("$[?(@.token=='{{ANREDE}}')].label").value(
+                        org.hamcrest.Matchers.contains(org.hamcrest.Matchers.containsString("Sehr geehrte Damen und Herren"))))
+                .andExpect(jsonPath("$[?(@.token=='{{ANREDE-ART}}')]").doesNotExist())
+                .andExpect(jsonPath("$[?(@.token=='{{ANREDE}}')].label").value(
+                        org.hamcrest.Matchers.contains(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("–")))))
                 .andExpect(jsonPath("$[?(@.token=='{{IBAN}}')]").exists())
                 .andExpect(jsonPath("$[?(@.token=='{{REVIEW_LINK}}')]").exists());
     }

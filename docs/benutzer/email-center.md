@@ -52,7 +52,7 @@ Ohne „Gehört zu“ fragt das Programm vor dem Senden nach. Mit „Einzeln ver
 
 ## Antworten und Weiterleiten
 
-Bei einer geöffneten E-Mail „Antworten“ oder „Allen antworten“; „Weiterleiten“ steht im Menü „…“. Antworten gehen über das Postfach raus, in dem die E-Mail ankam, und bleiben beim selben Projekt bzw. derselben Anfrage. Beim Weiterleiten gehen die Anhänge der ursprünglichen E-Mail nicht mit – bei Bedarf neu anhängen.
+Bei einer geöffneten E-Mail „Antworten“ oder „Allen antworten“; „Weiterleiten“ steht im Menü „…“. Oben im Formular steht dann „Antwort“ bzw. „Weiterleitung“, auch wenn ein Antwort-Entwurf weitergeschrieben wird. Antworten gehen über das Postfach raus, in dem die E-Mail ankam, und bleiben beim selben Projekt bzw. derselben Anfrage. Beim Weiterleiten sind die Anhänge der ursprünglichen E-Mail schon angehängt; einzelne nimmt das X daneben heraus, „Wieder anhängen“ holt sie zurück. In die Nachricht eingebettete Bilder (z. B. Logos) gehen nicht mit.
 
 ## Entwürfe
 

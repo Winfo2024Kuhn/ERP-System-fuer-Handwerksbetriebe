@@ -32,6 +32,11 @@ import { fuegeEmpfaengerHinzu, verbindeEmpfaenger, zerlegeEmpfaenger } from '../
 import { parseErrorMessage } from './settings/settingsApi';
 import { InfoAbschnitt, InfoButton } from './ui/info-button';
 import { weiterleitbareAnhaenge, type EmailAttachment } from '../features/email/emailCenterModel';
+import { EmailComposeKopf } from '../features/email/compose/EmailComposeKopf';
+import { EmailComposeFusszeile } from '../features/email/compose/EmailComposeFusszeile';
+import {
+    emailComposeTitel, emailComposeUntertitel, sendenSperre, verlassenSperrGrund, type EmailComposeKopfDaten,
+} from '../features/email/compose/emailComposeAnzeige';
 
 // Interface für hochgeladene externe Dateien
 interface UploadedFile {
@@ -146,6 +151,18 @@ export interface EmailComposeFormProps {
     gueltigkeitTage?: number;
     onSuccess?: () => void;
     variant?: 'default' | 'modal';
+    /**
+     * `ohne`: kein eigener Kopf mit X. Für Dialoge, die selbst einen Kopf mit Schließen-Knopf
+     * haben (Verlauf im E-Mail-Reiter) – sonst stünden zwei X übereinander.
+     */
+    kopf?: 'eigen' | 'ohne';
+    /** Beschriftung des Sekundärknopfs unten (sichert den Entwurf, dann `onClose`). Standard: „Schließen“. */
+    schliessenText?: string;
+    /**
+     * Bei `kopf="ohne"`: meldet dem fremden Kopf den aktuellen Betreff und ob Verlassen gerade
+     * gesperrt ist (mit Grund, z. B. „Wird gesendet…“). `null` beim Abbauen des Formulars.
+     */
+    onKopfDaten?: (daten: EmailComposeKopfDaten | null) => void;
     /** Existing draft ID to resume editing */
     draftId?: number;
     /**
@@ -211,25 +228,6 @@ const getCurrentFrontendUser = (): FrontendUserSelection | null => {
     return null;
 };
 
-const deriveOrderRecipientName = (subject: string): string => {
-    const match = subject.match(/^Bestellanfrage:\s*(.+)$/i);
-    return match?.[1]?.trim() || '';
-};
-
-// Anrede-Enum in korrekten Anredetext umwandeln (ohne Name - wird vom Backend separat hinzugefügt)
-export const anredeEnumToText = (anrede: string | undefined): string => {
-    if (!anrede) return 'Sehr geehrte Damen und Herren';
-    const upper = anrede.toUpperCase();
-    switch (upper) {
-        case 'HERR': return 'Sehr geehrter Herr';
-        case 'FRAU': return 'Sehr geehrte Frau';
-        case 'FAMILIE': return 'Sehr geehrte Familie';
-        case 'FIRMA': return 'Sehr geehrte Damen und Herren';
-        case 'DAMEN_HERREN': return 'Sehr geehrte Damen und Herren';
-        default: return 'Sehr geehrte Damen und Herren';
-    }
-};
-
 export function EmailComposeForm({
     onClose,
     onBeforeLeave,
@@ -253,6 +251,9 @@ export function EmailComposeForm({
     draftId: initialDraftId,
     zuordnungWaehlbar = false,
     variant = 'default',
+    kopf = 'eigen',
+    schliessenText = 'Schließen',
+    onKopfDaten,
     vorDemSenden,
     anhangVorschauGesperrt,
     entwurfSpeichern = true,
@@ -501,16 +502,13 @@ export function EmailComposeForm({
         return emails;
     }, [entityKundenEmails]);
 
-    const isBestellungContext = (initialSubject || subject).trim().toLowerCase().startsWith('bestellanfrage:');
-    const orderRecipientName = deriveOrderRecipientName(initialSubject || subject);
-    const dialogTitle = isBestellungContext && orderRecipientName
-        ? `Bestellung an ${orderRecipientName} senden`
-        : 'Neue E-Mail';
-    const dialogSubtitle = entityName
-        ? `${isAnfrageContext ? 'Anfrage' : 'Projekt'}: ${entityName}`
-        : isBestellungContext && orderRecipientName
-            ? 'Bestellanfrage mit E-Mail-Versand vorbereiten'
-            : 'E-Mail verfassen und Anhänge verwalten';
+    const dialogTitle = emailComposeTitel({
+        antwort: !!replyEmailId, weiterleitung: !!weitergeleitetVonEmailId, betreff: initialSubject || subject,
+    });
+    const dialogSubtitle = emailComposeUntertitel({
+        vorgang: entityName ? { typ: isAnfrageContext ? 'Anfrage' : 'Projekt', name: entityName } : undefined,
+        betreff: initialSubject || subject,
+    });
     const hasInitialAttachments = !!(initialAttachments && initialAttachments.length > 0);
     const initialAttachmentLabel = hasInitialAttachments
         ? initialAttachments!.length === 1
@@ -637,13 +635,22 @@ export function EmailComposeForm({
     }, [draftLoading, initialDraftId]);
 
     const flushDraft = draft.flush;
+    /** Senden, Speichern, Bildverkleinern oder Dokument-Laden läuft: weder schließen noch zurück. */
+    const verlassenGesperrt = sending || closing || komprimiereAnhaenge || loadingEntityDokumentIds.size > 0;
+    // Für Aufrufer (Verlauf-Dialog, E-Mail-Center): dieselben Sperren wie `handleClose`, dazu ein ladender Entwurf.
+    const verlassenGrund = verlassenSperrGrund({
+        sendet: sending, speichert: closing, verkleinert: komprimiereAnhaenge,
+        laedtDokumente: loadingEntityDokumentIds.size > 0, laedtEntwurf: draftLoading,
+    });
+    useEffect(() => { onKopfDaten?.({ betreff: subject, gesperrt: verlassenGrund }); }, [onKopfDaten, subject, verlassenGrund]);
+    useEffect(() => () => onKopfDaten?.(null), [onKopfDaten]);
     const saveBeforeLeave = useCallback(async () => {
-        if (sending || closing || komprimiereAnhaenge || loadingEntityDokumentIds.size > 0 || draftLoading) return false;
+        if (verlassenGrund) return false;
         setClosing(true);
         try { await flushDraft(); return true; }
         catch { return false; }
         finally { setClosing(false); }
-    }, [sending, closing, komprimiereAnhaenge, loadingEntityDokumentIds.size, draftLoading, flushDraft]);
+    }, [verlassenGrund, flushDraft]);
     const saveBeforeLeaveRef = useRef(saveBeforeLeave);
     useEffect(() => { saveBeforeLeaveRef.current = saveBeforeLeave; }, [saveBeforeLeave]);
     useEffect(() => {
@@ -652,7 +659,7 @@ export function EmailComposeForm({
     }, [onBeforeLeave]);
 
     const handleClose = async () => {
-        if (closing || sending || komprimiereAnhaenge || loadingEntityDokumentIds.size > 0) return;
+        if (verlassenGesperrt) return;
         setClosing(true);
         try {
             await draft.flush();
@@ -1182,6 +1189,12 @@ export function EmailComposeForm({
         onClose();
     };
 
+    const senden = sendenSperre({
+        beschaeftigt: verlassenGesperrt, originalAnhaengeLaden,
+        empfaengerFehlt: !recipient.trim() && !anEntwurfVorhanden, betreffFehlt: !subject.trim(),
+        anhaengeZuGross: attachmentLimitExceeded, zuVieleEmpfaenger, pflichtanhangFehlt,
+    }, pflichtanhangHinweis);
+
     if (draftLoading || draftLoadError) return (
         <div className="flex h-full min-h-48 flex-col items-center justify-center gap-4 p-4" role={draftLoadError ? 'alert' : 'status'}>
             {draftLoading ? <><Loader2 className="h-5 w-5 animate-spin" />Entwurf und Anhänge werden geladen…</> : <>
@@ -1214,32 +1227,14 @@ export function EmailComposeForm({
 
     return (
         <div className="flex min-w-0 flex-col h-full bg-slate-50">
-            {/* Header */}
-            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-200 bg-rose-50 flex-shrink-0">
-                <div className="flex min-w-0 items-center gap-3 flex-1">
-                    <div className="w-11 h-11 rounded-full bg-white border border-rose-200 flex items-center justify-center shadow-sm flex-shrink-0">
-                        <Mail className="w-5 h-5 text-rose-600" />
-                    </div>
-                    <div className="min-w-0 overflow-hidden">
-                        <h2 className="text-lg font-semibold text-slate-900 truncate">{dialogTitle}</h2>
-                        <p className="text-sm text-slate-500 truncate hidden sm:block">
-                            {dialogSubtitle}
-                        </p>
-                    </div>
-                </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => { void handleClose(); }}
-                        disabled={sending || closing || komprimiereAnhaenge || loadingEntityDokumentIds.size > 0}
-                        aria-label="Fenster schließen"
-                        className="text-slate-500 hover:text-slate-700"
-                    >
-                        <X className="w-5 h-5" />
-                    </Button>
-                </div>
-            </div>
+            {kopf === 'eigen' && (
+                <EmailComposeKopf
+                    titel={dialogTitle}
+                    untertitel={dialogSubtitle}
+                    onSchliessen={() => { void handleClose(); }}
+                    schliessenGesperrt={verlassenGesperrt}
+                />
+            )}
 
             {/* Scrollable Content */}
             <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4" inert={sending || closing}>
@@ -1807,30 +1802,19 @@ export function EmailComposeForm({
                 </div>
             </div>
 
-            {/* Footer – immer sichtbar, damit "E-Mail senden" nie verdeckt wird */}
-            <div className="px-4 py-3 border-t border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-2 flex-shrink-0 relative z-10">
-                <span role="status" className={`text-xs ${draft.status === 'error' ? 'text-rose-700' : 'text-slate-500'}`}>
-                    {entwurfSpeichern ? draft.label : 'Wird nicht als Entwurf gespeichert'}
-                    {draft.status === 'error' && <button className="ml-2 underline" onClick={() => { void draft.flush().catch(() => undefined); }}>Erneut speichern</button>}
-                </span>
-                <div className="flex gap-3">
-                    <Button variant="outline" onClick={() => { void handleClose(); }} disabled={sending || closing || komprimiereAnhaenge || loadingEntityDokumentIds.size > 0}>
-                        {closing ? 'Wird gespeichert…' : 'Schließen'}
-                    </Button>
-                    <Button
-                        onClick={handleSend}
-                        disabled={sending || closing || komprimiereAnhaenge || loadingEntityDokumentIds.size > 0 || originalAnhaengeLaden || (!recipient.trim() && !anEntwurfVorhanden) || !subject.trim() || attachmentLimitExceeded || zuVieleEmpfaenger || pflichtanhangFehlt}
-                        title={zuVieleEmpfaenger ? EINZELVERSAND_ZU_VIELE
-                            : pflichtanhangFehlt ? pflichtanhangHinweis
-                            : originalAnhaengeLaden ? 'Die Anhänge der Original-Mail werden noch geladen.'
-                            : undefined}
-                        className="bg-rose-600 hover:bg-rose-700 text-white"
-                    >
-                        {sending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Send className="w-4 h-4 mr-2" />}
-                        {sending ? 'Wird gesendet...' : 'E-Mail senden'}
-                    </Button>
-                </div>
-            </div>
+            <EmailComposeFusszeile
+                entwurfHinweis={entwurfSpeichern ? draft.label : 'Wird nicht als Entwurf gespeichert'}
+                entwurfFehler={draft.status === 'error'}
+                onErneutSpeichern={() => { void draft.flush().catch(() => undefined); }}
+                zurueckText={schliessenText}
+                speichert={closing}
+                zurueckGesperrt={verlassenGesperrt}
+                onZurueck={() => { void handleClose(); }}
+                sendet={sending}
+                sendenGesperrt={senden.gesperrt}
+                sendenHinweis={senden.hinweis}
+                onSenden={handleSend}
+            />
 
             {/* Suche: Projekt oder Anfrage verknüpfen */}
             <EmailZuordnungSearchModal

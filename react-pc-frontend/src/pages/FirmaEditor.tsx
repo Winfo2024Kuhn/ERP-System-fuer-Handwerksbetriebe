@@ -18,6 +18,7 @@ import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
 import { SteuerpruefungExport } from '../components/firma/SteuerpruefungExport';
 import { LohnStammdatenPanel } from '../components/firma/LohnStammdatenPanel';
+import { ANREDE_AUSWAHL } from '../lib/briefanrede';
 
 // Types
 interface Firmeninformation {
@@ -103,13 +104,7 @@ interface SteuerberaterKontakt {
     ansprechpartnerListe: SteuerberaterAnsprechpartner[];
 }
 
-const ANREDE_OPTIONS = [
-    { value: '', label: '(keine)' },
-    { value: 'HERR', label: 'Sehr geehrter Herr' },
-    { value: 'FRAU', label: 'Sehr geehrte Frau' },
-    { value: 'DAMEN_HERREN', label: 'Sehr geehrte Damen und Herren' },
-    { value: 'FAMILIE', label: 'Sehr geehrte Familie' },
-];
+const ANREDE_OPTIONS = [{ value: '', label: '(keine)' }, ...ANREDE_AUSWAHL];
 
 
 interface LohnabrechnungDto {

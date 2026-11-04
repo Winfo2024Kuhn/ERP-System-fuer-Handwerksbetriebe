@@ -27,6 +27,16 @@ Der Schalter „Norm-Hilfslinien“ blendet die Maße nach DIN 5008 ein: das Fen
 
 Der Knopf „Standard-Texte“ in der Vorlage legt fest, welche Textbausteine beim Anlegen eines Dokuments automatisch vor und nach den Positionen eingefügt werden – je Dokumentart. Das gilt auch für Mahnungen: Für „Zahlungserinnerung“, „1. Mahnung“ und „2. Mahnung“ zugeordnete Textbausteine kommen ins Mahnungs-PDF über und unter die Box mit der offenen Forderung. Ohne Zuordnung nimmt das Programm seine eingebauten Mahntexte. Die Textbausteine selbst pflegt man unter **Vorlagen & Stammdaten → Textvorlagen**.
 
+### Anrede im Textbaustein
+
+Für die Begrüßung `{{Anrede}} {{Ansprechpartner}},` schreiben (statt `{{Ansprechpartner}}` geht auch `{{Kundenname}}`). Das Programm setzt daraus die passende Briefanrede zusammen:
+
+- Kunde mit Anrede „Herr“, „Frau“ oder „Familie“ und eingetragenem Namen: „Sehr geehrter Herr Mustermann,“.
+- Firma, Behörde, „Damen und Herren“, keine Anrede oder kein Name eingetragen: „Sehr geehrte Damen und Herren,“.
+- Steht im Namen schon „Herr“, „Frau“ oder „Familie“, kommt das Wort nicht doppelt.
+
+`{{Anrede}}` allein ergibt nur den Anfang, z. B. „Sehr geehrter Herr“, bei Firmen „Sehr geehrte Damen und Herren“.
+
 ## Widerrufsbelehrung bearbeiten
 
 Nimmt ein Kunde ein Angebot online an, schickt das Programm automatisch die Auftragsbestätigung. Die Widerrufsbelehrung hängt als PDF daran, zusammen mit dem Muster-Widerrufsformular und der Erklärung des Kunden zum Beginn der Arbeiten.
