@@ -43,7 +43,7 @@ Die Karte trägt „Webseite · neu“, bis aus der Anfrage ein Projekt wird ode
 Ein Klick auf eine Anfrage unter **Projektmanagement → Anfragen** öffnet sie. Oben stehen Bauvorhaben, Kunde, Adresse, Anlagedatum, „Brutto“ und „Netto“ sowie die Knöpfe „Bearbeiten“ und „Löschen“. Den Betrag gibt man nicht von Hand ein: Er kommt aus dem Angebot bzw. der Auftragsbestätigung. Rechts stehen unter „Anfragedaten“ Kunde, Kundennummer, Ansprechpartner, Kunden-E-Mails, Telefon und die Projektadresse mit Karte.
 
 Reiter:
-- **„E-Mails“:** alle E-Mails zu dieser Anfrage, mit Suche, Filter „Eingang“ / „Ausgang“, „Neue E-Mail“ und „Antworten“.
+- **„E-Mails“:** alle E-Mails zu dieser Anfrage, mit Suche, Filter „Alle“ / „Eingang“ / „Ausgang“, „Neue E-Mail“ und „Antworten“. Ein Klick (oder Tab und Enter) öffnet den ganzen Verlauf, Escape schließt ihn. Einen Entwurf im Verlauf löscht der Papierkorb daneben; „Rückgängig“ in der Meldung holt ihn einige Sekunden lang zurück.
 - **„Geschäftsdokumente“:** Angebot bzw. Auftragsbestätigung (siehe unten).
 - **„Dateien“:** Ordner für Bilder, Pläne, Kalkulationen und sonstige Dateien; hochladen per Ziehen oder „durchsuchen“.
 - **„Beschreibung“:** freier Text zur Anfrage mit „Speichern“.

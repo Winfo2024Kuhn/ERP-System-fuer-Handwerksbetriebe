@@ -33,7 +33,7 @@ function baueMail(overrides: Partial<GenericEmail> = {}): GenericEmail {
 function rendere(email: GenericEmail) {
     return render(
         <MemoryRouter>
-            <EmailsTab emails={[email]} kundeId={1} showComposeButton={false} showReplyButton={false} />
+            <EmailsTab emails={[email]} showComposeButton={false} showReplyButton={false} />
         </MemoryRouter>
     );
 }

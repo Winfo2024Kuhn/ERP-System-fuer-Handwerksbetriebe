@@ -428,7 +428,6 @@ const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEd
                                 parentEmailId: k.parentEmailId,
                                 replyCount: k.replyCount,
                             }))}
-                            kundeId={kunde.id}
                             showComposeButton={false}
                             showReplyButton={false}
                         />

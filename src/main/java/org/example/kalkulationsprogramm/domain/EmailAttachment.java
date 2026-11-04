@@ -13,6 +13,7 @@ import java.time.LocalDateTime;
  * Ersetzt die alten Tabellen: projekt_email_files, anfrage_email_file, lieferant_email_attachments
  */
 @Entity
+@EntityListeners(EmailSuchtextPflege.class)
 @Table(name = "email_attachment", indexes = {
     @Index(name = "idx_attachment_email", columnList = "email_id"),
     @Index(name = "idx_attachment_ai", columnList = "aiProcessed")

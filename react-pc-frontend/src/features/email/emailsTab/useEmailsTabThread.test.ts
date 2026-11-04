@@ -100,6 +100,58 @@ describe('useEmailsTabThread', () => {
         expect(result.current.thread).toBeNull();
     });
 
+    it('verwirft eine späte Neulade-Antwort, wenn inzwischen eine andere Mail gewählt wurde', async () => {
+        let spaet: (r: Response) => void = () => {};
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce(antwort(verlauf(7)))
+            .mockReturnValueOnce(new Promise<Response>(resolve => { spaet = resolve; }))
+            .mockResolvedValueOnce(antwort(verlauf(9)));
+        vi.stubGlobal('fetch', fetchMock);
+        const { result, rerender } = renderHook(({ id }) => useEmailsTabThread(id), { initialProps: { id: 7 as number | null } });
+        await waitFor(() => expect(result.current.thread?.rootEmailId).toBe(7));
+
+        act(() => result.current.reloadThread());
+        rerender({ id: 9 });
+        await waitFor(() => expect(result.current.thread?.rootEmailId).toBe(9));
+        await act(async () => { spaet(antwort(verlauf(7))); });
+        expect(result.current.thread?.rootEmailId).toBe(9);
+        expect(result.current.threadLoading).toBe(false);
+    });
+
+    it('verwirft eine späte Neulade-Antwort, wenn der Verlauf geschlossen wurde', async () => {
+        let spaet: (r: Response) => void = () => {};
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce(antwort(verlauf(7)))
+            .mockReturnValueOnce(new Promise<Response>(resolve => { spaet = resolve; }));
+        vi.stubGlobal('fetch', fetchMock);
+        const { result, rerender } = renderHook(({ id }) => useEmailsTabThread(id), { initialProps: { id: 7 as number | null } });
+        await waitFor(() => expect(result.current.thread?.rootEmailId).toBe(7));
+
+        act(() => result.current.reloadThread());
+        rerender({ id: null });
+        await act(async () => { spaet(antwort(verlauf(7))); });
+        expect(result.current.thread).toBeNull();
+        expect(result.current.threadLoading).toBe(false);
+    });
+
+    it('übernimmt bei zwei Neuladungen nur die neueste Antwort', async () => {
+        let alt: (r: Response) => void = () => {};
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce(antwort(verlauf(7, 1)))
+            .mockReturnValueOnce(new Promise<Response>(resolve => { alt = resolve; }))
+            .mockResolvedValueOnce(antwort(verlauf(7, 3)));
+        vi.stubGlobal('fetch', fetchMock);
+        const { result } = renderHook(() => useEmailsTabThread(7));
+        await waitFor(() => expect(result.current.thread?.emails).toHaveLength(1));
+
+        act(() => result.current.reloadThread());
+        act(() => result.current.reloadThread());
+        await waitFor(() => expect(result.current.thread?.emails).toHaveLength(3));
+        expect(result.current.threadLoading).toBe(false);
+        await act(async () => { alt(antwort(verlauf(7, 2))); });
+        expect(result.current.thread?.emails).toHaveLength(3);
+    });
+
     it('lädt ohne gewählte Mail auch auf Wunsch nichts', () => {
         const fetchMock = vi.fn();
         vi.stubGlobal('fetch', fetchMock);

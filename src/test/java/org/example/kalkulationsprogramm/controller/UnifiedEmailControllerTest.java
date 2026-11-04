@@ -63,7 +63,8 @@ import java.nio.charset.StandardCharsets;
 
 @WebMvcTest({UnifiedEmailController.class, EmailDraftController.class})
 @org.springframework.context.annotation.Import({org.example.kalkulationsprogramm.service.EmailDraftService.class,
-        org.example.kalkulationsprogramm.service.AusgangsmailService.class})
+        org.example.kalkulationsprogramm.service.AusgangsmailService.class,
+        org.example.kalkulationsprogramm.service.mail.liste.EmailListenDtoMapper.class, org.example.kalkulationsprogramm.service.mail.liste.SteuerberaterOrdner.class})
 @AutoConfigureMockMvc(addFilters = false)
 @org.springframework.test.context.TestPropertySource(properties = {
         "file.mail-attachment-dir=target/test-attachments"
@@ -240,43 +241,6 @@ class UnifiedEmailControllerTest {
         given(emailAbsenderService.findActiveEmailAddresses()).willReturn(List.of("absender@example.com"));
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // SEARCH
-    // ═══════════════════════════════════════════════════════════════
-
-    @Nested
-    @DisplayName("GET /api/emails/search")
-    class Search {
-
-        @Test
-        @DisplayName("Suche findet E-Mails nach Betreff")
-        void searchFindsEmails() throws Exception {
-            Email email = createTestEmail(1L, "Angebot Geländer", "kunde@example.com");
-            given(emailRepository.searchGlobal("Geländer")).willReturn(List.of(email));
-
-            mockMvc.perform(get("/api/emails/search").param("q", "Geländer"))
-                    .andExpect(status().isOk())
-                    .andExpect(jsonPath("$[0].subject").value("Angebot Geländer"))
-                    .andExpect(jsonPath("$[0].fromAddress").value("kunde@example.com"));
-        }
-
-        @Test
-        @DisplayName("Suche mit zu kurzem Query gibt leere Liste zurück")
-        void searchTooShortReturnEmpty() throws Exception {
-            mockMvc.perform(get("/api/emails/search").param("q", "A"))
-                    .andExpect(status().isOk())
-                    .andExpect(jsonPath("$").isArray())
-                    .andExpect(jsonPath("$").isEmpty());
-        }
-
-        @Test
-        @DisplayName("Suche ohne q-Parameter gibt 400")
-        void searchMissingParam() throws Exception {
-            mockMvc.perform(get("/api/emails/search"))
-                    .andExpect(status().isBadRequest());
-        }
-    }
-
     @Nested
     @DisplayName("GET /api/emails/tax-advisors")
     class TaxAdvisorFolder {
@@ -432,34 +396,14 @@ class UnifiedEmailControllerTest {
     // ═══════════════════════════════════════════════════════════════
 
     @Nested
-    @DisplayName("DELETE /api/emails/{id}")
+    @DisplayName("DELETE /api/emails/{id}/permanent")
     class Delete {
-
-        @Test
-        @DisplayName("E-Mail soft löschen (Papierkorb)")
-        void softDelete() throws Exception {
-            Email email = createTestEmail(1L, "Alte Mail", "test@example.com");
-            given(emailRepository.findById(1L)).willReturn(Optional.of(email));
-
-            mockMvc.perform(delete("/api/emails/1"))
-                    .andExpect(status().isNoContent());
-
-            verify(emailRepository).save(email);
-        }
-
-        @Test
-        @DisplayName("E-Mail löschen: nicht gefunden")
-        void deleteNotFound() throws Exception {
-            given(emailRepository.findById(999L)).willReturn(Optional.empty());
-
-            mockMvc.perform(delete("/api/emails/999"))
-                    .andExpect(status().isNotFound());
-        }
 
         @Test
         @DisplayName("Permanent löschen: Email vorhanden -> 204 + Replies-Detach VOR Delete (Reihenfolge wichtig!)")
         void deletePermanentlySuccess() throws Exception {
             Email email = createTestEmail(1L, "Zu löschen", "test@example.com");
+            email.setDeletedAt(LocalDateTime.of(2026, 11, 1, 9, 0));
             given(emailRepository.findByIdForUpdate(1L)).willReturn(Optional.of(email));
 
             mockMvc.perform(delete("/api/emails/1/permanent"))
@@ -471,6 +415,21 @@ class UnifiedEmailControllerTest {
             order.verify(emailRepository).detachRepliesFromParent(1L);
             order.verify(emailRepository).flush();
             order.verify(emailRepository).delete(email);
+        }
+
+        @Test
+        @DisplayName("Permanent löschen außerhalb des Papierkorbs -> 409, nichts gelöscht (weder DB noch Mailserver)")
+        void deletePermanentlyNurAusDemPapierkorb() throws Exception {
+            Email email = createTestEmail(1L, "Noch im Posteingang", "test@example.com");
+            given(emailRepository.findByIdForUpdate(1L)).willReturn(Optional.of(email));
+
+            mockMvc.perform(delete("/api/emails/1/permanent"))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.message").value("Nur E-Mails im Papierkorb lassen sich endgültig löschen."));
+
+            verify(emailRepository, never()).delete(any(Email.class));
+            verify(emailRepository, never()).detachRepliesFromParent(any());
+            verifyNoInteractions(emailImportService);
         }
 
         @Test
@@ -1787,11 +1746,11 @@ class UnifiedEmailControllerTest {
             info.setId(1L);
             info.setEmailAdresse("info@example.com");
             mail.ordnePostfachZu(info, "INBOX", 1L);
-            given(emailRepository.searchGlobal("Anfrage")).willReturn(List.of(mail));
+            given(emailRepository.findInboxFiltered()).willReturn(List.of(mail));
             given(postfachVersandService.antwortPostfach(any())).willReturn(info);
 
             // Liste: Schild ja, Antwort-Postfach nein (sonst eine Abfrage pro Zeile).
-            mockMvc.perform(get("/api/emails/search").param("q", "Anfrage"))
+            mockMvc.perform(get("/api/emails/inbox"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$[0].postfaecher[0].emailAdresse").value("info@example.com"))
                     .andExpect(jsonPath("$[0].antwortPostfach").doesNotExist());
@@ -1808,9 +1767,9 @@ class UnifiedEmailControllerTest {
         void listeOhneZuordnungslisteLeer() throws Exception {
             Email mail = createTestEmail(1L, "Anfrage", "kunde@example.com");
             mail.setPostfachZuordnungen(null);
-            given(emailRepository.searchGlobal("Anfrage")).willReturn(List.of(mail));
+            given(emailRepository.findInboxFiltered()).willReturn(List.of(mail));
 
-            mockMvc.perform(get("/api/emails/search").param("q", "Anfrage"))
+            mockMvc.perform(get("/api/emails/inbox"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$[0].postfaecher").isEmpty())
                     .andExpect(jsonPath("$[0].antwortPostfach").doesNotExist());

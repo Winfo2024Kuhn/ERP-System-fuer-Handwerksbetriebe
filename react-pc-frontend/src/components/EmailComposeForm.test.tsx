@@ -145,6 +145,9 @@ describe('EmailComposeForm – Rueckfrage "E-Mail-Adresse speichern?"', () => {
         await sendeAb();
 
         expect(await screen.findByText('E-Mail-Adresse speichern?')).toBeInTheDocument();
+        // Eigener modaler Dialog: Ein umgebender Dialog (Verlauf im E-Mail-Reiter) darf auf
+        // Escape nicht schließen, solange die Rückfrage offen ist.
+        expect(screen.getByRole('dialog', { name: 'E-Mail-Adresse speichern?' })).toHaveAttribute('aria-modal', 'true');
         // Angezeigt und gespeichert wird die reine Adresse, nicht `"Name" <Adresse>`
         expect(screen.getByText(neueAdresse, { selector: 'span.font-medium' })).toBeInTheDocument();
 

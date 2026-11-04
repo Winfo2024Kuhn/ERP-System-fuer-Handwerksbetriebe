@@ -874,7 +874,6 @@ Gemeinsames Postfach. Jeder sieht nur Mails aus Postfächern, die für ihn freig
 | `GET` | `/new/projekt` | Neue Mails zu Projekten |
 | `GET` | `/new/anfrage` | Neue Mails zu Anfragen |
 | `GET` | `/new/lieferant` | Neue Mails von Lieferanten |
-| `GET` | `/search` | Mails durchsuchen (`q`) |
 | `GET` | `/inbox` | Ordner Posteingang |
 | `GET` | `/projects` | Ordner Projekte |
 | `GET` | `/offers` | Ordner Anfragen/Angebote |
@@ -893,9 +892,8 @@ Gemeinsames Postfach. Jeder sieht nur Mails aus Postfächern, die für ihn freig
 | `POST` | `/{id}/assign/anfrage/{anfrageId}` | Mail einer Anfrage zuordnen |
 | `POST` | `/{id}/assign/lieferant/{lieferantId}` | Mail einem Lieferanten zuordnen |
 | `POST` | `/{id}/unassign` | Zuordnung aufheben |
-| `DELETE` | `/{id}` | Mail in den Papierkorb |
-| `DELETE` | `/{id}/permanent` | Mail endgültig löschen |
-| `POST` | `/bulk/move-to-folder` | Mehrere Mails verschieben (`inbox`, `trash`, `spam`, `newsletter`) |
+| `DELETE` | `/{id}/permanent` | Mail endgültig löschen (auch auf dem Mailserver), nur aus dem Papierkorb – sonst 409; schon gelöscht: 204 |
+| `POST` | `/bulk/move-to-folder` | Mehrere Mails verschieben (`inbox`, `trash`, `spam`, `newsletter`); `inbox` trainiert das Spam-Modell und setzt Spam/Newsletter zurück – für „Rückgängig“ nach dem Löschen gibt es `POST /papierkorb/zurueckholen` |
 | `POST` | `/mark-all-read` | Alle Mails eines Ordners als gelesen markieren (`folder`) |
 | `POST` | `/{id}/mark-read` | Als gelesen markieren |
 | `POST` | `/{id}/toggle-star` | Markierung an/aus |
@@ -911,6 +909,31 @@ Gemeinsames Postfach. Jeder sieht nur Mails aus Postfächern, die für ihn freig
 | `POST` | `/scan-steuerberater` | Steuerberater-Mails nachträglich verarbeiten (Lohnabrechnungen, BWA) *(nur Admin)* |
 | `POST` | `/send` | Neue Mail senden (multipart, mit Anhängen) |
 | `POST` | `/{emailId}/reply` | Auf eine Mail antworten (multipart) |
+
+### EmailSucheController
+
+**Basis-URL:** `/api/emails`
+
+Suche im E-Mail-Center, in einem Ordner oder über alle Ordner, seitenweise.
+
+| Methode | Pfad | Beschreibung |
+|---|---|---|
+| `GET` | `/suche` | Mails durchsuchen: `q` (Pflicht, getrimmt 2–200 Zeichen, höchstens 10 Wörter zählen), `ordner` (Standard `alle`; sonst `inbox`, `sent`, `trash`, `spam`, `newsletter`, `starred`, `projects`, `offers`, `suppliers`, `tax-advisors`, `unassigned`, `inquiries`), `page` ab 0, `size` Standard 25, höchstens 50. Antwort `{eintraege, hatMehr, seite, seitenGroesse}`; `eintraege` wie die Ordnerlisten, mit `folder` |
+
+Jedes Wort muss irgendwo vorkommen (UND): Absender und Empfänger samt Anzeigenamen, Antwortadresse, CC, Betreff, ganzer Text samt zitiertem Verlauf (auch aus dem HTML-Teil), Anhang-Dateinamen. Groß-/Kleinschreibung egal, Umlaut-Schreibweisen in beide Richtungen („Würth“ findet „Wuerth“ und umgekehrt). Mit `ordner` findet die Suche genau die Mails der jeweiligen Ordnerliste. `alle` = alle sichtbaren Mails samt Papierkorb, Spam, Newsletter und Gesendet (ohne Entwürfe). Sortierung fest: neueste zuerst (`sent_at DESC NULLS LAST, id DESC`). Mails aus Postfächern, die der Benutzer nicht sieht, fehlen schon in der Abfrage. 400 mit `message`: „Bitte mindestens 2 Zeichen eingeben.“, „Der Suchbegriff ist zu lang (höchstens 200 Zeichen).“, „Unbekannter Ordner.“ Technik: Spalte `email.suchtext` mit Trigramm-Index (V447), siehe `BACKEND_ARCH.md` → „Suchen, Sortierung, Vergleiche“.
+
+### EmailPapierkorbController
+
+**Basis-URL:** `/api/emails/papierkorb`
+
+Löschen mit einem Klick und „Rückgängig“. Beides ändert nur den Papierkorb-Zeitstempel (`deletedAt`); Spam-, Newsletter-, Zuordnungs-, Stern- und Gelesen-Stand bleiben, das Spam-Modell lernt nichts, auf dem Mailserver passiert nichts. Endgültig löschen: `DELETE /api/emails/{id}/permanent` – nur für Mails im Papierkorb, sonst 409 „Nur E-Mails im Papierkorb lassen sich endgültig löschen.“
+
+| Methode | Pfad | Beschreibung |
+|---|---|---|
+| `POST` | `/` | Body `{"ids": [12, 13]}` → `{"verschoben": n}`: legt sichtbare Mails, die noch nicht im Papierkorb liegen, in den Papierkorb |
+| `POST` | `/zurueckholen` | Body `{"ids": [12, 13]}` → `{"zurueckgeholt": n}`: holt Mails aus dem Papierkorb in ihren Ursprungsordner zurück |
+
+Höchstens 500 IDs je Aufruf, eine Transaktion. Unbekannte IDs und Mails aus nicht sichtbaren Postfächern werden still übergangen und nicht gezählt. 400 mit `message`: „Keine E-Mails ausgewählt.“ (fehlt/leer), „Höchstens 500 E-Mails auf einmal.“
 
 ### EmailDraftController
 
@@ -1798,7 +1821,7 @@ Digitale Freigabe von Angeboten durch Kunden über die Website.
 
 ## Controller-Gesamtübersicht
 
-98 Controller, alphabetisch. „Endpunkte“ zählt die Handler-Methoden.
+100 Controller, alphabetisch. „Endpunkte“ zählt die Handler-Methoden.
 
 | # | Controller | Basis-URL | Endpunkte | Abschnitt |
 |---|---|---|---|---|
@@ -1831,72 +1854,74 @@ Digitale Freigabe von Angeboten durch Kunden über die Website.
 | 27 | `EmailController` | `/api/email` | 7 | 9 |
 | 28 | `EmailDraftController` | `/api/emails/drafts` | 9 | 9 |
 | 29 | `EmailKiClassificationController` | `/api/email-ki` | 3 | 9 |
-| 30 | `EmailSignatureController` | `/api/email/signatures` | 15 | 9 |
-| 31 | `EmailTemplateController` | `/api/email/template` | 1 | 9 |
-| 32 | `EmailTextTemplateController` | `/api/email-textvorlagen` | 7 | 9 |
-| 33 | `EntityLastAccessedController` | `/api/last-accessed` | 2 | 1 |
-| 34 | `FaviconController` | `/favicon.ico` (ohne Klassen-Mapping) | 1 | 19 |
-| 35 | `FirmaController` | `/api/firma` | 17 | 18 |
-| 36 | `FormularTemplateController` | `/api/formulare` (ohne Klassen-Mapping) | 17 | 5 |
-| 37 | `FreigabeInternalController` | `/api/internal/freigabe` | 5 | 20 |
-| 38 | `FrontendUserController` | `/api/frontend-users` | 3 | 1 |
-| 39 | `GaebImportController` | `/api/import` | 1 | 8 |
-| 40 | `KalenderController` | `/api/kalender` | 7 | 13 |
-| 41 | `KassenbuchController` | `/api/buchhaltung/kassenbuch` | 10 | 14 |
-| 42 | `KassenbuchungController` | `/api/buchhaltung/kassenbuch` | 2 | 14 |
-| 43 | `KasseShortcutController` | `/api/buchhaltung/kasse` | 7 | 14 |
-| 44 | `KiHilfeController` | `/api/ki-hilfe` | 1 | 19 |
-| 45 | `KostenVerteilungController` | `/api/miete` | 13 | 15 |
-| 46 | `KundeController` | `/api/kunden` | 10 | 4 |
-| 47 | `LangzeitkrankmeldungController` | `/api/langzeitkrankmeldungen` | 10 | 12 |
-| 48 | `LangzeitkrankmeldungMobileController` | `/api/zeiterfassung/langzeitkrankmeldung` | 1 | 10 |
-| 49 | `LeistungController` | `/api/leistungen` | 5 | 8 |
-| 50 | `LieferantDokumentController` | `/api/lieferant-dokumente` | 13 | 7 |
-| 51 | `LieferantDokumentPositionController` | `/api/bestellungen-uebersicht/positionen` | 4 | 7 |
-| 52 | `LieferantDokumentWartungController` | `/api/admin/lieferant-dokumente` | 1 | 7 |
-| 53 | `LieferantenController` | `/api/lieferanten` | 29 | 7 |
-| 54 | `LieferantReklamationController` | `/api/reklamationen` | 7 | 7 |
-| 55 | `LieferantWartungController` | `/api/admin/lieferanten` | 1 | 7 |
-| 56 | `LohnabrechnungController` | `/api/lohnabrechnungen` | 7 | 12 |
-| 57 | `LohnStammdatenController` | `/api/lohn-stammdaten` | 12 | 12 |
-| 58 | `MahnwesenController` | `/api/mahnwesen` | 1 | 5 |
-| 59 | `MietabrechnungController` | `/api/miete/mietobjekte/{mietobjektId}/jahresabrechnung` | 2 | 15 |
-| 60 | `MietobjektController` | `/api/miete` | 8 | 15 |
-| 61 | `MitarbeiterController` | `/api/mitarbeiter` | 17 | 12 |
-| 62 | `MitarbeiterSaldoController` | `/api/zeitverwaltung/mitarbeiter/{mitarbeiterId}/saldo` (ohne Klassen-Mapping) | 1 | 11 |
-| 63 | `MonatsabschlussController` | `/api/zeitverwaltung/monatsabschluesse` | 4 | 11 |
-| 64 | `MonatsabschlussUebersichtController` | `/api/zeitverwaltung/monatsabschluesse` | 4 | 11 |
-| 65 | `NotificationController` | `/api/notifications` | 3 | 13 |
-| 66 | `OffenePostenController` | `/api/offene-posten` | 6 | 6 |
-| 67 | `OutOfOfficeController` | `/api/email/outofoffice` | 4 | 9 |
-| 68 | `PostfachController` | `/api/postfaecher` | 7 | 9 |
-| 69 | `ProduktkategorieController` | `/api/produktkategorien` | 14 | 8 |
-| 70 | `ProjektController` | `/api/projekte` | 50 | 3 |
-| 71 | `ProjektWartungController` | `/api/admin/projekte` | 2 | 3 |
-| 72 | `PushSubscriptionController` | `/api/push` | 3 | 10 |
-| 73 | `RaumVerbrauchController` | `/api/miete` | 13 | 15 |
-| 74 | `RechnungsuebersichtController` | `/api/rechnungsuebersicht` | 5 | 6 |
-| 75 | `SachkontoController` | `/api/buchhaltung` | 5 | 14 |
-| 76 | `SchnittbilderController` | `/api/schnittbilder` | 2 | 8 |
-| 77 | `SpaErrorController` | `/error` | 2 | 19 |
-| 78 | `SpracheingabeController` | `/api/spracheingabe` | 2 | 19 |
-| 79 | `SteuerberaterExportController` | `/api/buchhaltung/steuerberater` | 2 | 14 |
-| 80 | `SystemSettingsController` | `/api/settings` | 17 | 18 |
-| 81 | `SystemUtilityController` | `/api/system` | 1 | 19 |
-| 82 | `TelefonController` | `/api/telefon` | 19 | 16 |
-| 83 | `TelefonEinstellungenController` | `/api/telefon` | 4 | 16 |
-| 84 | `TextbausteinController` | `/api/textbausteine` | 8 | 5 |
-| 85 | `UnifiedEmailController` | `/api/emails` | 56 | 9 |
-| 86 | `UrlaubsantragController` | `/api/langzeitkrankmeldungen`, `/api/urlaub` (ohne Klassen-Mapping) | 8 | 12 |
-| 87 | `UtilsController` | `/api/utils` | 1 | 8 |
-| 88 | `VendorInvoiceController` | `/api/admin/vendor-invoices` | 4 | 7 |
-| 89 | `VerrechnungslohnController` | `/api/verrechnungslohn` | 2 | 8 |
-| 90 | `WebsiteAnalyticsSnapshotController` | `/api/website-analytics` | 2 | 17 |
-| 91 | `ZahlungsartController` | `/api/buchhaltung` | 1 | 14 |
-| 92 | `ZeiterfassungApiController` | `/api/zeiterfassung` | 17 | 10 |
-| 93 | `ZeiterfassungController` | `/zeiterfassung` (ohne Klassen-Mapping) | 2 | 10 |
-| 94 | `ZeiterfassungEinstellungenController` | `/api/settings` | 4 | 18 |
-| 95 | `ZeiterfassungZugangController` | `/api/settings/zeiterfassung-zugang` | 2 | 18 |
-| 96 | `ZeitkontenmodellController` | `/api/zeitverwaltung/zeitkontenmodelle` | 4 | 11 |
-| 97 | `ZeitkontoKorrekturController` | `/api/zeitkonto/korrekturen` | 6 | 11 |
-| 98 | `ZeitverwaltungController` | `/api/zeitverwaltung` | 19 | 11 |
+| 30 | `EmailPapierkorbController` | `/api/emails/papierkorb` | 2 | 9 |
+| 31 | `EmailSignatureController` | `/api/email/signatures` | 15 | 9 |
+| 32 | `EmailSucheController` | `/api/emails` | 1 | 9 |
+| 33 | `EmailTemplateController` | `/api/email/template` | 1 | 9 |
+| 34 | `EmailTextTemplateController` | `/api/email-textvorlagen` | 7 | 9 |
+| 35 | `EntityLastAccessedController` | `/api/last-accessed` | 2 | 1 |
+| 36 | `FaviconController` | `/favicon.ico` (ohne Klassen-Mapping) | 1 | 19 |
+| 37 | `FirmaController` | `/api/firma` | 17 | 18 |
+| 38 | `FormularTemplateController` | `/api/formulare` (ohne Klassen-Mapping) | 17 | 5 |
+| 39 | `FreigabeInternalController` | `/api/internal/freigabe` | 5 | 20 |
+| 40 | `FrontendUserController` | `/api/frontend-users` | 3 | 1 |
+| 41 | `GaebImportController` | `/api/import` | 1 | 8 |
+| 42 | `KalenderController` | `/api/kalender` | 7 | 13 |
+| 43 | `KassenbuchController` | `/api/buchhaltung/kassenbuch` | 10 | 14 |
+| 44 | `KassenbuchungController` | `/api/buchhaltung/kassenbuch` | 2 | 14 |
+| 45 | `KasseShortcutController` | `/api/buchhaltung/kasse` | 7 | 14 |
+| 46 | `KiHilfeController` | `/api/ki-hilfe` | 1 | 19 |
+| 47 | `KostenVerteilungController` | `/api/miete` | 13 | 15 |
+| 48 | `KundeController` | `/api/kunden` | 10 | 4 |
+| 49 | `LangzeitkrankmeldungController` | `/api/langzeitkrankmeldungen` | 10 | 12 |
+| 50 | `LangzeitkrankmeldungMobileController` | `/api/zeiterfassung/langzeitkrankmeldung` | 1 | 10 |
+| 51 | `LeistungController` | `/api/leistungen` | 5 | 8 |
+| 52 | `LieferantDokumentController` | `/api/lieferant-dokumente` | 13 | 7 |
+| 53 | `LieferantDokumentPositionController` | `/api/bestellungen-uebersicht/positionen` | 4 | 7 |
+| 54 | `LieferantDokumentWartungController` | `/api/admin/lieferant-dokumente` | 1 | 7 |
+| 55 | `LieferantenController` | `/api/lieferanten` | 29 | 7 |
+| 56 | `LieferantReklamationController` | `/api/reklamationen` | 7 | 7 |
+| 57 | `LieferantWartungController` | `/api/admin/lieferanten` | 1 | 7 |
+| 58 | `LohnabrechnungController` | `/api/lohnabrechnungen` | 7 | 12 |
+| 59 | `LohnStammdatenController` | `/api/lohn-stammdaten` | 12 | 12 |
+| 60 | `MahnwesenController` | `/api/mahnwesen` | 1 | 5 |
+| 61 | `MietabrechnungController` | `/api/miete/mietobjekte/{mietobjektId}/jahresabrechnung` | 2 | 15 |
+| 62 | `MietobjektController` | `/api/miete` | 8 | 15 |
+| 63 | `MitarbeiterController` | `/api/mitarbeiter` | 17 | 12 |
+| 64 | `MitarbeiterSaldoController` | `/api/zeitverwaltung/mitarbeiter/{mitarbeiterId}/saldo` (ohne Klassen-Mapping) | 1 | 11 |
+| 65 | `MonatsabschlussController` | `/api/zeitverwaltung/monatsabschluesse` | 4 | 11 |
+| 66 | `MonatsabschlussUebersichtController` | `/api/zeitverwaltung/monatsabschluesse` | 4 | 11 |
+| 67 | `NotificationController` | `/api/notifications` | 3 | 13 |
+| 68 | `OffenePostenController` | `/api/offene-posten` | 6 | 6 |
+| 69 | `OutOfOfficeController` | `/api/email/outofoffice` | 4 | 9 |
+| 70 | `PostfachController` | `/api/postfaecher` | 7 | 9 |
+| 71 | `ProduktkategorieController` | `/api/produktkategorien` | 14 | 8 |
+| 72 | `ProjektController` | `/api/projekte` | 50 | 3 |
+| 73 | `ProjektWartungController` | `/api/admin/projekte` | 2 | 3 |
+| 74 | `PushSubscriptionController` | `/api/push` | 3 | 10 |
+| 75 | `RaumVerbrauchController` | `/api/miete` | 13 | 15 |
+| 76 | `RechnungsuebersichtController` | `/api/rechnungsuebersicht` | 5 | 6 |
+| 77 | `SachkontoController` | `/api/buchhaltung` | 5 | 14 |
+| 78 | `SchnittbilderController` | `/api/schnittbilder` | 2 | 8 |
+| 79 | `SpaErrorController` | `/error` | 2 | 19 |
+| 80 | `SpracheingabeController` | `/api/spracheingabe` | 2 | 19 |
+| 81 | `SteuerberaterExportController` | `/api/buchhaltung/steuerberater` | 2 | 14 |
+| 82 | `SystemSettingsController` | `/api/settings` | 17 | 18 |
+| 83 | `SystemUtilityController` | `/api/system` | 1 | 19 |
+| 84 | `TelefonController` | `/api/telefon` | 19 | 16 |
+| 85 | `TelefonEinstellungenController` | `/api/telefon` | 4 | 16 |
+| 86 | `TextbausteinController` | `/api/textbausteine` | 8 | 5 |
+| 87 | `UnifiedEmailController` | `/api/emails` | 53 | 9 |
+| 88 | `UrlaubsantragController` | `/api/langzeitkrankmeldungen`, `/api/urlaub` (ohne Klassen-Mapping) | 8 | 12 |
+| 89 | `UtilsController` | `/api/utils` | 1 | 8 |
+| 90 | `VendorInvoiceController` | `/api/admin/vendor-invoices` | 4 | 7 |
+| 91 | `VerrechnungslohnController` | `/api/verrechnungslohn` | 2 | 8 |
+| 92 | `WebsiteAnalyticsSnapshotController` | `/api/website-analytics` | 2 | 17 |
+| 93 | `ZahlungsartController` | `/api/buchhaltung` | 1 | 14 |
+| 94 | `ZeiterfassungApiController` | `/api/zeiterfassung` | 17 | 10 |
+| 95 | `ZeiterfassungController` | `/zeiterfassung` (ohne Klassen-Mapping) | 2 | 10 |
+| 96 | `ZeiterfassungEinstellungenController` | `/api/settings` | 4 | 18 |
+| 97 | `ZeiterfassungZugangController` | `/api/settings/zeiterfassung-zugang` | 2 | 18 |
+| 98 | `ZeitkontenmodellController` | `/api/zeitverwaltung/zeitkontenmodelle` | 4 | 11 |
+| 99 | `ZeitkontoKorrekturController` | `/api/zeitkonto/korrekturen` | 6 | 11 |
+| 100 | `ZeitverwaltungController` | `/api/zeitverwaltung` | 19 | 11 |

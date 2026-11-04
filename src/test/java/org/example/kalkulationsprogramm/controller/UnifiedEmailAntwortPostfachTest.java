@@ -82,7 +82,8 @@ import org.springframework.test.web.servlet.MockMvc;
  */
 @WebMvcTest(controllers = UnifiedEmailController.class)
 @Import({ SecurityConfig.class, UnifiedEmailAntwortPostfachTest.EchteFilterBeans.class,
-        PostfachSichtbarkeitService.class, EmailThreadService.class, PostfachVersandService.class })
+        PostfachSichtbarkeitService.class, EmailThreadService.class, PostfachVersandService.class,
+        org.example.kalkulationsprogramm.service.mail.liste.EmailListenDtoMapper.class, org.example.kalkulationsprogramm.service.mail.liste.SteuerberaterOrdner.class })
 @TestPropertySource(properties = "file.mail-attachment-dir=target/test-attachments")
 class UnifiedEmailAntwortPostfachTest {
 

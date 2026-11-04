@@ -1194,8 +1194,6 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                         })),
                     }))}
                     anfrageId={anfrage.id}
-                    entityName={anfrage.bauvorhaben}
-                    kundenEmail={kundenEmails[0]}
                     anfrage={{
                         bauvorhaben: anfrage.bauvorhaben,
                         kundenName: anfrage.kundenName,

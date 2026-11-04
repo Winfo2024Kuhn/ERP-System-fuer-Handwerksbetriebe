@@ -26,7 +26,7 @@ import {
 } from './ordnerLogik';
 import { UebersichtAuswertung } from './UebersichtAuswertung';
 import { VerschiebenDialog } from '../../components/ordner/VerschiebenDialog';
-import { useVerzoegertesLoeschen } from './useVerzoegertesLoeschen';
+import { useVerzoegertesLoeschen } from '../../hooks/useVerzoegertesLoeschen';
 import type { Leistung, LeistungVerwendung, Loeschpruefung, LoeschModus, Ordner, ReiterId, ZiehObjekt } from './typen';
 
 const REITER: ReiterId[] = ['leistungen', 'ordner', 'auswertung'];

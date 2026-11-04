@@ -8,6 +8,7 @@ import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
+import jakarta.persistence.EntityListeners;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
@@ -18,9 +19,11 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.PrePersist;
+import jakarta.persistence.Transient;
 import jakarta.persistence.Table;
 
 import org.hibernate.annotations.BatchSize;
+import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -35,6 +38,7 @@ import org.hibernate.type.SqlTypes;
  * Zuordnung ist exklusiv: Eine Email gehört zu genau EINER Entität (Projekt, Anfrage oder Lieferant).
  */
 @Entity
+@EntityListeners(EmailSuchtextPflege.class)
 @Table(name = "email", indexes = {
     @Index(name = "idx_email_message_id", columnList = "messageId", unique = true),
     @Index(name = "idx_email_sender_domain", columnList = "senderDomain"),
@@ -112,6 +116,21 @@ public class Email {
 
     @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
     private String rawBody;
+
+    /**
+     * Normalisierter Suchtext für die E-Mail-Suche (Aufbau: {@code util.suche.EmailSuchtext}).
+     * Gepflegt beim Speichern von {@link EmailSuchtextPflege}; {@code null} heißt „noch nicht
+     * berechnet“ – das holt {@code EmailSuchtextNachpflege} im Hintergrund nach.
+     */
+    @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
+    @Setter(AccessLevel.PACKAGE)
+    private String suchtext;
+
+    /** Stand der Suchtext-Quellen für {@link EmailSuchtextPflege} (nur Referenzen). */
+    @Transient
+    @Getter(AccessLevel.PACKAGE)
+    @Setter(AccessLevel.PACKAGE)
+    private Object[] suchQuellenStand;
 
     // ═══════════════════════════════════════════════════════════════
     // ZEITSTEMPEL
@@ -296,7 +315,9 @@ public class Email {
     // ATTACHMENTS (1:n)
     // ═══════════════════════════════════════════════════════════════
 
+    /** {@code @BatchSize}: Listen und Suchtreffer laden die Anhänge gebündelt statt pro Mail. */
     @OneToMany(mappedBy = "email", cascade = CascadeType.ALL, orphanRemoval = true)
+    @BatchSize(size = 100)
     private List<EmailAttachment> attachments = new ArrayList<>();
 
     // ═══════════════════════════════════════════════════════════════
@@ -329,6 +350,7 @@ public class Email {
      * Antworten auf diese Email.
      */
     @OneToMany(mappedBy = "parentEmail")
+    @BatchSize(size = 100)
     private List<Email> replies = new ArrayList<>();
 
     // ═══════════════════════════════════════════════════════════════

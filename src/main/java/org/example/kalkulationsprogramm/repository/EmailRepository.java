@@ -109,52 +109,10 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
    * Zusätzlich: Email-Sendedatum muss innerhalb von ±1 Monat zum Anlegedatum oder
    * Abschlussdatum
    * eines passenden Projekts oder Anfrages liegen (Karenzzeit).
+   * Die Bedingung steht in {@link EmailOrdnerSql#NICHT_ZUGEORDNET} – die Suche im Ordner nutzt dieselbe.
    */
-  @NativeQuery("""
-      SELECT DISTINCT e.* FROM email e
-      WHERE e.zuordnung_typ = 'KEINE'
-        AND e.direction = 'IN'
-        AND e.projekt_id IS NULL
-        AND e.anfrage_id IS NULL
-        AND e.lieferant_id IS NULL
-        AND e.deleted_at IS NULL
-        AND (e.is_spam IS NULL OR e.is_spam = FALSE)
-        AND LOWER(COALESCE(e.subject, '')) NOT LIKE '%newsletter%'
-        AND LOWER(COALESCE(e.body, '')) NOT LIKE '%newsletter%'
-        AND (
-            -- Projekt-Kunden-Emails mit ±1 Monat Karenzzeit
-            EXISTS (
-                SELECT 1 FROM projekt_kunden_emails pke
-                JOIN projekt p ON pke.projekt_id = p.id
-                WHERE (LOWER(pke.email) = LOWER(e.from_address) OR LOWER(e.from_address) LIKE CONCAT('%<', LOWER(pke.email), '>%'))
-                AND (
-                    (CAST(e.sent_at AS DATE) BETWEEN p.anlegedatum - INTERVAL '1' MONTH AND COALESCE(p.abschlussdatum, p.anlegedatum) + INTERVAL '1' MONTH)
-                )
-            )
-            OR
-            -- Anfrage-Kunden-Emails mit ±1 Monat Karenzzeit
-            EXISTS (
-                SELECT 1 FROM anfrage_kunden_emails ake
-                JOIN anfrage a ON ake.anfrage_id = a.id
-                WHERE (LOWER(ake.email) = LOWER(e.from_address) OR LOWER(e.from_address) LIKE CONCAT('%<', LOWER(ake.email), '>%'))
-                AND (
-                    CAST(e.sent_at AS DATE) BETWEEN a.anlegedatum - INTERVAL '1' MONTH AND COALESCE(a.anlegedatum, CURRENT_DATE) + INTERVAL '1' MONTH
-                )
-            )
-            OR
-            -- Kunden-Emails (über Projekt des Kunden) mit ±1 Monat Karenzzeit
-            EXISTS (
-                SELECT 1 FROM kunden_emails ke
-                JOIN kunde k ON ke.kunden_id = k.id
-                JOIN projekt p ON p.kunden_id = k.id
-                WHERE (LOWER(ke.email) = LOWER(e.from_address) OR LOWER(e.from_address) LIKE CONCAT('%<', LOWER(ke.email), '>%'))
-                AND (
-                    (CAST(e.sent_at AS DATE) BETWEEN p.anlegedatum - INTERVAL '1' MONTH AND COALESCE(p.abschlussdatum, p.anlegedatum) + INTERVAL '1' MONTH)
-                )
-            )
-        )
-      ORDER BY e.sent_at DESC
-      """)
+  @NativeQuery("SELECT DISTINCT e.* FROM email e WHERE " + EmailOrdnerSql.NICHT_ZUGEORDNET
+      + " ORDER BY e.sent_at DESC")
   List<Email> findUnassigned();
 
   // ═══════════════════════════════════════════════════════════════
@@ -481,7 +439,7 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
 
   // Nur eingehende Mails. Gesendete Mails gehören in den "Gesendet"-Ordner –
   // sonst würde ein Klick auf eine OUT-Mail in Projekte/Anfragen/Lieferanten
-  // den aktiven Ordner auf "sent" umschalten (siehe computeFolder).
+  // den aktiven Ordner auf "sent" umschalten (siehe EmailOrdner.von).
   @Query("SELECT e FROM Email e WHERE e.zuordnungTyp = 'PROJEKT' AND e.direction = 'IN' AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
   List<Email> findProjectEmails();
 
@@ -509,22 +467,4 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
 
   @Query("SELECT e FROM Email e WHERE e.isStarred = true AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
   List<Email> findStarred();
-
-  // ═══════════════════════════════════════════════════════════════
-  // GLOBALE SUCHE
-  // ═══════════════════════════════════════════════════════════════
-
-  /**
-   * Durchsucht alle Emails nach Betreff, Absender oder Empfänger.
-   * Gibt maximal 50 Ergebnisse zurück, sortiert nach Datum absteigend.
-   */
-  @NativeQuery("""
-      SELECT * FROM email e
-      WHERE (LOWER(e.subject) LIKE LOWER(CONCAT('%', :query, '%'))
-          OR LOWER(e.from_address) LIKE LOWER(CONCAT('%', :query, '%'))
-          OR LOWER(e.recipient) LIKE LOWER(CONCAT('%', :query, '%'))
-          OR LOWER(e.body) LIKE LOWER(CONCAT('%', :query, '%')))
-      ORDER BY e.sent_at DESC
-      """)
-  List<Email> searchGlobal(@Param("query") String query);
 }

@@ -59,17 +59,20 @@ export function EmailRecipientDropdown({
                 setIsOpen(false);
             }
         };
+        // In der Capture-Phase und mit preventDefault: Ein umgebender Dialog (Verlauf im
+        // E-Mail-Reiter) hört ebenfalls auf document und schließt sonst gleich mit.
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
+                e.preventDefault();
                 setIsOpen(false);
             }
         };
 
         document.addEventListener('mousedown', handleClickOutside);
-        document.addEventListener('keydown', handleKeyDown);
+        document.addEventListener('keydown', handleKeyDown, true);
         return () => {
             document.removeEventListener('mousedown', handleClickOutside);
-            document.removeEventListener('keydown', handleKeyDown);
+            document.removeEventListener('keydown', handleKeyDown, true);
         };
     }, [isOpen]);
 

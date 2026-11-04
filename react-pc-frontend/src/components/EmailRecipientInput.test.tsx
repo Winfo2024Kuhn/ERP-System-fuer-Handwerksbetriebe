@@ -3,6 +3,7 @@ import { useState } from 'react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EmailRecipientInput } from './EmailRecipientInput';
+import { Dialog } from './ui/dialog';
 
 // Mock fetch
 const mockFetch = vi.fn();
@@ -250,6 +251,22 @@ describe('EmailRecipientInput', () => {
 
         await user.keyboard('{Escape}');
         expect(screen.queryByText('Verknüpfte E-Mail-Adressen')).not.toBeInTheDocument();
+    });
+
+    it('Escape in einem Dialog schließt erst nur die Vorschlagsliste, nicht den Dialog', async () => {
+        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+        const onOpenChange = vi.fn();
+        render(
+            <Dialog open onOpenChange={onOpenChange}>
+                <EmailRecipientInput value="" onChange={vi.fn()} suggestions={['escape@example.com']} placeholder="E-Mail eingeben..." />
+            </Dialog>
+        );
+        await user.click(screen.getByPlaceholderText('E-Mail eingeben...'));
+        expect(screen.getByText('escape@example.com')).toBeInTheDocument();
+
+        await user.keyboard('{Escape}');
+        expect(screen.queryByText('escape@example.com')).not.toBeInTheDocument();
+        expect(onOpenChange).not.toHaveBeenCalled();
     });
 
     it('navigiert mit Pfeiltasten und wählt mit Enter', async () => {

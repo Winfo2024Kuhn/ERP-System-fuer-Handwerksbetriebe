@@ -1,30 +1,13 @@
 import { useState } from 'react';
 import { useDroppable } from '@dnd-kit/core';
-import { Inbox, Send, FileEdit, Star, Trash2, ShieldAlert, Newspaper, Briefcase, FileText,
-    Package, Calculator, AlertCircle, PanelLeftClose, PanelLeftOpen, PenSquare, ChevronDown,
-    type LucideIcon } from 'lucide-react';
+import { PanelLeftClose, PanelLeftOpen, PenSquare, ChevronDown } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { cn } from '../../lib/utils';
 import type { FolderType } from './emailCenterModel';
+import { POSTFACH_ORDNER, ZUGEORDNET_ORDNER, type EmailOrdner } from './emailOrdner';
 
 type Counts = Record<Exclude<FolderType, 'tax-advisors'> | 'taxAdvisors', number>;
-type Folder = { id: FolderType; label: string; icon: LucideIcon; droppable?: boolean };
-const mailboxFolders: Folder[] = [
-    { id: 'inbox', label: 'Posteingang', icon: Inbox, droppable: true },
-    { id: 'sent', label: 'Gesendet', icon: Send },
-    { id: 'drafts', label: 'Entwürfe', icon: FileEdit },
-    { id: 'starred', label: 'Markiert', icon: Star },
-    { id: 'newsletter', label: 'Newsletter', icon: Newspaper, droppable: true },
-    { id: 'spam', label: 'Spam', icon: ShieldAlert, droppable: true },
-    { id: 'trash', label: 'Papierkorb', icon: Trash2, droppable: true },
-];
-const assignedFolders: Folder[] = [
-    { id: 'unassigned', label: 'Nicht zugeordnet', icon: AlertCircle },
-    { id: 'projects', label: 'Projekte', icon: Briefcase },
-    { id: 'offers', label: 'Anfragen', icon: FileText },
-    { id: 'suppliers', label: 'Lieferanten', icon: Package },
-    { id: 'tax-advisors', label: 'Steuerberater', icon: Calculator },
-];
+type Folder = EmailOrdner;
 
 function FolderButton({ folder, count, active, collapsed, dragActive, onSelect }: {
     folder: Folder; count: number; active: boolean; collapsed: boolean; dragActive: boolean;
@@ -78,13 +61,13 @@ export function EmailFolderSidebar({ width, collapsed, resizing, activeFolder, c
             </Button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-2 space-y-0.5">
-            {mailboxFolders.map(renderFolder)}
+            {POSTFACH_ORDNER.map(renderFolder)}
             <div className="my-2 border-t border-slate-200" />
             {!collapsed && <button type="button" onClick={() => setExpanded(value => !value)} aria-expanded={expanded}
                 className="flex w-full items-center justify-between px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500 hover:text-slate-800 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500">
                 Zugeordnet<ChevronDown className={cn('h-3.5 w-3.5', !expanded && '-rotate-90')} />
             </button>}
-            {(expanded || collapsed) && assignedFolders.map(renderFolder)}
+            {(expanded || collapsed) && ZUGEORDNET_ORDNER.map(renderFolder)}
         </div>
     </nav>;
 }

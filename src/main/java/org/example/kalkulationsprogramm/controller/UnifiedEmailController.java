@@ -19,7 +19,6 @@ import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.domain.ProjektDokument;
 import org.example.kalkulationsprogramm.dto.ContactDto;
-import org.example.kalkulationsprogramm.dto.SteuerberaterKontaktDto;
 import org.example.kalkulationsprogramm.dto.Email.UnifiedEmailDto;
 import org.example.kalkulationsprogramm.dto.EmailThreadDto;
 import org.example.kalkulationsprogramm.dto.ProjektEmail.ProjektEmailDto;
@@ -40,8 +39,8 @@ import org.example.kalkulationsprogramm.service.EmailThreadService;
 import org.example.kalkulationsprogramm.service.InquiryDetectionService;
 import org.example.kalkulationsprogramm.service.SpamBayesService;
 import org.example.kalkulationsprogramm.service.SpamFilterService;
-import org.example.kalkulationsprogramm.service.SteuerberaterKontaktService;
 import org.example.kalkulationsprogramm.service.mail.SentMailArchiver;
+import org.example.kalkulationsprogramm.service.mail.liste.EmailListenDtoMapper;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -92,11 +91,12 @@ public class UnifiedEmailController {
     private final ContactService contactService;
     private final SpamBayesService spamBayesService;
     private final EmailThreadService emailThreadService;
+    private final EmailListenDtoMapper emailListenDtoMapper;
+    private final org.example.kalkulationsprogramm.service.mail.liste.SteuerberaterOrdner steuerberaterOrdner;
     private final org.example.kalkulationsprogramm.service.FrontendUserProfileService frontendUserProfileService;
     private final org.example.kalkulationsprogramm.service.PostfachService postfachService;
     private final org.example.kalkulationsprogramm.service.PostfachVersandService postfachVersandService;
     private final org.example.kalkulationsprogramm.service.AusgangsmailService ausgangsmailService;
-    private final SteuerberaterKontaktService steuerberaterKontaktService;
     private final EmailLieferantVerknuepfungService emailLieferantVerknuepfungService;
     private final org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService lieferantDokumentZugriffService;
     private final org.example.kalkulationsprogramm.service.WeiterleitungAnhaengeService weiterleitungAnhaengeService;
@@ -778,29 +778,6 @@ public class UnifiedEmailController {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // GLOBALE SUCHE
-    // ═══════════════════════════════════════════════════════════════
-
-    @GetMapping("/search")
-    @Transactional(readOnly = true)
-    public List<UnifiedEmailDto> searchEmails(
-            @RequestParam("q") String query,
-            @RequestParam(value = "offset", defaultValue = "0") int offset,
-            @RequestParam(value = "limit", defaultValue = "50") int limit,
-            org.springframework.security.core.Authentication authentication) {
-        if (query == null || query.trim().length() < 2) {
-            return List.of();
-        }
-        ListenFilter filter = listenFilter(authentication);
-        return emailRepository.searchGlobal(query.trim()).stream()
-                .filter(filter)
-                .skip(Math.max(0, offset))
-                .limit(limit)
-                .map(e -> toListDto(e, filter.gelesen()))
-                .collect(Collectors.toList());
-    }
-
-    // ═══════════════════════════════════════════════════════════════
     // POSTEINGANG / GESENDET / PAPIERKORB
     // ═══════════════════════════════════════════════════════════════
 
@@ -886,7 +863,7 @@ public class UnifiedEmailController {
             @RequestParam(value = "nurUngelesen", defaultValue = "false") boolean nurUngelesen,
             org.springframework.security.core.Authentication authentication) {
         ListenFilter filter = listenFilter(authentication);
-        return findTaxAdvisorEmails().stream()
+        return steuerberaterOrdner.emails().stream()
                 .filter(filter)
                 .filter(filter.nurUngelesen(nurUngelesen))
                 .skip(Math.max(0, offset))
@@ -1113,22 +1090,6 @@ public class UnifiedEmailController {
         return ResponseEntity.ok(toDto(email, absenderKontext(authentication)));
     }
 
-    @DeleteMapping("/{id}")
-    @Transactional
-    public ResponseEntity<Void> deleteEmail(@PathVariable Long id, org.springframework.security.core.Authentication authentication) {
-        Email email = findeSichtbar(id, authentication).orElse(null);
-        if (email == null) {
-            return ResponseEntity.notFound().build();
-        }
-
-        // Soft delete (Papierkorb)
-        email.setDeletedAt(LocalDateTime.now());
-        emailRepository.save(email);
-
-        log.info("Email {} in den Papierkorb verschoben", id);
-        return ResponseEntity.noContent().build();
-    }
-
     @DeleteMapping("/{id}/permanent")
     @Transactional
     public ResponseEntity<Void> deleteEmailPermanently(@PathVariable Long id, org.springframework.security.core.Authentication authentication) {
@@ -1141,6 +1102,12 @@ public class UnifiedEmailController {
         }
         if (!sichtbarkeit(authentication).siehtEmail(email)) {
             return ResponseEntity.notFound().build();
+        }
+        // Endgültig (auch auf dem Mailserver) nur aus dem Papierkorb – sonst wäre ein Fehlklick
+        // außerhalb des Papierkorbs nicht mehr rückgängig zu machen.
+        if (email.getDeletedAt() == null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Nur E-Mails im Papierkorb lassen sich endgültig löschen.");
         }
 
         // Emails mit hoher Spam-Wahrscheinlichkeit (>= 85%) als Spam klassifizieren
@@ -1178,7 +1145,9 @@ public class UnifiedEmailController {
 
     /**
      * Verschiebt eine oder mehrere E-Mails in einen Ordner.
-     * Gültige Ziele: inbox, trash, spam, newsletter.
+     * Gültige Ziele: inbox, trash, spam, newsletter. Löschen mit „Rückgängig“ läuft über
+     * {@code POST /api/emails/papierkorb} (EmailPapierkorbController): {@code inbox} trainiert das
+     * Spam-Modell und setzt Spam/Newsletter zurück, holt eine Mail also nicht in ihren Ursprungsordner.
      * - inbox: Wiederherstellen (aus Papierkorb/Spam/Newsletter zurück in den Posteingang)
      * - trash: Soft-Delete (Papierkorb)
      * - spam: Als Spam markieren + Bayes-Training
@@ -1252,7 +1221,7 @@ public class UnifiedEmailController {
             case "projects"   -> emailRepository.findProjectEmails();
             case "offers"     -> emailRepository.findAnfrageEmails();
             case "suppliers"  -> emailRepository.findLieferantEmails();
-            case "tax-advisors" -> findTaxAdvisorEmails();
+            case "tax-advisors" -> steuerberaterOrdner.emails();
             case "trash"      -> emailRepository.findByDeletedAtIsNotNullOrderByDeletedAtDesc();
             case "sent"       -> java.util.Collections.emptyList();
             default           -> java.util.Collections.emptyList();
@@ -1397,7 +1366,7 @@ public class UnifiedEmailController {
         List<Email> projekte = filter.anwenden(emailRepository.findProjectEmails());
         List<Email> anfragen = filter.anwenden(emailRepository.findAnfrageEmails());
         List<Email> lieferanten = filter.anwenden(emailRepository.findLieferantEmails());
-        List<Email> taxAdvisorEmails = filter.anwenden(findTaxAdvisorEmails());
+        List<Email> taxAdvisorEmails = filter.anwenden(steuerberaterOrdner.emails());
         List<Email> newsletter = filter.anwenden(emailRepository.findNewsletterOrdner());
         List<Email> spam = filter.anwenden(emailRepository.findSpamOrdner());
         List<Email> gesendet = filter.anwenden(emailRepository.findByDirectionOrderBySentAtDesc(EmailDirection.OUT).stream()
@@ -1432,71 +1401,6 @@ public class UnifiedEmailController {
         stats.setTaxAdvisorTotal(taxAdvisorEmails.size());
 
         return stats;
-    }
-
-    /**
-     * Liefert ein- und ausgehende Kommunikation mit allen aktiven
-     * Steuerberatern. Massgeblich ist die Domain aller gepflegten Haupt-,
-     * Zusatz- und Ansprechpartner-Adressen.
-     */
-    private List<Email> findTaxAdvisorEmails() {
-        Set<String> domains = steuerberaterKontaktService.findAll().stream()
-                .flatMap(contact -> taxAdvisorAddresses(contact).stream())
-                .map(UnifiedEmailController::emailDomain)
-                .filter(java.util.Objects::nonNull)
-                .collect(Collectors.toSet());
-
-        if (domains.isEmpty()) return java.util.Collections.emptyList();
-
-        Map<Long, Email> matching = new java.util.LinkedHashMap<>();
-        for (String domain : domains) {
-            for (Email email : emailRepository.findTaxAdvisorCandidates("@" + domain)) {
-                if (hasAddressFromDomain(email.getFromAddress(), domain)
-                        || hasAddressFromDomain(email.getRecipient(), domain)
-                        || hasAddressFromDomain(email.getCc(), domain)) {
-                    matching.putIfAbsent(email.getId(), email);
-                }
-            }
-        }
-
-        return matching.values().stream()
-                .sorted(java.util.Comparator.comparing(
-                        Email::getSentAt,
-                        java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())))
-                .collect(Collectors.toList());
-    }
-
-    private static List<String> taxAdvisorAddresses(SteuerberaterKontaktDto contact) {
-        List<String> addresses = new ArrayList<>();
-        if (contact.getEmail() != null) addresses.add(contact.getEmail());
-        if (contact.getWeitereEmails() != null) addresses.addAll(contact.getWeitereEmails());
-        if (contact.getAnsprechpartnerListe() != null) {
-            contact.getAnsprechpartnerListe().forEach(person -> {
-                if (person.getEmail() != null) addresses.add(person.getEmail());
-            });
-        }
-        return addresses;
-    }
-
-    private static String emailDomain(String rawAddress) {
-        String address = extractFirstEmailAddress(rawAddress);
-        if (address == null) return null;
-        int at = address.lastIndexOf('@');
-        return at >= 0 && at + 1 < address.length()
-                ? address.substring(at + 1).toLowerCase(java.util.Locale.ROOT)
-                : null;
-    }
-
-    private static boolean hasAddressFromDomain(String rawAddresses, String domain) {
-        if (rawAddresses == null || rawAddresses.isBlank()) return false;
-        java.util.regex.Matcher matcher = EMAIL_PATTERN.matcher(
-                rawAddresses.substring(0, Math.min(rawAddresses.length(), EMAIL_HEADER_MAX_LEN)));
-        while (matcher.find()) {
-            String address = matcher.group();
-            int at = address.lastIndexOf('@');
-            if (at >= 0 && address.substring(at + 1).equalsIgnoreCase(domain)) return true;
-        }
-        return false;
     }
 
     /**
@@ -2097,79 +2001,9 @@ public class UnifiedEmailController {
     // MAPPER
     // ═══════════════════════════════════════════════════════════════
 
-    /**
-     * Lightweight DTO for list endpoints – excludes htmlBody and trims body to 200 chars.
-     * Skips expensive CID-rewriting; only returns attachment metadata.
-     */
+    /** Listen-DTO (gemeinsam mit der Suche, siehe {@link EmailListenDtoMapper}). */
     private UnifiedEmailDto toListDto(Email email, org.example.kalkulationsprogramm.service.GelesenStand gelesen) {
-        UnifiedEmailDto dto = new UnifiedEmailDto();
-        dto.setId(email.getId());
-        dto.setFromAddress(email.getFromAddress());
-        dto.setRecipient(email.getRecipient());
-        dto.setSubject(email.getSubject());
-
-        dto.setCc(email.getCc());
-        // Vorschau: erst den zitierten Verlauf entfernen, dann kürzen – sonst bleibt
-        // ein halber Zitatkopf ("Am Do., 17. Sept. 20…") in der Liste stehen.
-        String klartext = email.getBody();
-        if ((klartext == null || klartext.isBlank()) && email.getHtmlBody() != null) {
-            klartext = org.example.kalkulationsprogramm.util.EmailHtmlSanitizer.htmlToPlainText(email.getHtmlBody());
-        }
-        dto.setBody(org.example.kalkulationsprogramm.util.EmailVorschauText.vorschau(klartext, LIST_PREVIEW_LENGTH));
-        // htmlBody deliberately omitted for list performance
-
-        dto.setSentAt(email.getSentAt());
-        dto.setRead(gelesen.istGelesen(email));
-        dto.setStarred(email.isStarred());
-        dto.setDirection(email.getDirection() != null ? email.getDirection().name() : null);
-        dto.setZuordnungTyp(email.getZuordnungTyp() != null ? email.getZuordnungTyp().name() : null);
-        dto.setSpamScore(email.getSpamScore());
-
-        applyZuordnungsInfo(email, dto);
-        // Hinweis: applyKundeLookup() und das Antwort-Postfach bewusst NICHT in der Liste, um N+1 zu vermeiden.
-        applyPostfachSchilder(email, dto);
-
-        // Compute folder
-        dto.setFolder(computeFolder(email));
-
-        // Thread
-        applyThreadInfo(email, dto);
-
-        // Zustellstatus: betrifft besonders den Funnel-Pfad — dort tippen Kunden
-        // ihre Adresse selbst, entsprechend haeufig sind Vertipper.
-        dto.setZustellStatus(email.getZustellStatus() != null ? email.getZustellStatus().name() : null);
-        dto.setZustellFehler(email.getZustellFehler());
-
-        // Attachments – metadata only, no CID rewriting
-        dto.setHasAttachments(email.getAttachments() != null && !email.getAttachments().isEmpty());
-        if (email.getAttachments() != null && !email.getAttachments().isEmpty()) {
-            dto.setAttachments(email.getAttachments().stream().map(att -> {
-                UnifiedEmailDto.AttachmentDto attDto = new UnifiedEmailDto.AttachmentDto();
-                attDto.setId(att.getId());
-                attDto.setOriginalFilename(att.getOriginalFilename());
-                attDto.setMimeType(att.getMimeType());
-                attDto.setFileSize(att.getSizeBytes());
-                attDto.setContentId(att.getContentId());
-                attDto.setInline(Boolean.TRUE.equals(att.getInlineAttachment()));
-                return attDto;
-            }).collect(Collectors.toList()));
-        }
-
-        return dto;
-    }
-
-    /**
-     * Postfach-Schilder an der Mail. Kommt aus den gebündelt geladenen Zuordnungen –
-     * keine zusätzliche Abfrage pro Listenzeile.
-     */
-    private void applyPostfachSchilder(Email email, UnifiedEmailDto dto) {
-        if (email.getPostfachZuordnungen() != null) {
-            dto.setPostfaecher(email.getPostfachZuordnungen().stream()
-                    .map(org.example.kalkulationsprogramm.domain.EmailPostfachZuordnung::getPostfach)
-                    .filter(java.util.Objects::nonNull)
-                    .map(org.example.kalkulationsprogramm.dto.Postfach.PostfachRefDto::von)
-                    .toList());
-        }
+        return emailListenDtoMapper.listenDto(email, gelesen);
     }
 
     /**
@@ -2178,7 +2012,7 @@ public class UnifiedEmailController {
      * in Listen wäre das eine Abfrage pro Zeile.
      */
     private void applyPostfachInfo(Email email, UnifiedEmailDto dto, AbsenderKontext kontext) {
-        applyPostfachSchilder(email, dto);
+        emailListenDtoMapper.postfachSchilder(email, dto);
         dto.setAntwortPostfach(org.example.kalkulationsprogramm.dto.Postfach.PostfachRefDto.von(
                 postfachVersandService.antwortPostfachFuer(email, kontext.sichtbarkeit(), kontext.eigenesPostfach())));
     }
@@ -2203,34 +2037,17 @@ public class UnifiedEmailController {
         dto.setZuordnungTyp(email.getZuordnungTyp() != null ? email.getZuordnungTyp().name() : null);
         dto.setSpamScore(email.getSpamScore());
 
-        applyZuordnungsInfo(email, dto);
+        emailListenDtoMapper.zuordnungsInfo(email, dto);
         applyPostfachInfo(email, dto, kontext);
         applyKundeLookup(email, dto);
-
-        // Compute folder
-        dto.setFolder(computeFolder(email));
-
-        // Thread-Informationen
-        applyThreadInfo(email, dto);
-
-        // Zustellstatus: betrifft besonders den Funnel-Pfad — dort tippen Kunden
-        // ihre Adresse selbst, entsprechend haeufig sind Vertipper.
-        dto.setZustellStatus(email.getZustellStatus() != null ? email.getZustellStatus().name() : null);
-        dto.setZustellFehler(email.getZustellFehler());
+        dto.setFolder(org.example.kalkulationsprogramm.domain.EmailOrdner.von(email).schluessel());
+        emailListenDtoMapper.threadInfo(email, dto);
+        emailListenDtoMapper.zustellung(email, dto);
 
         // Attachments
         dto.setHasAttachments(email.getAttachments() != null && !email.getAttachments().isEmpty());
-        if (email.getAttachments() != null && !email.getAttachments().isEmpty()) {
-            dto.setAttachments(email.getAttachments().stream().map(att -> {
-                UnifiedEmailDto.AttachmentDto attDto = new UnifiedEmailDto.AttachmentDto();
-                attDto.setId(att.getId());
-                attDto.setOriginalFilename(att.getOriginalFilename());
-                attDto.setMimeType(att.getMimeType());
-                attDto.setFileSize(att.getSizeBytes());
-                attDto.setContentId(att.getContentId());
-                attDto.setInline(Boolean.TRUE.equals(att.getInlineAttachment()));
-                return attDto;
-            }).collect(Collectors.toList()));
+        if (dto.isHasAttachments()) {
+            dto.setAttachments(emailListenDtoMapper.anhaenge(email));
 
             // Rewrite cid: URLs to actual download URLs for inline images
             String htmlBody = email.getHtmlBody();
@@ -2253,52 +2070,6 @@ public class UnifiedEmailController {
         return dto;
     }
 
-    /** Zuordnung (Projekt, Anfrage, Lieferant) für Liste und Detail – das E-Mail-Center verlinkt darauf. */
-    private void applyZuordnungsInfo(Email email, UnifiedEmailDto dto) {
-        if (email.getProjekt() != null) {
-            dto.setProjektId(email.getProjekt().getId());
-            dto.setProjektName(email.getProjekt().getBauvorhaben());
-            dto.setProjektAuftragsnummer(email.getProjekt().getAuftragsnummer());
-        }
-        if (email.getAnfrage() != null) {
-            dto.setAnfrageId(email.getAnfrage().getId());
-            dto.setAnfrageName(email.getAnfrage().getBauvorhaben());
-        }
-        if (email.getLieferant() != null) {
-            dto.setLieferantId(email.getLieferant().getId());
-            dto.setLieferantName(email.getLieferant().getLieferantenname());
-        }
-    }
-
-    /** Thread-Felder für Liste und Detail: alle Mitglieder eines Verlaufs liefern dieselben Werte. */
-    private void applyThreadInfo(Email email, UnifiedEmailDto dto) {
-        if (email.getParentEmail() != null) {
-            dto.setParentEmailId(email.getParentEmail().getId());
-        }
-        EmailThreadService.ThreadKennzahlen kennzahlen = emailThreadService.kennzahlenFuer(email);
-        dto.setThreadRootId(kennzahlen.rootId());
-        dto.setReplyCount(Math.max(0, kennzahlen.anzahl() - 1));
-        dto.setThreadLastActivityAt(kennzahlen.letzteAktivitaet());
-    }
-
-    private String computeFolder(Email email) {
-        if (email.getDeletedAt() != null) return "trash";
-        if (email.isSpam()) return "spam";
-        if (email.isNewsletter()) return "newsletter";
-        if (email.getDirection() == org.example.kalkulationsprogramm.domain.EmailDirection.OUT) return "sent";
-        var typ = email.getZuordnungTyp();
-        if (typ != null) {
-            switch (typ) {
-                case PROJEKT: return "projects";
-                case ANFRAGE: return "offers";
-                case LIEFERANT: return "suppliers";
-                default: break;
-            }
-        }
-        if (email.isPotentialInquiry()) return "inquiries";
-        return "inbox";
-    }
-
     /**
      * Versucht, die Email einem Kunden zuzuordnen (rein anhand der E-Mail-Adresse,
      * ohne den Datensatz zu verändern). Bei IN-Mails wird die From-Adresse, bei
@@ -2313,7 +2084,7 @@ public class UnifiedEmailController {
         String raw = email.getDirection() == EmailDirection.OUT
                 ? email.getRecipient()
                 : email.getFromAddress();
-        String address = extractFirstEmailAddress(raw);
+        String address = org.example.kalkulationsprogramm.util.EmailAdressen.ersteAdresse(raw);
         if (address == null) return;
         // Bei mehreren Treffern (z.B. Sammeladresse) deterministisch nach Kunden-Id sortieren,
         // damit immer derselbe Name im UI erscheint.
@@ -2323,38 +2094,5 @@ public class UnifiedEmailController {
                     dto.setKundeId(k.getId());
                     dto.setKundeName(k.getName());
                 });
-    }
-
-    /**
-     * Match-Pattern für E-Mail-Adressen in beliebigen Header-Werten (Display-Name + Adresse).
-     * Possessive Quantoren (`++`) verhindern Backtracking und damit polynomiales ReDoS
-     * (CodeQL java/polynomial-redos) auf Eingaben mit vielen Wiederholungen aus den Zeichenklassen.
-     * Die Domain ist als Folge von `label.`-Gruppen + TLD aufgebaut, damit der Punkt in
-     * keiner Zeichenklasse mit `++` doppelt vorkommt (sonst würde der TLD-Teil leer laufen).
-     */
-    private static final java.util.regex.Pattern EMAIL_PATTERN = java.util.regex.Pattern
-            .compile("[A-Za-z0-9._%+\\-]++@(?:[A-Za-z0-9\\-]++\\.)++[A-Za-z]{2,}+");
-
-    /**
-     * Defense-in-depth-Cap, um die Regex-Laufzeit auf adversarialen Eingaben endgültig zu deckeln.
-     * RFC 5322 begrenzt Header-Zeilen auf 998 Zeichen; 4096 lässt Display-Namen, Encoded-Words
-     * und kurze To-Listen großzügig zu. Bewusster Trade-off: Bei extrem langer To-/Cc-Liste
-     * wird nur die erste Adresse gesucht, ein Cut innerhalb einer einzelnen Adresse ist daher
-     * praktisch ausgeschlossen.
-     */
-    private static final int EMAIL_HEADER_MAX_LEN = 4096;
-    /** Länge der Vorschau in der Mail-Liste (Zeichen, ohne zitierten Verlauf). */
-    private static final int LIST_PREVIEW_LENGTH = 200;
-
-    /**
-     * Extrahiert die erste E-Mail-Adresse aus einem rohen Header-Wert
-     * (z.B. {@code "Max Mustermann <max@example.com>, foo@bar.com"} → {@code "max@example.com"}).
-     * Package-private für direkte Unit-Tests.
-     */
-    static String extractFirstEmailAddress(String raw) {
-        if (raw == null || raw.isBlank()) return null;
-        String input = raw.length() > EMAIL_HEADER_MAX_LEN ? raw.substring(0, EMAIL_HEADER_MAX_LEN) : raw;
-        java.util.regex.Matcher m = EMAIL_PATTERN.matcher(input);
-        return m.find() ? m.group() : null;
     }
 }

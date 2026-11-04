@@ -1,9 +1,10 @@
 import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { ToastProvider } from '../../components/ui/toast';
 import { EmailDetailHeader } from './EmailDetailHeader';
-import type { EmailItem } from './emailCenterModel';
+import type { EmailItem, FolderType } from './emailCenterModel';
 
 const basis: EmailItem = {
     id: 1, type: 'EMAIL', direction: 'IN',
@@ -12,16 +13,49 @@ const basis: EmailItem = {
     sentAt: '2026-10-01T09:30:00', zuordnungTyp: 'KEINE', attachments: [],
 };
 
-function renderKopf(email: EmailItem) {
+function renderKopf(email: EmailItem, folder: FolderType = 'inbox', onDelete = vi.fn(), onRestore = vi.fn(), onMove = vi.fn()) {
     const leer = vi.fn();
     return render(<MemoryRouter>
         <ToastProvider>
-            <EmailDetailHeader email={email} folder="inbox" onReply={leer} onForward={leer} onAssign={leer}
-                onStar={leer} onDelete={leer} onMove={leer} onSpam={leer} onNotSpam={leer} onBlock={leer}
+            <EmailDetailHeader email={email} folder={folder} onReply={leer} onForward={leer} onAssign={leer}
+                onStar={leer} onDelete={onDelete} onRestore={onRestore} onMove={onMove} onSpam={leer} onNotSpam={leer} onBlock={leer}
                 onNotNewsletter={leer} onConfirmNewsletter={leer} />
         </ToastProvider>
     </MemoryRouter>);
 }
+
+describe('EmailDetailHeader – Wiederherstellen', () => {
+    it('holt im Papierkorb über „Wiederherstellen“ in den Ursprungsordner zurück', async () => {
+        const user = userEvent.setup();
+        const onRestore = vi.fn();
+        const onMove = vi.fn();
+        renderKopf(basis, 'trash', vi.fn(), onRestore, onMove);
+        await user.click(screen.getByRole('button', { name: 'Weitere E-Mail-Aktionen' }));
+        await user.click(await screen.findByRole('menuitem', { name: 'Wiederherstellen' }));
+        expect(onRestore).toHaveBeenCalledTimes(1);
+        expect(onMove).not.toHaveBeenCalled();
+    });
+});
+
+describe('EmailDetailHeader – Löschen mit einem Klick', () => {
+    it('legt die Mail über den sichtbaren Papierkorb-Knopf in den Papierkorb', async () => {
+        const user = userEvent.setup();
+        const onDelete = vi.fn();
+        renderKopf(basis, 'inbox', onDelete);
+        const knopf = screen.getByRole('button', { name: 'In den Papierkorb (Entf)' });
+        expect(knopf).toHaveAttribute('title', 'In den Papierkorb (Entf)');
+        await user.click(knopf);
+        expect(onDelete).toHaveBeenCalledTimes(1);
+    });
+
+    it('löscht im Papierkorb endgültig und behält den Menüeintrag', async () => {
+        const user = userEvent.setup();
+        renderKopf(basis, 'trash');
+        expect(screen.getByRole('button', { name: 'Endgültig löschen (Entf)' })).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: 'Weitere E-Mail-Aktionen' }));
+        expect(await screen.findByRole('menuitem', { name: 'Endgültig löschen' })).toBeInTheDocument();
+    });
+});
 
 describe('EmailDetailHeader – Zuordnung', () => {
     it('zeigt „Gehört zu:“ mit Link ins Projekt samt Auftragsnummer', () => {

@@ -90,6 +90,9 @@ class FirmendokumentPostgresTest {
         r.add("spring.jpa.database-platform", () -> "org.hibernate.dialect.PostgreSQLDialect");
         r.add("spring.flyway.locations", () -> "classpath:db/postgresql/migration");
         r.add("spring.datasource.hikari.connection-init-sql", () -> "SET client_encoding TO 'UTF8'");
+        // Kleiner Pool: viele Kontexte im Cache teilen sich die 100 Verbindungen der CI-Datenbank
+        r.add("spring.datasource.hikari.maximum-pool-size", () -> "3");
+        r.add("spring.datasource.hikari.minimum-idle", () -> "0");
         r.add("spring.datasource.username", () -> System.getProperty("kompat.db.user", "kompat"));
         r.add("spring.datasource.password", () -> System.getProperty("kompat.db.pass", "kompat"));
         r.add("file.upload-dir", UPLOADS::toString);

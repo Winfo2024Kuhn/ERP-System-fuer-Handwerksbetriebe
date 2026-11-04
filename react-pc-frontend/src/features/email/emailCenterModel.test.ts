@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-    buildEmailListUrl, buildForwardSubject, buildReplyAddressing, buildReplySubject, emailListCacheKey, filtereEntwuerfe, fremderEntwurfVon,
+    buildEmailListUrl, buildForwardSubject, buildReplyAddressing, buildReplySubject, emailListCacheKey, filtereEntwuerfe, formatListenDatum, fremderEntwurfVon,
     getDisplayName, groupEmailThreads, hasFurtherRecipients, loeschFehlerMeldung, nutztServerFilterUngelesen,
     weiterleitbareAnhaenge, type DraftItem, type EmailItem,
 } from './emailCenterModel';
@@ -243,5 +243,19 @@ describe('fremderEntwurfVon', () => {
         expect(fremderEntwurfVon({ erstelltVon: '  ' }, 'Max Mustermann')).toBeNull();
         expect(fremderEntwurfVon({ erstelltVon: 'Erika Musterfrau' }, null)).toBeNull();
         expect(fremderEntwurfVon({ erstelltVon: 'Erika Musterfrau' }, '')).toBeNull();
+    });
+});
+
+describe('formatListenDatum', () => {
+    it('zeigt heute die Uhrzeit, sonst Tag und Monat', () => {
+        const heute = new Date();
+        heute.setHours(9, 5, 0, 0);
+        expect(formatListenDatum(heute.toISOString())).toBe('09:05');
+        expect(formatListenDatum('2026-09-14T12:30:00')).toBe('14.09.');
+    });
+
+    it('zeigt ohne oder mit kaputtem Datum einen Strich', () => {
+        expect(formatListenDatum(undefined)).toBe('-');
+        expect(formatListenDatum('kein Datum')).toBe('-');
     });
 });
