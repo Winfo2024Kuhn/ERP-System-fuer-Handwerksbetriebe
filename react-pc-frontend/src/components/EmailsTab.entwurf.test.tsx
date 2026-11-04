@@ -68,7 +68,7 @@ describe('EmailsTab – Entwurf löschen mit „Rückgängig“', () => {
         await oeffneMitEntwurf();
         expect(screen.queryByText('Entwurf Antwort')).not.toBeInTheDocument();
         expect(screen.getByText('1 Nachricht im Verlauf')).toBeInTheDocument();
-        expect(screen.getByText('„Entwurf“ gelöscht.')).toBeInTheDocument();
+        expect(screen.getByText('Entwurf „Entwurf Antwort“ gelöscht.')).toBeInTheDocument();
         expect(loeschAufrufe()).toHaveLength(0);
 
         await act(async () => { await vi.advanceTimersByTimeAsync(RUECKGAENGIG_MS); });
@@ -94,6 +94,14 @@ describe('EmailsTab – Entwurf löschen mit „Rückgängig“', () => {
         await act(async () => { await vi.advanceTimersByTimeAsync(RUECKGAENGIG_MS); });
         expect(screen.getByText('Der Entwurf wird gerade gesendet.')).toBeInTheDocument();
         expect(screen.getByText('Entwurf Antwort')).toBeInTheDocument();
+    });
+
+    it('meldet einen Fehler auch, wenn der Verlauf schon geschlossen ist', async () => {
+        loeschAntwort = fehler;
+        await oeffneMitEntwurf();
+        fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+        expect(await screen.findByText('Der Entwurf wird gerade gesendet.')).toBeInTheDocument();
     });
 
     it('löscht beim Schließen des Verlaufs sofort', async () => {

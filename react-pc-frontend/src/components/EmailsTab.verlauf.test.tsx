@@ -142,6 +142,27 @@ describe('EmailsTab – geöffneter Verlauf', () => {
         expect(formular.gespeichert).toBe(2);
     });
 
+    it('lädt einen Verlauf nach einem Fehler per „Erneut laden“', async () => {
+        let versuch = 0;
+        vi.stubGlobal('fetch', vi.fn(() => (++versuch === 1 ? json(null, false) : json(verlauf()))));
+        rendere();
+        fireEvent.click(zeile());
+        fireEvent.click(await screen.findByRole('button', { name: 'Erneut laden' }));
+        expect(await screen.findByText('1 Nachricht im Verlauf')).toBeInTheDocument();
+        expect(screen.queryByText('Der Verlauf konnte nicht geladen werden.')).not.toBeInTheDocument();
+    });
+
+    it('sperrt „Antworten“ mit Hinweis, solange die Mail geladen wird', async () => {
+        vi.stubGlobal('fetch', vi.fn((url: string) => url.endsWith('/thread') ? json(verlauf()) : new Promise<Response>(() => {})));
+        rendere();
+        fireEvent.click(zeile());
+        const antworten = (await screen.findAllByRole('button', { name: /Antworten/ }))[0];
+        fireEvent.click(antworten);
+        expect(antworten).toBeDisabled();
+        expect(antworten).toHaveAttribute('aria-busy', 'true');
+        expect(antworten).toHaveAttribute('title', 'Mail wird geladen…');
+    });
+
     it('meldet einen Verlauf, der nicht geladen werden kann, und schließt per Knopf', async () => {
         vi.stubGlobal('fetch', vi.fn(() => json(null, false)));
         rendere();

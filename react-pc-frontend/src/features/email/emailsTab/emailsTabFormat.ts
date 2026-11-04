@@ -19,3 +19,18 @@ export function verlaufAnzahl(eintraege: ReadonlyArray<{ isDraft?: boolean }>): 
     const text = `${nachrichten} ${nachrichten === 1 ? 'Nachricht' : 'Nachrichten'} im Verlauf`;
     return entwuerfe ? `${text}, ${entwuerfe} ${entwuerfe === 1 ? 'Entwurf' : 'Entwürfe'}` : text;
 }
+
+const BEZEICHNUNG_MAX = 40;
+
+/**
+ * Wie ein Entwurf in Meldungen heißt: „Entwurf „Betreff““, sonst mit dem Textanfang,
+ * sonst nur „Entwurf“. Lange Texte werden mit „…“ gekürzt.
+ */
+export function entwurfBezeichnung(entwurf: { subject?: string; snippet?: string } | undefined): string {
+    const betreff = entwurf?.subject?.trim();
+    const anfang = entwurf?.snippet?.trim();
+    const text = betreff || (anfang && anfang !== '[Entwurf]' ? anfang : '');
+    if (!text) return 'Entwurf';
+    const kurz = text.length > BEZEICHNUNG_MAX ? `${text.slice(0, BEZEICHNUNG_MAX).trimEnd()}…` : text;
+    return `Entwurf „${kurz}“`;
+}

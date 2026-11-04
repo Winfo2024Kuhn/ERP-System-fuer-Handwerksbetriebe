@@ -2,6 +2,7 @@ import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { EmailRecipientDropdown, parseRecipientList } from "./EmailRecipientDropdown";
+import { Dialog } from "./ui/dialog";
 
 const mockToast = {
     success: vi.fn(),
@@ -71,6 +72,21 @@ describe("EmailRecipientDropdown", () => {
         fireEvent.click(screen.getByText("+12 weitere"));
         expect(screen.getByText("Alle Empfänger (14)")).toBeInTheDocument();
         expect(screen.getByText("r14@domain.de")).toBeInTheDocument();
+    });
+
+    it("Escape in einem Dialog schließt erst nur die Empfängerliste, nicht den Dialog", () => {
+        const onOpenChange = vi.fn();
+        render(
+            <Dialog open onOpenChange={onOpenChange}>
+                <EmailRecipientDropdown recipients="a@b.de, c@d.de, e@f.de" maxInline={1} />
+            </Dialog>
+        );
+        fireEvent.click(screen.getByText("+2 weitere"));
+        expect(screen.getByText("Alle Empfänger (3)")).toBeInTheDocument();
+
+        fireEvent.keyDown(screen.getByText("+2 weitere"), { key: "Escape" });
+        expect(screen.queryByText("Alle Empfänger (3)")).not.toBeInTheDocument();
+        expect(onOpenChange).not.toHaveBeenCalled();
     });
 
     it("kopiert alle Empfänger in die Zwischenablage bei Klick auf Alle kopieren", async () => {

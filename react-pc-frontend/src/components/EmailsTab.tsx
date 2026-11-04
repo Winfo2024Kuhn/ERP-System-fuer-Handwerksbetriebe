@@ -123,6 +123,8 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
         <div className="space-y-4">
             {selectedEmailId && (
                 <EmailsTabThreadDialog
+                    // Je Mail eine eigene Instanz: Lösch-Aufträge und Vorschau gehören genau zu diesem Verlauf.
+                    key={selectedEmailId}
                     subject={threadRoots.find(e => e.id === selectedEmailId)?.subject || '(kein Betreff)'}
                     thread={thread}
                     threadLoading={threadLoading}

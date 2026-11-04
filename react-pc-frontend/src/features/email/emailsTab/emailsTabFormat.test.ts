@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { formatEmailDate, verlaufAnzahl } from './emailsTabFormat';
+import { entwurfBezeichnung, formatEmailDate, verlaufAnzahl } from './emailsTabFormat';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -33,5 +33,19 @@ describe('verlaufAnzahl', () => {
         expect(verlaufAnzahl([mail, entwurf])).toBe('1 Nachricht im Verlauf, 1 Entwurf');
         expect(verlaufAnzahl([mail, mail, entwurf, entwurf])).toBe('2 Nachrichten im Verlauf, 2 Entwürfe');
         expect(verlaufAnzahl([])).toBe('0 Nachrichten im Verlauf');
+    });
+});
+
+describe('entwurfBezeichnung', () => {
+    it('nennt den Betreff, sonst den Textanfang, sonst nur „Entwurf“', () => {
+        expect(entwurfBezeichnung({ subject: '  AW: Geländer  ', snippet: 'Text' })).toBe('Entwurf „AW: Geländer“');
+        expect(entwurfBezeichnung({ subject: ' ', snippet: 'Angebot folgt bis Freitag' })).toBe('Entwurf „Angebot folgt bis Freitag“');
+        expect(entwurfBezeichnung({ snippet: '[Entwurf]' })).toBe('Entwurf');
+        expect(entwurfBezeichnung(undefined)).toBe('Entwurf');
+    });
+
+    it('kürzt lange Texte mit echtem Auslassungszeichen', () => {
+        const lang = 'Sehr geehrter Herr Mustermann, anbei das Angebot für das Geländer';
+        expect(entwurfBezeichnung({ snippet: lang })).toBe('Entwurf „Sehr geehrter Herr Mustermann, anbei das…“');
     });
 });

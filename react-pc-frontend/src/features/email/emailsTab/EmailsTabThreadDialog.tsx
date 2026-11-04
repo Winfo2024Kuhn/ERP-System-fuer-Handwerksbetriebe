@@ -1,7 +1,8 @@
 import { useCallback, useId, useRef, useState } from 'react';
-import { Loader2, Reply } from 'lucide-react';
+import { Loader2, RefreshCw, Reply } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../../../components/ui/dialog';
+import { useToast } from '../../../components/ui/toast';
 import { ImageViewer } from '../../../components/ui/image-viewer';
 import DocumentPreviewModal from '../../../components/DocumentPreviewModal';
 import { EmailComposeForm } from '../../../components/EmailComposeForm';
@@ -45,6 +46,17 @@ export function EmailsTabThreadDialog(props: EmailsTabThreadDialogProps) {
         speichernVorDemSchliessen.current = speichern;
     }, []);
     const { sichtbarerVerlauf, entwurfLoeschen } = useEmailsTabEntwurfLoeschen(thread, onReloadThread);
+    const toast = useToast();
+
+    /** Nur sichere Adressen öffnen; sonst Meldung statt einer Vorschau, die nichts zeigt. */
+    const vorschauOeffnen = (url: string, type: Anhang['type'], name: string) => {
+        const sichereUrl = toSafeResourceUrl(url);
+        if (!sichereUrl) {
+            toast.error('Der Anhang kann nicht angezeigt werden. Bitte herunterladen.');
+            return;
+        }
+        setAnhang({ url: sichereUrl, type, name });
+    };
 
     const schliessenWollen = () => {
         if (anhang) { setAnhang(null); return; }
@@ -77,6 +89,8 @@ export function EmailsTabThreadDialog(props: EmailsTabThreadDialogProps) {
                             variant="outline"
                             size="sm"
                             disabled={reply.replyLaedt}
+                            aria-busy={reply.replyLaedt || undefined}
+                            title={reply.replyLaedt ? 'Mail wird geladen…' : undefined}
                             onClick={() => { void reply.startReply(sichtbarerVerlauf.emails[sichtbarerVerlauf.emails.length - 1]); }}
                             className="gap-1.5 shrink-0 text-slate-700 border-slate-300 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
                         >
@@ -92,7 +106,7 @@ export function EmailsTabThreadDialog(props: EmailsTabThreadDialogProps) {
                     {...props}
                     thread={sichtbarerVerlauf}
                     onBeforeLeave={merkeSpeichern}
-                    onPreview={(url, type, name) => setAnhang({ url, type, name })}
+                    onPreview={vorschauOeffnen}
                     onDeleteDraft={entwurfLoeschen}
                 />
                 <EmailsTabAnhangVorschau anhang={anhang} onClose={() => setAnhang(null)} />
@@ -109,7 +123,7 @@ interface ContentProps extends EmailsTabThreadDialogProps {
 
 function EmailsTabThreadContent({
     thread, threadLoading, showReplyButton, reply, projektId, anfrageId,
-    onReplySuccess, onBeforeLeave, onPreview, onOpenDraft, onDeleteDraft,
+    onReplySuccess, onReloadThread, onBeforeLeave, onPreview, onOpenDraft, onDeleteDraft,
 }: ContentProps) {
     if (reply.isReplying && reply.replyToEmail) {
         return (
@@ -142,18 +156,20 @@ function EmailsTabThreadContent({
         );
     }
     return (
-        <div className="flex-1 flex items-center justify-center p-6">
+        <div className="flex-1 flex flex-col items-center justify-center gap-3 p-6">
             <p className="text-sm text-slate-500">Der Verlauf konnte nicht geladen werden.</p>
+            <Button variant="outline" size="sm" onClick={onReloadThread}>
+                <RefreshCw aria-hidden="true" className="w-4 h-4 mr-2" /> Erneut laden
+            </Button>
         </div>
     );
 }
 
-/** Bilder im gemeinsamen ImageViewer, PDFs in der gemeinsamen Dokumentvorschau. */
+/** Bilder im gemeinsamen ImageViewer, PDFs in der gemeinsamen Dokumentvorschau (URL schon geprüft). */
 function EmailsTabAnhangVorschau({ anhang, onClose }: { anhang: Anhang | null; onClose: () => void }) {
-    const sichereUrl = anhang ? toSafeResourceUrl(anhang.url) : '';
-    if (!anhang || !sichereUrl) return null;
-    if (anhang.type === 'image') return <ImageViewer src={sichereUrl} alt={anhang.name} onClose={onClose} />;
-    return <DocumentPreviewModal doc={{ url: sichereUrl, title: anhang.name }} isPdf onClose={onClose} />;
+    if (!anhang) return null;
+    if (anhang.type === 'image') return <ImageViewer src={anhang.url} alt={anhang.name} onClose={onClose} />;
+    return <DocumentPreviewModal doc={{ url: anhang.url, title: anhang.name }} isPdf onClose={onClose} />;
 }
 
 function EmailsTabThreadSkeleton() {

@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import type { EmailThread } from '../../../components/EmailThreadView';
 import { useVerzoegertesLoeschen } from '../../../hooks/useVerzoegertesLoeschen';
+import { entwurfBezeichnung } from './emailsTabFormat';
 
 const schluessel = (draftId: number) => `email-entwurf:${draftId}`;
 
@@ -23,14 +24,16 @@ export function useEmailsTabEntwurfLoeschen(thread: EmailThread | null, reloadTh
     }, [thread, ausgeblendet]);
 
     const entwurfLoeschen = useCallback((draftId: number) => {
+        const entwurf = thread?.emails.find(e => e.isDraft && e.draftId === draftId);
         planen({
             schluessel: schluessel(draftId),
             url: `/api/emails/drafts/${encodeURIComponent(draftId)}`,
             name: 'Entwurf',
+            anzeige: entwurfBezeichnung(entwurf),
             fehlerText: 'Der Entwurf konnte nicht gelöscht werden.',
             onGeloescht: reloadThread,
         });
-    }, [planen, reloadThread]);
+    }, [planen, reloadThread, thread]);
 
     return { sichtbarerVerlauf, entwurfLoeschen };
 }

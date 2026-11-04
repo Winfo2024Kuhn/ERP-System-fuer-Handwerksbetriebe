@@ -44,7 +44,7 @@ function verlauf(mitEntwurf: boolean) {
         {
             id: 7, subject: BETREFF, fromAddress: 'Max Mustermann <max@example.com>', recipient: 'buero@example.com',
             direction: 'IN', sentAt: '2026-11-02T09:15:00', htmlBody: '<p>Guten Tag, bitte um ein Angebot für ein Geländer.</p>',
-            snippet: 'Guten Tag, bitte um ein Angebot', attachments: [{ id: 3, originalFilename: 'skizze.png', sizeBytes: 68 }],
+            snippet: 'Guten Tag, bitte um ein Angebot', attachments: [{ id: 3, originalFilename: 'skizze.png', sizeBytes: 68 }, { id: 4, originalFilename: 'zeichnung.pdf', sizeBytes: 320 }],
         },
         {
             id: 8, subject: `AW: ${BETREFF}`, fromAddress: 'buero@example.com', recipient: 'max@example.com',
@@ -81,6 +81,7 @@ async function stubbeApi(page: Page) {
         if (pfad === '/api/emails/7/thread') return json(route, verlauf(!stand.entwurfGeloescht));
         if (pfad === '/api/emails/8') return json(route, { ...MAILS[1], bodyHtml: '<p>Vielen Dank, wir melden uns.</p>' });
         if (pfad === '/api/emails/7/attachments/3') return route.fulfill({ status: 200, contentType: 'image/png', body: PIXEL_PNG });
+        if (pfad === '/api/emails/7/attachments/4') return route.fulfill({ status: 200, contentType: 'application/pdf', body: '%PDF-1.4\n%%EOF\n' });
         if (pfad === '/api/emails/drafts/99' && methode === 'DELETE') {
             stand.loeschAufrufe++;
             stand.entwurfGeloescht = true;
@@ -144,13 +145,21 @@ test.describe('E-Mail-Reiter in der Anfrage', () => {
         await expect(bild).toBeHidden();
         await expect(dialog).toBeVisible();
 
+        // PDF-Anhang in der gemeinsamen Dokumentvorschau: auch hier schließt Escape nur die Vorschau
+        await dialog.getByRole('button', { name: /zeichnung\.pdf/ }).click();
+        const pdfSchliessen = page.getByRole('button', { name: 'Vorschau schließen' });
+        await expect(pdfSchliessen).toBeVisible();
+        await page.keyboard.press('Escape');
+        await expect(pdfSchliessen).toBeHidden();
+        await expect(dialog).toBeVisible();
+
         // Entwurf löschen: sofort weg, „Rückgängig“ holt ihn zurück
         const entwurf = dialog.getByText('Angebot folgt bis Freitag');
         await expect(entwurf).toBeVisible();
         await dialog.getByTitle('Entwurf löschen').click();
         await expect(entwurf).toBeHidden();
         await expect(dialog.getByText('2 Nachrichten im Verlauf', { exact: true })).toBeVisible();
-        const meldung = page.getByText('„Entwurf“ gelöscht.');
+        const meldung = page.getByText('Entwurf „Angebot folgt bis Freitag“ gelöscht.');
         await expect(meldung).toBeVisible();
         await designPruefung(page, testInfo, 'emails-tab-entwurf-geloescht');
         await page.getByRole('button', { name: 'Rückgängig' }).click();
@@ -172,5 +181,19 @@ test.describe('E-Mail-Reiter in der Anfrage', () => {
         const senden = dialog.getByRole('button', { name: 'E-Mail senden' });
         await expect(senden).toBeVisible();
         await designPruefung(page, testInfo, 'emails-tab-antwort', { primaerAktion: senden });
+
+        // Escape im Empfängerfeld (bei Antworten steht „An“ fest, also die Kopie) schließt
+        // nur die Vorschlagsliste, der Verlauf bleibt offen
+        await dialog.getByRole('button', { name: /CC hinzufügen/ }).click();
+        const empfaenger = dialog.getByRole('textbox', { name: 'Kopie (CC)' });
+        await empfaenger.fill('mu');
+        await page.clock.runFor(400);
+        // Die Vorschlagsliste hängt per Portal am body, nicht im Dialog
+        const vorschlaege = page.getByText('Verknüpfte E-Mail-Adressen');
+        await expect(vorschlaege).toBeVisible();
+        await page.keyboard.press('Escape');
+        await expect(vorschlaege).toBeHidden();
+        await expect(dialog).toBeVisible();
+        await expect(senden).toBeVisible();
     });
 });

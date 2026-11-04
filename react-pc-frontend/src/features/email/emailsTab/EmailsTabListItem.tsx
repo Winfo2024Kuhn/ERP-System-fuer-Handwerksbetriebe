@@ -19,6 +19,7 @@ interface EmailsTabListItemProps {
  */
 export function EmailsTabListItem({ email, preview, onOpen }: EmailsTabListItemProps) {
     const isThread = email._replyCount > 0;
+    const mitAnhang = !!email.attachments?.some(a => !a.inline);
     const betreffId = useId();
     const chipsId = useId();
     const detailsId = useId();
@@ -47,8 +48,9 @@ export function EmailsTabListItem({ email, preview, onOpen }: EmailsTabListItemP
                             {email.from || email.fromAddress || email.sender || 'Unbekannt'}
                         </span>
                         {(email.bodyHtml || email.bodyPreview || email.body) && (
-                            <span className="block text-sm text-slate-400 mt-1 line-clamp-2">{preview}</span>
+                            <span className="block text-sm text-slate-500 mt-1 line-clamp-2">{preview}</span>
                         )}
+                        {mitAnhang && <span className="sr-only">mit Anhang</span>}
                         {/* Rückläufer-Warnung: Ohne diesen Hinweis sieht eine nie
                             angekommene Mail exakt aus wie eine erfolgreich versendete –
                             der Fehler fällt im Alltag sonst gar nicht auf. */}
@@ -62,9 +64,7 @@ export function EmailsTabListItem({ email, preview, onOpen }: EmailsTabListItemP
                         ? <MessagesSquare className="w-5 h-5 text-rose-300 group-hover:text-rose-500 transition-colors" />
                         : <Mail className="w-5 h-5 text-slate-300 group-hover:text-rose-400 transition-colors" />
                     }
-                    {email.attachments && email.attachments.filter(a => !a.inline).length > 0 && (
-                        <Paperclip className="w-4 h-4 text-slate-400" />
-                    )}
+                    {mitAnhang && <Paperclip className="w-4 h-4 text-slate-400" />}
                 </span>
             </span>
         </button>
@@ -81,7 +81,7 @@ function EmailsTabListItemChips({ id, email, isThread }: { id: string; email: Th
             </span>
             {isThread && (
                 <span
-                    className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-0.5 rounded-full bg-rose-600 text-white shadow-sm"
+                    className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 ring-1 ring-rose-200"
                     title={`${email._replyCount + 1} Nachrichten in diesem Verlauf`}
                 >
                     <MessagesSquare aria-hidden="true" className="w-3 h-3" />

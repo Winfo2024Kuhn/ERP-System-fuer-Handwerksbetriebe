@@ -252,6 +252,8 @@ export function EmailRecipientInput({
     const handleKeyDown = (e: React.KeyboardEvent) => {
         // Escape schließt auch die Liste „keine Treffer“ – sie verdeckt sonst die Felder darunter.
         if (e.key === 'Escape' && isOpen) {
+            // preventDefault: Ein umgebender Dialog schließt sonst gleich mit.
+            e.preventDefault();
             setIsOpen(false);
             return;
         }
