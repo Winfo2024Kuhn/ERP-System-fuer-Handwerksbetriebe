@@ -243,13 +243,8 @@ export function RechtstextDialog({ art, bezeichnung, onClose, onAktualisiert }: 
     return (
         <Dialog
             open
-            // Escape landet zuerst hier (der Dialog hält den Fokus): Ist die PDF-Vorschau
-            // offen, schließt es nur die Vorschau, nicht den Bearbeiten-Dialog.
-            onOpenChange={offen => {
-                if (offen) return;
-                if (pdfUrl) setPdfUrl(null);
-                else void schliessenWollen();
-            }}
+            // Die PDF-Vorschau ist eine eigene Ebene darüber: Escape schließt dort nur sie.
+            onOpenChange={offen => { if (!offen) void schliessenWollen(); }}
             aria-labelledby={titelId}
             className="h-[calc(100vh-2rem)] max-h-[960px] w-full max-w-6xl"
         >
@@ -364,7 +359,7 @@ export function RechtstextDialog({ art, bezeichnung, onClose, onAktualisiert }: 
                     </div>
                 </DialogFooter>
 
-                {/* Im Dialog eingehängt, damit Fokusfalle und Escape des Dialogs die Vorschau einschließen. */}
+                {/* Eigene modale Ebene über dem Dialog: Escape schließt nur die Vorschau, Fokus zurück an „Vorschau (PDF)“. */}
                 {sichereVorschauUrl && (
                     <DocumentPreviewModal
                         doc={{ url: sichereVorschauUrl, title: `Vorschau: ${detail?.bezeichnung ?? bezeichnung}` }}
