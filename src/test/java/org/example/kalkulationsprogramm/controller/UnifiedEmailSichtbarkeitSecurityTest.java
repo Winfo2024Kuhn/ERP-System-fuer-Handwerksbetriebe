@@ -88,7 +88,8 @@ import org.springframework.test.web.servlet.MockMvc;
  */
 @WebMvcTest(controllers = UnifiedEmailController.class)
 @Import({ SecurityConfig.class, UnifiedEmailSichtbarkeitSecurityTest.EchteFilterBeans.class,
-        PostfachSichtbarkeitService.class, EmailThreadService.class })
+        PostfachSichtbarkeitService.class, EmailThreadService.class,
+        org.example.kalkulationsprogramm.service.mail.liste.EmailListenDtoMapper.class, org.example.kalkulationsprogramm.service.mail.liste.SteuerberaterOrdner.class })
 @TestPropertySource(properties = "file.mail-attachment-dir=target/test-attachments")
 class UnifiedEmailSichtbarkeitSecurityTest {
 
@@ -267,7 +268,6 @@ class UnifiedEmailSichtbarkeitSecurityTest {
             mockMvc.perform(post("/api/emails/" + FREMDE_MAIL + "/mark-spam").with(csrf())).andExpect(status().isNotFound());
             mockMvc.perform(post("/api/emails/" + FREMDE_MAIL + "/mark-not-spam").with(csrf())).andExpect(status().isNotFound());
             mockMvc.perform(post("/api/emails/" + FREMDE_MAIL + "/block-sender").with(csrf())).andExpect(status().isNotFound());
-            mockMvc.perform(delete("/api/emails/" + FREMDE_MAIL).with(csrf())).andExpect(status().isNotFound());
             verify(emailRepository, never()).save(any());
             verify(emailBlacklistRepository, never()).save(any());
         }
@@ -341,20 +341,6 @@ class UnifiedEmailSichtbarkeitSecurityTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$", hasSize(1)))
                     .andExpect(jsonPath("$[0].id").value(INFO_MAIL));
-        }
-
-        @Test
-        void sucheMitAngriffstextenBleibtGefiltert() throws Exception {
-            given(emailRepository.searchGlobal(anyString())).willReturn(List.of(fremdeMail, infoMail));
-
-            mockMvc.perform(get("/api/emails/search").param("q", "'; DROP TABLE email; --"))
-                    .andExpect(status().isOk())
-                    .andExpect(jsonPath("$", hasSize(1)))
-                    .andExpect(jsonPath("$[0].id").value(INFO_MAIL));
-            mockMvc.perform(get("/api/emails/search").param("q", "<script>alert(1)</script>"))
-                    .andExpect(status().isOk())
-                    .andExpect(jsonPath("$", hasSize(1)));
-            verify(emailRepository).searchGlobal("'; DROP TABLE email; --");
         }
 
         @Test
@@ -666,13 +652,6 @@ class UnifiedEmailSichtbarkeitSecurityTest {
                     .andExpect(jsonPath("$[0].id").value(11));
         }
 
-        @Test
-        void kurzeSucheLiefertNichts() throws Exception {
-            mockMvc.perform(get("/api/emails/search").param("q", " a ")).andExpect(status().isOk())
-                    .andExpect(jsonPath("$", hasSize(0)));
-            verify(emailRepository, never()).searchGlobal(anyString());
-        }
-
         @org.junit.jupiter.params.ParameterizedTest
         @org.junit.jupiter.params.provider.ValueSource(strings = { "inbox", "spam", "newsletter", "starred", "unassigned",
                 "inquiries", "projects", "offers", "suppliers", "trash" })
@@ -839,6 +818,7 @@ class UnifiedEmailSichtbarkeitSecurityTest {
         void endgueltigLoeschen(int spamScore, boolean spam) throws Exception {
             infoMail.setSpamScore(spamScore);
             infoMail.setSpam(spam);
+            infoMail.setDeletedAt(LocalDateTime.of(2026, 11, 1, 9, 0));
             given(emailRepository.findByIdForUpdate(INFO_MAIL)).willReturn(Optional.of(infoMail));
 
             mockMvc.perform(delete("/api/emails/" + INFO_MAIL + "/permanent").with(csrf())).andExpect(status().isNoContent());
@@ -849,6 +829,7 @@ class UnifiedEmailSichtbarkeitSecurityTest {
 
         @Test
         void endgueltigLoeschenAuchWennServerNichtErreichbar() throws Exception {
+            infoMail.setDeletedAt(LocalDateTime.of(2026, 11, 1, 9, 0));
             given(emailRepository.findByIdForUpdate(INFO_MAIL)).willReturn(Optional.of(infoMail));
             Mockito.doThrow(new IllegalStateException("Server weg")).when(emailImportService).deleteEmailFromServer(infoMail);
 

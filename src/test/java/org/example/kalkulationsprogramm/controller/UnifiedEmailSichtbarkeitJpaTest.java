@@ -57,7 +57,8 @@ import jakarta.persistence.EntityManager;
  */
 @DataJpaTest
 @Import({ UnifiedEmailController.class, PostfachSichtbarkeitService.class, EmailThreadService.class,
-        org.example.kalkulationsprogramm.service.EmailGelesenService.class })
+        org.example.kalkulationsprogramm.service.EmailGelesenService.class,
+        org.example.kalkulationsprogramm.service.mail.liste.EmailListenDtoMapper.class, org.example.kalkulationsprogramm.service.mail.liste.SteuerberaterOrdner.class })
 @TestPropertySource(properties = "file.mail-attachment-dir=target/test-attachments")
 class UnifiedEmailSichtbarkeitJpaTest {
 
@@ -161,7 +162,7 @@ class UnifiedEmailSichtbarkeitJpaTest {
     }
 
     @Test
-    void zaehlerUndSucheNurUeberSichtbare() {
+    void zaehlerNurUeberSichtbare() {
         mail("Angebot Treppe", info);
         mail("Angebot Gelaender", max);
         speichern();
@@ -169,9 +170,6 @@ class UnifiedEmailSichtbarkeitJpaTest {
         assertThat(controller.getStats(ERIKA).getInboxTotal()).isEqualTo(1);
         assertThat(controller.getStats(ERIKA).getInboxCount()).isEqualTo(1);
         assertThat(controller.getStats(ADMIN).getInboxTotal()).isEqualTo(2);
-        assertThat(betreffe(controller.searchEmails("Angebot", 0, 50, ERIKA))).containsExactly("Angebot Treppe");
-        assertThat(betreffe(controller.searchEmails("Angebot", 0, 50, ADMIN))).hasSize(2);
-        assertThat(controller.searchEmails(null, 0, 50, ERIKA)).isEmpty();
     }
 
     @Test

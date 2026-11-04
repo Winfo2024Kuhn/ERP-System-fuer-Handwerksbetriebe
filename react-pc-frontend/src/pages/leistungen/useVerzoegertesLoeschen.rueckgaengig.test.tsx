@@ -1,6 +1,7 @@
 import { act, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { RUECKGAENGIG_MS, useVerzoegertesLoeschen } from './useVerzoegertesLoeschen';
+import { RUECKGAENGIG_MS } from '../../lib/rueckgaengig';
+import { useVerzoegertesLoeschen } from './useVerzoegertesLoeschen';
 
 // Die echte Meldung schließt sich beim Senden; um einen verspäteten Klick auf „Rückgängig“
 // (Wettlauf zwischen Ablauf und Klick) zu prüfen, wird die Toast-API hier nachgebaut.

@@ -51,8 +51,8 @@ export interface EmailItem {
     anfrageId?: number;
     lieferantId?: number;
     kundeId?: number;
-    // Computed folder from backend
-    folder?: FolderType;
+    /** Ablageort laut Backend (`computeFolder`), z. B. `trash` oder `inquiries` (mögliche Anfrage). */
+    folder?: EmailOrdnerWert;
     // Thread-Informationen
     parentEmailId?: number;   // null/undefined = Thread-Wurzel
     /** Wurzel des gesamten Verlaufs (Backend) – auch wenn Zwischenglieder nicht geladen sind. */
@@ -116,6 +116,9 @@ export function filtereEntwuerfe<T extends DraftItem>(drafts: T[], suchbegriff: 
 
 // Folder Types
 export type FolderType = 'inbox' | 'sent' | 'drafts' | 'trash' | 'spam' | 'newsletter' | 'starred' | 'projects' | 'offers' | 'suppliers' | 'tax-advisors' | 'unassigned';
+
+/** Ablageort einer Mail laut Backend: ein Ordner der Seitenleiste oder `inquiries` (mögliche Anfrage). */
+export type EmailOrdnerWert = FolderType | 'inquiries';
 
 /** Lese-Filter über der E-Mail-Liste. */
 export type ReadFilter = 'all' | 'unread' | 'read';
@@ -328,8 +331,19 @@ export function buildForwardSubject(subject?: string): string {
     return FORWARD_PREFIX.test(clean) ? clean : `Fwd: ${clean}`;
 }
 
+/** Datum in der Mail-Liste: heute die Uhrzeit („09:05“), sonst Tag und Monat („14.09.“). */
+export function formatListenDatum(iso?: string): string {
+    if (!iso) return '-';
+    const datum = new Date(iso);
+    if (Number.isNaN(datum.getTime())) return '-';
+    if (datum.toDateString() === new Date().toDateString()) {
+        return datum.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+    }
+    return datum.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+}
+
 /**
- * Fehlermeldung nach dem Löschen: eine einzelne Mail mit Server-Begründung (wenn vorhanden),
+ * Fehlermeldung nach dem endgültigen Löschen: eine einzelne Mail mit Server-Begründung (wenn vorhanden),
  * mehrere als „n von m“, damit klar ist, dass ein Teil durchging.
  */
 export function loeschFehlerMeldung(fehlgeschlagen: number, gesamt: number, serverMeldung?: string | null): string {
