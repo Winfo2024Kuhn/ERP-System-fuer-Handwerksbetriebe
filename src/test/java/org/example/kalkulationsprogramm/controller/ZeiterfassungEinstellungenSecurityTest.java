@@ -22,6 +22,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest(ZeiterfassungEinstellungenController.class)
 @Import({SecurityConfig.class, ZeiterfassungEinstellungService.class, DatevKonfigurationService.class,
   UrlaubsverfallEinstellungService.class,
+  org.example.kalkulationsprogramm.service.zeitbericht.SteuerberaterStundenartEinstellung.class,
   ZeiterfassungEinstellungenSecurityTest.Filters.class})
 class ZeiterfassungEinstellungenSecurityTest {
  @org.springframework.boot.test.context.TestConfiguration
@@ -131,6 +132,32 @@ class ZeiterfassungEinstellungenSecurityTest {
    .andExpect(status().isBadRequest());
   mvc.perform(put(VERFALL).with(csrf()).contentType("application/json").content("{\"tag\":31,\"monat\":3}"))
    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").value("Bitte angeben, ob Resturlaub verfällt oder erhalten bleibt."));
+  verify(settings,never()).save(anyString(),anyString(),anyString());
+ }
+
+ static final String STUNDENART="/api/settings/steuerberater-stundenart";
+
+ @Test @WithMockUser(roles="USER") void steuerberaterStundenartNurFuerAdmins() throws Exception {
+  mvc.perform(get(STUNDENART)).andExpect(status().isForbidden());
+  mvc.perform(put(STUNDENART).with(csrf()).contentType("application/json").content("{\"stundenart\":\"IST\"}")).andExpect(status().isForbidden());
+  verifyNoInteractions(settings);
+ }
+ @Test @WithMockUser(roles="ADMIN") void steuerberaterStundenartLesenUndSpeichern() throws Exception {
+  when(settings.get("zeitbericht.steuerberater.stundenart","")).thenReturn("");
+  mvc.perform(get(STUNDENART)).andExpect(status().isOk()).andExpect(jsonPath("$.stundenart").isEmpty());
+  mvc.perform(put(STUNDENART).contentType("application/json").content("{\"stundenart\":\"IST\"}")).andExpect(status().isForbidden());
+  mvc.perform(put(STUNDENART).with(csrf()).contentType("application/json").content("{\"stundenart\":\"IST\"}"))
+   .andExpect(status().isOk()).andExpect(jsonPath("$.stundenart").value("IST"));
+  verify(settings).save(eq("zeitbericht.steuerberater.stundenart"),eq("IST"),anyString());
+  when(settings.get("zeitbericht.steuerberater.stundenart","")).thenReturn("IST");
+  mvc.perform(get(STUNDENART)).andExpect(status().isOk()).andExpect(jsonPath("$.stundenart").value("IST"));
+ }
+ @Test @WithMockUser(roles="ADMIN") void steuerberaterStundenartUngueltigAbgelehnt() throws Exception {
+  for(String value:List.of("'; DROP TABLE x; --","<script>alert(1)</script>","1".repeat(10001),"soll"))
+   mvc.perform(put(STUNDENART).with(csrf()).contentType("application/json").content("{\"stundenart\":\""+value+"\"}"))
+    .andExpect(status().isBadRequest());
+  mvc.perform(put(STUNDENART).with(csrf()).contentType("application/json").content("{\"stundenart\":null}"))
+   .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").value("Bitte wählen, ob Soll- oder Iststunden an den Steuerberater gehen."));
   verify(settings,never()).save(anyString(),anyString(),anyString());
  }
 

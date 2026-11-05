@@ -25,6 +25,11 @@ export interface UrlaubEintrittsjahrRegel {
     mehrurlaubAnteilig: boolean;
 }
 
+/** Welche Stunden das Report Centre dem Steuerberater schickt. `null` = noch nie gewählt (dann Soll). */
+export interface SteuerberaterStundenart {
+    stundenart: 'SOLL' | 'IST' | null;
+}
+
 /** Mitarbeiter für die Personalnummern-Tabelle. */
 export interface MitarbeiterEintrag {
     id: number;
@@ -78,6 +83,10 @@ export const zeiterfassungApi = {
         anfrage<UrlaubEintrittsjahrRegel>('/api/settings/urlaub-eintrittsjahr', 'Die Regel für den Urlaub im Eintrittsjahr konnte nicht geladen werden.'),
     speichereUrlaubEintrittsjahr: (regel: UrlaubEintrittsjahrRegel) =>
         anfrage<UrlaubEintrittsjahrRegel>('/api/settings/urlaub-eintrittsjahr', 'Die Regel für den Urlaub im Eintrittsjahr konnte nicht gespeichert werden.', schreiben(regel)),
+    ladeSteuerberaterStundenart: () =>
+        anfrage<SteuerberaterStundenart>('/api/settings/steuerberater-stundenart', 'Die Stunden für den Steuerberater konnten nicht geladen werden.'),
+    speichereSteuerberaterStundenart: (stundenart: 'SOLL' | 'IST') =>
+        anfrage<SteuerberaterStundenart>('/api/settings/steuerberater-stundenart', 'Die Stunden für den Steuerberater konnten nicht gespeichert werden.', schreiben({ stundenart })),
     ladeDatev: () =>
         anfrage<Konfiguration>('/api/settings/datev', 'Die DATEV-Einstellungen konnten nicht geladen werden.'),
     speichereDatev: (konfiguration: Konfiguration) =>

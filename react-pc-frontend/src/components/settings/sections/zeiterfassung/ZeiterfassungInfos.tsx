@@ -145,3 +145,20 @@ export function PersonalnummerInfo() {
         </InfoButton>
     );
 }
+
+export function SteuerberaterStundenartInfo() {
+    return (
+        <InfoButton titel="Stunden für den Steuerberater">
+            <InfoAbschnitt titel={HINTERGRUND}>
+                <p>Das Report Centre schickt dem Steuerberater jeden Monat die Arbeitsstunden aller Mitarbeiter. Hier legst du fest, welche.</p>
+            </InfoAbschnitt>
+            <InfoAbschnitt titel={WIRKUNG}>
+                <ul className="list-disc space-y-0.5 pl-4">
+                    <li>Sollstunden: Vertragsstunden abzüglich Urlaub, Feiertage, Krankheit und Fortbildung – Überstunden bleiben im Stundenkonto.</li>
+                    <li>Iststunden: die wirklich gebuchte Arbeitszeit ohne Pausen.</li>
+                    <li>Die Einstellung gilt für alle, bis ein Admin sie ändert. Der DATEV-Export hat eine eigene Einstellung.</li>
+                </ul>
+            </InfoAbschnitt>
+        </InfoButton>
+    );
+}

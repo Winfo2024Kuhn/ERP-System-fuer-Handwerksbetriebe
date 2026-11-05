@@ -16,6 +16,16 @@ describe('zeiterfassungApi', () => {
         });
     });
 
+    it('liest und schreibt die Stunden für den Steuerberater', async () => {
+        const fetchMock = vi.fn(async () => json({ stundenart: null }));
+        vi.stubGlobal('fetch', fetchMock);
+        await expect(zeiterfassungApi.ladeSteuerberaterStundenart()).resolves.toEqual({ stundenart: null });
+        await zeiterfassungApi.speichereSteuerberaterStundenart('IST');
+        expect(fetchMock).toHaveBeenLastCalledWith('/api/settings/steuerberater-stundenart', {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: '{"stundenart":"IST"}',
+        });
+    });
+
     it('schreibt DATEV nur noch unter /api/settings/datev', async () => {
         const fetchMock = vi.fn(async () => json({ version: 1 }));
         vi.stubGlobal('fetch', fetchMock);
