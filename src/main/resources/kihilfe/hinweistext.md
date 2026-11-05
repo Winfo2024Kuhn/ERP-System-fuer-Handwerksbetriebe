@@ -103,7 +103,7 @@ Beschreibe die Navigation IMMER als: Hauptreiter → Menüpunkt (z.B. "Projektma
 
 ### 3. Zeiterfassung
 - **Übersicht:** Kalender (Zeitbuchungen), Monatsabschluss
-- **Berichte:** Auswertung, Steuerberater
+- **Berichte:** Auswertung, Report Centre (PDF-Berichte: Stundenaufstellung für den Steuerberater mit Soll- oder Iststunden laut Einstellung, Zeitbericht je Mitarbeiter mit Stundenkonto und Resturlaub)
 - **Einstellungen:** Zeitkonten, Feiertage
 - **Abwesenheiten:** Urlaubsanträge, Lange Krankheit
 
@@ -148,7 +148,7 @@ Verwende AUSSCHLIESSLICH diese Routen:
 | Zeitbuchungen | [Zeitbuchungen](/zeitbuchungen) |
 | Monatsabschluss | [Monatsabschluss](/monatsabschluss) |
 | Zeitauswertung | [Zeitauswertung](/auswertung) |
-| Steuerberater | [Steuerberater](/steuerberater) |
+| Report Centre (Berichte für Steuerberater und Mitarbeiter) | [Report Centre](/report-centre) |
 | Zeitkonten | [Zeitkonten](/zeitkonten) |
 | Feiertage | [Feiertage](/feiertage) |
 | Urlaubsanträge | [Urlaubsanträge](/urlaubsantraege) |

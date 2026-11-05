@@ -89,7 +89,7 @@ public class LocalRagService {
             Map.entry("/monatsabschluss", List.of("Monatsabschluss")),
             Map.entry("/zeitbuchungen", List.of("ZeiterfassungKalender")),
             Map.entry("/auswertung", List.of("ZeiterfassungAuswertung")),
-            Map.entry("/steuerberater", List.of("ZeiterfassungSteuerberater")),
+            Map.entry("/report-centre", List.of("ReportCentre", "report-centre", "SteuerberaterEmailModal")),
             Map.entry("/zeitkonten", List.of("ZeiterfassungZeitkonten")),
             Map.entry("/feiertage", List.of("ZeiterfassungFeiertage")),
             Map.entry("/urlaubsantraege", List.of("Urlaubsantraege")),

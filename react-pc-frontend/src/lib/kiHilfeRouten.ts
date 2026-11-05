@@ -10,7 +10,7 @@ export const KI_HILFE_ROUTEN: ReadonlySet<string> = new Set([
     '/arbeitsgaenge', '/mitarbeiter', '/arbeitszeitarten',
     '/kalender', '/emails', '/formulare', '/offeneposten',
     '/rechnungsuebersicht', '/miete', '/analyse', '/zeitbuchungen',
-    '/auswertung', '/steuerberater', '/zeitkonten', '/feiertage',
+    '/auswertung', '/report-centre', '/zeitkonten', '/feiertage',
     '/urlaubsantraege', '/firma', '/benutzer', '/firmendokumente',
 ].filter(istFreigegeben));
 

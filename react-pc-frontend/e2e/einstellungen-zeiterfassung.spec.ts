@@ -59,6 +59,8 @@ async function stubbe(page: Page, optionen: { start: string | null; config: Konf
             }
             return json(route, eintritt);
         }
+        // Stunden für den Steuerberater: noch nie gewählt (die Karte selbst prüft ihr Vitest-Test).
+        if (pfad === '/api/settings/steuerberater-stundenart') return json(route, { stundenart: null });
         if (pfad === '/api/settings/zeiterfassung') {
             if (schreibt) {
                 const body = anfrage.postDataJSON() as { eingefuehrtAm: string | null };

@@ -9,6 +9,7 @@ import { StartDerZeiterfassungKarte } from './zeiterfassung/StartDerZeiterfassun
 import { DatevEinstellungenKarte } from './zeiterfassung/DatevEinstellungenKarte';
 import { ResturlaubKarte } from './zeiterfassung/ResturlaubKarte';
 import { UrlaubEintrittsjahrKarte } from './zeiterfassung/UrlaubEintrittsjahrKarte';
+import { SteuerberaterStundenartKarte } from './zeiterfassung/SteuerberaterStundenartKarte';
 
 /**
  * Reiter Zeiterfassung: oben die Einstellungen (Start der Zeiterfassung,
@@ -33,6 +34,7 @@ export function ZeiterfassungSection({ onSaved }: { onSaved?: () => void }) {
             <StartDerZeiterfassungKarte onSaved={onSaved} />
             <ResturlaubKarte onSaved={onSaved} />
             <UrlaubEintrittsjahrKarte onSaved={onSaved} />
+            <SteuerberaterStundenartKarte onSaved={onSaved} />
             <DatevEinstellungenKarte onSaved={onSaved} />
 
             <h3 className="pt-4 text-sm font-semibold uppercase tracking-wide text-slate-500">Handy-App für Mitarbeiter</h3>

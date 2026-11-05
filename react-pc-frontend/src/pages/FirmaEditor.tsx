@@ -723,7 +723,7 @@ export default function FirmaEditor() {
                                             />
                                         </div>
                                         <p className="text-xs text-slate-500 mt-1">
-                                            Akzentfarbe auf Rechnungen: Fortschrittsbalken im Abrechnungsstand und die kleinen Nettobeträge. Leer lassen für die Standardfarbe.
+                                            Akzentfarbe auf Rechnungen: Fortschrittsbalken im Abrechnungsstand und die kleinen Nettobeträge, sowie Überschriften und Tabellenköpfe der Berichte im Report Centre. Leer lassen für die Standardfarbe.
                                         </p>
                                     </div>
                                 </div>

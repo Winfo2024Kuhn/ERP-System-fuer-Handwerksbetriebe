@@ -88,7 +88,10 @@ test('Kalender: Uhrzeitentwürfe, Pflichtgrund und eigene Monatsauswahl', async 
     await expect(storno).toBeHidden(); await expect(stornoOeffner).toBeFocused();
     expect(writes.filter(w => w.path.startsWith('/api/zeitkonto/korrekturen/'))).toHaveLength(0);
     await stubbeZeiterfassungSichtbarkeit(page);
-    await page.goto('/steuerberater');
+    await page.goto('/report-centre');
+    await page.getByRole('button', { name: 'Neuer Bericht', exact: true }).click();
+    await page.getByRole('button', { name: /An Steuerberater schicken/ }).click();
+    await page.getByRole('button', { name: 'Weiter', exact: true }).click();
     const monat = page.getByRole('combobox', { name: 'Monat', exact: true });
     await monat.focus(); await monat.press('Enter'); await expect(page.getByRole('listbox')).toBeVisible();
     await page.screenshot({ path: info.outputPath('monatsauswahl-offen.png') });

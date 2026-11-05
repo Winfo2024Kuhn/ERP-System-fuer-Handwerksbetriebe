@@ -1,498 +1,170 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Mail, X, Loader2 } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { Mail, Loader2, Paperclip } from 'lucide-react';
 import { Button } from './ui/button';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Select } from './ui/select-custom';
-import { htmlFuerVersand, ladeStandardSignatur, setzeEditorHtml } from '../features/email/mailEditorHtml';
+import { useToast } from './ui/toast';
+import { htmlFuerVersand, setzeEditorHtml } from '../features/email/mailEditorHtml';
+import { steuerberaterPdfUrl } from '../features/report-centre/api';
+import { PdfAnhangChip } from '../features/report-centre/PdfAnhangChip';
+import { SteuerberaterEmpfaengerFelder } from '../features/report-centre/SteuerberaterEmpfaengerFelder';
+import { usePdfAnhang } from '../features/report-centre/usePdfAnhang';
+import { aktuellesFrontendProfil, useSteuerberaterEmpfaenger } from '../features/report-centre/useSteuerberaterEmpfaenger';
+import { stundenMailText } from '../features/report-centre/stundenMail';
+import type { Stundenart } from '../features/report-centre/stundenart';
+import { StundenartHinweis } from '../features/report-centre/StundenartHinweis';
+import { monatsname } from '../features/report-centre/zeitraum';
 import { escapeHtml } from '../lib/emailAddress';
 import { briefanrede } from '../lib/briefanrede';
 
-interface MitarbeiterStunden {
-    mitarbeiterId: number;
-    mitarbeiterName: string;
-    tagessollWoche: number;
-    sollstundenMonat: number; // Monatliche Sollstunden
-    arbeitsstunden: number; // Tatsächliche Arbeitsstunden (für Frontend)
-    urlaub: number;
-    feiertage: number;
-    krankheit: number;
-    fortbildung: number;
-}
-
-interface SteuerberaterAnsprechpartner {
-    id: number;
-    anrede: string | null;
-    vorname: string;
-    nachname: string;
-    email: string;
-    telefon: string;
-    istLohnAnsprechpartner: boolean;
-}
-
-interface SteuerberaterKontakt {
-    id: number;
-    name: string;
-    email: string;
-    telefon: string;
-    weitereEmails: string[];
-    ansprechpartnerListe: SteuerberaterAnsprechpartner[];
-}
-
-interface SteuerberaterEmailModalProps {
+export interface SteuerberaterEmailModalProps {
     isOpen: boolean;
     onClose: () => void;
-    mitarbeiterDaten: MitarbeiterStunden[];
-    monat: number;
     jahr: number;
+    monat: number;
+    /** Mitarbeiter in der Stundenaufstellung (leer = alle, die der Server für relevant hält). */
+    mitarbeiterIds: number[];
+    mitResturlaub: boolean;
+    mitStundenkonto: boolean;
+    anzahlMitarbeiter: number;
+    /** Soll- oder Iststunden aus der Vorschau; geht mit ins PDF, damit PDF und Vorschau übereinstimmen. */
+    stundenart: Stundenart;
     onSuccess?: () => void;
 }
 
-const FRONTEND_USER_STORAGE_KEY = 'frontendUserSelection';
-
-interface FrontendUserSelection {
-    id: number;
-    displayName: string;
-}
-
-const getCurrentFrontendUser = (): FrontendUserSelection | null => {
-    try {
-        const raw = localStorage.getItem(FRONTEND_USER_STORAGE_KEY);
-        if (!raw) return null;
-        const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed.id === 'number') {
-            return parsed as FrontendUserSelection;
-        }
-    } catch (err) {
-        console.warn('Frontend-Profil konnte nicht gelesen werden:', err);
-    }
-    return null;
-};
-
+/** Dialog „Stundenübermittlung“: kurze Mail an den Steuerberater, die Stundenaufstellung hängt als PDF an. */
 export function SteuerberaterEmailModal({
-    isOpen,
-    onClose,
-    mitarbeiterDaten,
-    monat,
-    jahr,
-    onSuccess,
+    isOpen, onClose, jahr, monat, mitarbeiterIds, mitResturlaub, mitStundenkonto, anzahlMitarbeiter, stundenart, onSuccess,
 }: SteuerberaterEmailModalProps) {
-    const [steuerberaterListe, setSteuerberaterListe] = useState<SteuerberaterKontakt[]>([]);
-    const [selectedSteuerberaterId, setSelectedSteuerberaterId] = useState<number | null>(null);
-    const [selectedAnsprechpartnerId, setSelectedAnsprechpartnerId] = useState<number | null>(null);
-    const [recipient, setRecipient] = useState('');
-    const [subject, setSubject] = useState('');
+    const toast = useToast();
     const [sending, setSending] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [loadingSteuerberater, setLoadingSteuerberater] = useState(false);
-
     const editorRef = useRef<HTMLDivElement>(null);
-    const signatureRef = useRef<string>('');
     const lastRenderedKeyRef = useRef<string>('');
+    const e = useSteuerberaterEmpfaenger(isOpen, monat, jahr);
 
-    const selectedSteuerberater = useMemo(
-        () => steuerberaterListe.find(sb => sb.id === selectedSteuerberaterId) || null,
-        [steuerberaterListe, selectedSteuerberaterId]
-    );
+    // Das PDF wird beim Öffnen erstellt und als Anhang gezeigt; zu = nichts laden.
+    const idsText = mitarbeiterIds.join(',');
+    const pdfUrl = useMemo(() => (isOpen
+        ? steuerberaterPdfUrl({ jahr, monat, mitarbeiterIds: idsText ? idsText.split(',').map(Number) : [], mitResturlaub, mitStundenkonto, stundenart })
+        : null), [isOpen, jahr, monat, idsText, mitResturlaub, mitStundenkonto, stundenart]);
+    const anhang = usePdfAnhang(pdfUrl, `Stundenaufstellung_${jahr}-${String(monat).padStart(2, '0')}.pdf`);
 
-    const selectedAnsprechpartner = useMemo(
-        () => selectedSteuerberater?.ansprechpartnerListe.find(ap => ap.id === selectedAnsprechpartnerId) || null,
-        [selectedSteuerberater, selectedAnsprechpartnerId]
-    );
+    // Geschlossen: Fehler vergessen, Editor beim nächsten Öffnen neu befüllen.
+    const [warOffen, setWarOffen] = useState(isOpen);
+    if (warOffen !== isOpen) {
+        setWarOffen(isOpen);
+        if (!isOpen) setError(null);
+    }
 
-    const verfuegbareEmails = useMemo<string[]>(() => {
-        if (!selectedSteuerberater) return [];
-        const set = new Set<string>();
-        if (selectedSteuerberater.email) set.add(selectedSteuerberater.email);
-        (selectedSteuerberater.weitereEmails || []).forEach(e => { if (e) set.add(e); });
-        (selectedSteuerberater.ansprechpartnerListe || []).forEach(ap => { if (ap.email) set.add(ap.email); });
-        return Array.from(set);
-    }, [selectedSteuerberater]);
+    // Editor-Inhalt nur neu setzen, wenn sich Anrede/Ansprechpartner/Monat ändert –
+    // sonst würde jedes Tippen im contentEditable überschrieben.
+    const { laedt, steuerberaterId, ansprechpartnerId, ansprechpartner, signatur } = e;
+    useEffect(() => {
+        if (!isOpen) { lastRenderedKeyRef.current = ''; return; }
+        if (laedt) return;
+        const key = `${steuerberaterId}|${ansprechpartnerId}|${monat}|${jahr}|${stundenart}`;
+        if (lastRenderedKeyRef.current === key) return;
+        // Kein Ansprechpartner: briefanrede liefert „Sehr geehrte Damen und Herren“.
+        const anredeZeile = `${escapeHtml(briefanrede(ansprechpartner?.anrede, ansprechpartner?.nachname))},`;
+        setzeEditorHtml(editorRef.current, stundenMailText(anredeZeile, monat, jahr, stundenart, signatur));
+        lastRenderedKeyRef.current = key;
+    }, [isOpen, laedt, steuerberaterId, ansprechpartnerId, ansprechpartner, monat, jahr, stundenart, signatur]);
 
-    const getMonthName = (m: number) => {
-        const months = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
-            'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
-        return months[m - 1] || '';
+    const pruefe = (): string | null => {
+        if (anhang.art !== 'fertig') return 'Das PDF ist noch nicht fertig – ohne Anhang wird nichts gesendet.';
+        if (!e.empfaenger.trim()) return 'Bitte Empfänger angeben.';
+        if (!e.betreff.trim()) return 'Bitte Betreff angeben.';
+        return null;
     };
 
-    // Generate the email body with inline table
-    // WICHTIG: Für den Steuerberater berechnen wir "Arbeitsstunden" als:
-    // Sollstunden - Krankheit - Urlaub - Fortbildung (da wir nach Sollstunden bezahlen)
-    const generateEmailBody = useCallback((sig: string, anredeZeile: string) => {
-        const monthName = getMonthName(monat);
-
-        // Build HTML table
-        let tableHtml = `
-<table style="border-collapse: collapse; width: 100%; max-width: 700px; font-family: Arial, sans-serif; font-size: 14px;">
-    <thead>
-        <tr style="background-color: #f8f9fa;">
-            <th style="border: 1px solid #dee2e6; padding: 8px; text-align: left;">Nr.</th>
-            <th style="border: 1px solid #dee2e6; padding: 8px; text-align: left;">Name</th>
-            <th style="border: 1px solid #dee2e6; padding: 8px; text-align: center;">Tagessoll</th>
-            <th style="border: 1px solid #dee2e6; padding: 8px; text-align: center;">Arbeitsstunden</th>
-            <th style="border: 1px solid #dee2e6; padding: 8px; text-align: center;">Urlaub</th>
-            <th style="border: 1px solid #dee2e6; padding: 8px; text-align: center;">Feiertage</th>
-            <th style="border: 1px solid #dee2e6; padding: 8px; text-align: center;">Krankheit</th>
-        </tr>
-    </thead>
-    <tbody>`;
-
-        mitarbeiterDaten.forEach((m, index) => {
-            // Für den Steuerberater: Arbeitsstunden = Sollstunden - Abwesenheiten
-            // (weil wir nach Sollstunden bezahlen, nicht nach echten Arbeitsstunden)
-            const adjustedArbeitsstunden = Math.round((m.sollstundenMonat - m.krankheit - m.urlaub - m.feiertage - m.fortbildung) * 10) / 10;
-
-            tableHtml += `
-        <tr>
-            <td style="border: 1px solid #dee2e6; padding: 8px;">${index + 1}</td>
-            <td style="border: 1px solid #dee2e6; padding: 8px;">${escapeHtml(m.mitarbeiterName)}</td>
-            <td style="border: 1px solid #dee2e6; padding: 8px; text-align: center;">${m.tagessollWoche}</td>
-            <td style="border: 1px solid #dee2e6; padding: 8px; text-align: center;">${adjustedArbeitsstunden}</td>
-            <td style="border: 1px solid #dee2e6; padding: 8px; text-align: center;">${m.urlaub}</td>
-            <td style="border: 1px solid #dee2e6; padding: 8px; text-align: center;">${m.feiertage}</td>
-            <td style="border: 1px solid #dee2e6; padding: 8px; text-align: center;">${m.krankheit}</td>
-        </tr>`;
-        });
-
-        tableHtml += `
-    </tbody>
-</table>`;
-
-        const bodyHtml = `<p>${anredeZeile}</p>
-
-<p><br></p>
-
-<p>anbei sende ich Ihnen die Stundenaufstellung unserer Mitarbeiter für den Monat ${monthName}.</p>
-
-<p style="color: #dc2626; font-weight: bold;">Alle Werte sind in Stunden angegeben!</p>
-
-<p><br></p>
-
-${tableHtml}
-
-<p><br></p>
-
-<p>Mit freundlichen Grüßen,</p>
-
-${sig}
-`;
-        return bodyHtml;
-    }, [mitarbeiterDaten, monat]);
-
-    // Load signature once
-    const loadSignature = useCallback(() => ladeStandardSignatur(getCurrentFrontendUser()?.id), []);
-
-    // Geschlossen: Auswahl und Texte leeren. Geöffnet (oder anderer Monat): sofort „wird geladen“.
-    const steuerberaterFuer = isOpen ? `${monat}|${jahr}` : null;
-    const [steuerberaterGeladenFuer, setSteuerberaterGeladenFuer] = useState<string | null>(null);
-    if (steuerberaterFuer !== steuerberaterGeladenFuer) {
-        setSteuerberaterGeladenFuer(steuerberaterFuer);
-        if (steuerberaterFuer) {
-            setLoadingSteuerberater(true);
-        } else {
-            setSteuerberaterListe([]);
-            setSelectedSteuerberaterId(null);
-            setSelectedAnsprechpartnerId(null);
-            setRecipient('');
-            setSubject('');
-            setError(null);
-        }
-    }
-
-    // Open: load Steuerberater + signature
-    useEffect(() => {
-        if (!isOpen) {
-            // Reset on close
-            signatureRef.current = '';
-            lastRenderedKeyRef.current = '';
-            return;
-        }
-
-        let cancelled = false;
-        const monthName = getMonthName(monat);
-
-        Promise.all([
-            fetch('/api/firma/steuerberater').then(r => r.ok ? r.json() : []),
-            fetch('/api/firma').then(r => r.ok ? r.json() : null).catch(() => null),
-            loadSignature(),
-        ]).then(([liste, firma, sig]) => {
-            if (cancelled) return;
-            const sbListe: SteuerberaterKontakt[] = Array.isArray(liste) ? liste : [];
-            const firmenname = (firma && typeof firma === 'object' && firma.firmenname)
-                ? firma.firmenname.trim()
-                : '';
-            setSubject(firmenname
-                ? `Stundenaufstellung ${monthName} ${jahr} - ${firmenname}`
-                : `Stundenaufstellung ${monthName} ${jahr}`);
-            signatureRef.current = sig;
-            setSteuerberaterListe(sbListe);
-
-            // Default-Auswahl: erster Steuerberater + sein Lohn-Ansprechpartner
-            if (sbListe.length > 0) {
-                const firstSb = sbListe[0];
-                setSelectedSteuerberaterId(firstSb.id);
-
-                const lohnAp = (firstSb.ansprechpartnerListe || []).find(ap => ap.istLohnAnsprechpartner)
-                    || firstSb.ansprechpartnerListe?.[0]
-                    || null;
-                setSelectedAnsprechpartnerId(lohnAp?.id || null);
-
-                const defaultEmail = lohnAp?.email || firstSb.email || '';
-                setRecipient(defaultEmail);
-            }
-            setLoadingSteuerberater(false);
-        }).catch(err => {
-            if (cancelled) return;
-            console.error('Steuerberater konnten nicht geladen werden:', err);
-            setLoadingSteuerberater(false);
-        });
-
-        return () => { cancelled = true; };
-    }, [isOpen, monat, jahr, loadSignature]);
-
-    // Bei Wechsel des Steuerberaters: Lohn-Ansprechpartner als Default setzen
-    const [vorgabeFuerSteuerberaterId, setVorgabeFuerSteuerberaterId] = useState(selectedSteuerberaterId);
-    if (vorgabeFuerSteuerberaterId !== selectedSteuerberaterId) {
-        setVorgabeFuerSteuerberaterId(selectedSteuerberaterId);
-        if (selectedSteuerberater) {
-            const lohnAp = (selectedSteuerberater.ansprechpartnerListe || []).find(ap => ap.istLohnAnsprechpartner)
-                || selectedSteuerberater.ansprechpartnerListe?.[0]
-                || null;
-            setSelectedAnsprechpartnerId(lohnAp?.id || null);
-            setRecipient(lohnAp?.email || selectedSteuerberater.email || '');
-        }
-    }
-
-    // Bei Wechsel des Ansprechpartners: dessen Email als Empfänger setzen (falls vorhanden)
-    const [vorgabeFuerAnsprechpartnerId, setVorgabeFuerAnsprechpartnerId] = useState(selectedAnsprechpartnerId);
-    if (vorgabeFuerAnsprechpartnerId !== selectedAnsprechpartnerId) {
-        setVorgabeFuerAnsprechpartnerId(selectedAnsprechpartnerId);
-        if (selectedAnsprechpartner?.email) {
-            setRecipient(selectedAnsprechpartner.email);
-        }
-    }
-
-    // Editor-Inhalt rendern, wenn sich Anrede/Ansprechpartner/Steuerberater ändert.
-    // Wir nutzen einen Key, damit wir nicht bei jedem Tippen im contentEditable
-    // den Inhalt überschreiben.
-    useEffect(() => {
-        if (!isOpen) return;
-        const key = `${selectedSteuerberaterId}|${selectedAnsprechpartnerId}|${monat}|${jahr}|${mitarbeiterDaten.length}`;
-        if (lastRenderedKeyRef.current === key) return;
-
-        // Kein Ansprechpartner: briefanrede liefert „Sehr geehrte Damen und Herren“.
-        const anredeZeile = `${escapeHtml(briefanrede(selectedAnsprechpartner?.anrede, selectedAnsprechpartner?.nachname))},`;
-
-        const body = generateEmailBody(signatureRef.current, anredeZeile);
-        setzeEditorHtml(editorRef.current, body);
-        lastRenderedKeyRef.current = key;
-    }, [isOpen, selectedSteuerberaterId, selectedAnsprechpartnerId, selectedAnsprechpartner, monat, jahr, mitarbeiterDaten.length, generateEmailBody]);
-
     const handleSend = async () => {
-        if (!recipient.trim()) {
-            setError('Bitte Empfänger angeben.');
-            return;
-        }
-        if (!subject.trim()) {
-            setError('Bitte Betreff angeben.');
-            return;
-        }
-
+        const problem = pruefe();
+        if (problem || anhang.art !== 'fertig') { setError(problem); return; }
         setSending(true);
         setError(null);
-
         try {
-            const currentUser = getCurrentFrontendUser();
-
+            const profil = aktuellesFrontendProfil();
             const formData = new FormData();
-
-            const dtoPayload = {
-                // Leerer sender = Backend loest aus frontendUserId auf (im
-                // FirmaEditor konfigurierte und am Benutzer hinterlegte Adresse).
+            const dto = {
+                // Leerer sender = Backend löst aus frontendUserId auf (im FirmaEditor konfigurierte Adresse).
                 sender: null,
-                recipients: [recipient.trim()],
+                recipients: [e.empfaenger.trim()],
                 cc: [],
-                subject: subject.trim(),
+                subject: e.betreff.trim(),
                 body: htmlFuerVersand(editorRef.current?.innerHTML),
                 direction: 'OUT',
-                benutzer: currentUser?.displayName || '',
-                frontendUserId: currentUser?.id || null,
+                benutzer: profil?.displayName || '',
+                frontendUserId: profil?.id || null,
             };
-
-            formData.append('dto', new Blob([JSON.stringify(dtoPayload)], { type: 'application/json' }));
-
-            const res = await fetch('/api/emails/send', {
-                method: 'POST',
-                body: formData,
-            });
-
-            if (!res.ok) {
-                throw new Error('E-Mail senden fehlgeschlagen');
-            }
-
-            if (onSuccess) onSuccess();
+            formData.append('dto', new Blob([JSON.stringify(dto)], { type: 'application/json' }));
+            formData.append('attachments', anhang.pdf.blob, anhang.pdf.dateiname);
+            const res = await fetch('/api/emails/send', { method: 'POST', body: formData });
+            if (!res.ok) throw new Error('E-Mail senden fehlgeschlagen');
+            toast.success(`Stundenaufstellung an ${e.empfaenger.trim()} gesendet.`);
+            onSuccess?.();
             onClose();
         } catch (err) {
             console.error('E-Mail senden fehlgeschlagen:', err);
-            setError('E-Mail konnte nicht gesendet werden. Bitte erneut versuchen.');
+            const meldung = 'E-Mail konnte nicht gesendet werden. Bitte erneut versuchen.';
+            setError(meldung);
+            toast.error(meldung);
         } finally {
             setSending(false);
         }
     };
 
-    if (!isOpen) return null;
-
-    const steuerberaterOptions = steuerberaterListe.map(sb => ({
-        value: String(sb.id),
-        label: sb.name,
-    }));
-
-    const ansprechpartnerOptions = (selectedSteuerberater?.ansprechpartnerListe || []).map(ap => {
-        const fullName = [ap.vorname, ap.nachname].filter(Boolean).join(' ');
-        const labelParts = [fullName || '(ohne Namen)'];
-        if (ap.istLohnAnsprechpartner) labelParts.push('· Löhne');
-        return { value: String(ap.id), label: labelParts.join(' ') };
-    });
-
-    const empfaengerOptions = verfuegbareEmails.map(e => ({ value: e, label: e }));
+    const sperrGrund = anhang.art === 'laedt' ? 'Das PDF wird noch erstellt.'
+        : anhang.art === 'fehler' ? 'Ohne PDF kann die Stundenaufstellung nicht gesendet werden.' : undefined;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-            <div className="bg-white rounded-xl shadow-2xl w-[90%] max-w-4xl max-h-[90vh] flex flex-col">
-                {/* Header */}
-                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-rose-50 rounded-t-xl">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center">
-                            <Mail className="w-5 h-5 text-rose-600" />
-                        </div>
-                        <div>
-                            <h2 className="text-lg font-semibold text-slate-900">Stundenübermittlung</h2>
-                            <p className="text-sm text-slate-500">
-                                {mitarbeiterDaten.length} Mitarbeiter für {getMonthName(monat)} {jahr}
-                            </p>
-                        </div>
+        <Dialog open={isOpen} onOpenChange={o => { if (!o && !sending) onClose(); }} aria-labelledby="stundenuebermittlung-titel"
+            className="w-full max-w-4xl">
+            <DialogContent>
+                <DialogHeader className="flex-row items-center gap-3 space-y-0 pr-10">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-rose-100">
+                        <Mail aria-hidden="true" className="h-5 w-5 text-rose-600" />
                     </div>
-                    <div className="flex items-center gap-2">
-                        <Button variant="ghost" onClick={onClose} disabled={sending}>
-                            Abbrechen
-                        </Button>
-                        <Button
-                            onClick={handleSend}
-                            disabled={sending}
-                            className="bg-rose-600 hover:bg-rose-700 text-white"
-                        >
-                            {sending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-                            Senden
-                        </Button>
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={onClose}
-                            className="text-slate-500 hover:text-slate-700"
-                        >
-                            <X className="w-5 h-5" />
-                        </Button>
+                    <div>
+                        <DialogTitle id="stundenuebermittlung-titel" className="text-slate-900">Stundenübermittlung</DialogTitle>
+                        <p className="mt-1 text-sm text-slate-500">{anzahlMitarbeiter} Mitarbeiter für {monatsname(monat)} {jahr}</p>
                     </div>
-                </div>
+                </DialogHeader>
 
-                {/* Content */}
-                <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                    {error && (
-                        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-                            {error}
-                        </div>
-                    )}
-
-                    {loadingSteuerberater ? (
-                        <div className="flex items-center gap-2 text-sm text-slate-500">
-                            <Loader2 className="w-4 h-4 animate-spin" /> Steuerberater werden geladen...
-                        </div>
-                    ) : steuerberaterListe.length === 0 ? (
-                        <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-sm">
-                            Es ist noch kein Steuerberater hinterlegt. Bitte unter <strong>Firma → Steuerberater</strong>
-                            einen Kontakt mit mindestens einem Ansprechpartner anlegen.
-                        </div>
-                    ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {/* Steuerberater-Auswahl (nur bei mehreren) */}
-                            {steuerberaterListe.length > 1 && (
-                                <div className="space-y-2">
-                                    <Label>Steuerberater</Label>
-                                    <Select
-                                        options={steuerberaterOptions}
-                                        value={selectedSteuerberaterId !== null ? String(selectedSteuerberaterId) : ''}
-                                        onChange={v => setSelectedSteuerberaterId(v ? Number(v) : null)}
-                                        placeholder="Steuerberater wählen"
-                                    />
-                                </div>
-                            )}
-
-                            {/* Ansprechpartner */}
-                            <div className="space-y-2">
-                                <Label>Ansprechpartner</Label>
-                                {ansprechpartnerOptions.length > 0 ? (
-                                    <Select
-                                        options={ansprechpartnerOptions}
-                                        value={selectedAnsprechpartnerId !== null ? String(selectedAnsprechpartnerId) : ''}
-                                        onChange={v => setSelectedAnsprechpartnerId(v ? Number(v) : null)}
-                                        placeholder="Ansprechpartner wählen"
-                                    />
-                                ) : (
-                                    <p className="text-xs text-slate-600">
-                                        Kein Ansprechpartner hinterlegt – Anrede wird „Sehr geehrte Damen und Herren" verwendet.
-                                    </p>
-                                )}
-                            </div>
-                        </div>
-                    )}
-
-                    <div className="grid grid-cols-1 gap-4">
-                        {/* Empfänger */}
-                        <div className="space-y-2">
-                            <Label>Empfänger</Label>
-                            {empfaengerOptions.length > 1 ? (
-                                <Select
-                                    options={empfaengerOptions}
-                                    value={recipient}
-                                    onChange={v => setRecipient(v)}
-                                    placeholder="E-Mail-Adresse wählen"
-                                />
-                            ) : (
-                                <Input
-                                    value={recipient}
-                                    onChange={(e) => setRecipient(e.target.value)}
-                                    placeholder="E-Mail-Adresse..."
-                                />
-                            )}
-                        </div>
-
-                        {/* Subject */}
-                        <div className="space-y-2">
-                            <Label>Betreff</Label>
-                            <Input
-                                value={subject}
-                                onChange={(e) => setSubject(e.target.value)}
-                                placeholder="Betreff eingeben..."
-                                className="font-medium"
-                            />
-                        </div>
-
-                        {/* Editable Email Content */}
-                        <div className="space-y-2">
-                            <Label>Nachricht (direkt bearbeitbar)</Label>
-                            <div className="border border-slate-200 rounded-lg overflow-hidden bg-white">
-                                <div
-                                    ref={editorRef}
-                                    className="p-4 min-h-[300px] overflow-auto outline-none focus:ring-2 focus:ring-rose-200"
-                                    style={{ maxHeight: '400px' }}
-                                    contentEditable
-                                    suppressContentEditableWarning
-                                />
-                            </div>
+                <div className="-m-1 min-h-0 flex-1 space-y-4 overflow-y-auto p-1">
+                    <StundenartHinweis art={stundenart} />
+                    {error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+                    <SteuerberaterEmpfaengerFelder empfaenger={e} />
+                    <div className="space-y-2">
+                        <Label htmlFor="stundenuebermittlung-betreff">Betreff</Label>
+                        <Input id="stundenuebermittlung-betreff" value={e.betreff} onChange={ev => e.setBetreff(ev.target.value)}
+                            placeholder="Betreff eingeben..." className="font-medium" />
+                    </div>
+                    <div className="space-y-2">
+                        <p className="flex items-center gap-1.5 text-sm font-medium text-slate-700">
+                            <Paperclip aria-hidden="true" className="h-4 w-4 text-slate-500" /> Anhang
+                        </p>
+                        <PdfAnhangChip stand={anhang} />
+                    </div>
+                    <div className="space-y-2">
+                        <Label>Nachricht (direkt bearbeitbar)</Label>
+                        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+                            <div ref={editorRef} aria-label="Nachricht" role="textbox" aria-multiline="true"
+                                className="min-h-[200px] max-h-[360px] overflow-auto p-4 outline-none focus:ring-2 focus:ring-inset focus:ring-rose-200"
+                                contentEditable suppressContentEditableWarning />
                         </div>
                     </div>
                 </div>
-            </div>
-        </div>
+
+                <DialogFooter className="gap-2">
+                    <Button variant="outline" onClick={onClose} disabled={sending}>Abbrechen</Button>
+                    <Button onClick={handleSend} disabled={sending || anhang.art !== 'fertig'} title={sperrGrund}>
+                        {sending && <Loader2 aria-hidden="true" className="h-4 w-4 motion-safe:animate-spin" />}
+                        Senden
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
     );
 }

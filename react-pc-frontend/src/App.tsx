@@ -39,7 +39,7 @@ const Monatsabschluss = lazy(() => import('./pages/Monatsabschluss'));
 const ZeiterfassungAuswertung = lazy(() => import('./pages/ZeiterfassungAuswertung'));
 const ZeiterfassungZeitkonten = lazy(() => import('./pages/ZeiterfassungZeitkonten'));
 const ZeiterfassungFeiertage = lazy(() => import('./pages/ZeiterfassungFeiertage'));
-const ZeiterfassungSteuerberater = lazy(() => import('./pages/ZeiterfassungSteuerberater'));
+const ReportCentre = lazy(() => import('./pages/ReportCentre'));
 const Urlaubsantraege = lazy(() => import('./pages/Urlaubsantraege'));
 const Langzeitkrankmeldungen = lazy(() => import('./pages/Langzeitkrankmeldungen'));
 const TerminKalender = lazy(() => import('./pages/TerminKalender'));
@@ -122,7 +122,9 @@ const router = createBrowserRouter(createRoutesFromElements(
                 <Route path="/monatsabschluss" element={<Seite><Monatsabschluss /></Seite>} />
                 <Route path="/zeitbuchungen" element={<Seite><ZeiterfassungKalender /></Seite>} />
                 <Route path="/auswertung" element={<Seite><ZeiterfassungAuswertung /></Seite>} />
-                <Route path="/steuerberater" element={<Seite><ZeiterfassungSteuerberater /></Seite>} />
+                <Route path="/report-centre" element={<Seite><ReportCentre /></Seite>} />
+                {/* Die Steuerberater-Seite ist im Report Centre aufgegangen; alte Links und Lesezeichen landen dort. */}
+                <Route path="/steuerberater" element={<Navigate to="/report-centre" replace />} />
                 <Route path="/zeitkonten" element={<Seite><ZeiterfassungZeitkonten /></Seite>} />
                 <Route path="/feiertage" element={<Seite><ZeiterfassungFeiertage /></Seite>} />
                 <Route path="/urlaubsantraege" element={<Seite><Urlaubsantraege /></Seite>} />

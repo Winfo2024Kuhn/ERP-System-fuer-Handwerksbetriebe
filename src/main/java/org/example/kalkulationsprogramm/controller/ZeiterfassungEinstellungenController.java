@@ -3,10 +3,12 @@ package org.example.kalkulationsprogramm.controller;
 import java.time.LocalDate;
 
 import org.example.kalkulationsprogramm.dto.DatevDto.Konfiguration;
+import org.example.kalkulationsprogramm.dto.zeitbericht.SteuerberaterBerichtDto.Stundenart;
 import org.example.kalkulationsprogramm.service.DatevKonfigurationService;
 import org.example.kalkulationsprogramm.service.UrlaubsverfallEinstellungService;
 import org.example.kalkulationsprogramm.service.UrlaubsverfallEinstellungService.Verfallsregel;
 import org.example.kalkulationsprogramm.service.ZeiterfassungEinstellungService;
+import org.example.kalkulationsprogramm.service.zeitbericht.SteuerberaterStundenartEinstellung;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -16,7 +18,8 @@ import org.springframework.web.bind.annotation.RestController;
 import lombok.RequiredArgsConstructor;
 
 /**
- * Einstellungen → Zeiterfassung: Start der Zeiterfassung, Verfall von Resturlaub und DATEV für das Steuerbüro.
+ * Einstellungen → Zeiterfassung: Start der Zeiterfassung, Verfall von Resturlaub, Soll- oder Iststunden für den
+ * Steuerberater (Report Centre) und DATEV für das Steuerbüro.
  * Wie alle {@code /api/settings/**}-Endpoints nur für Admins (SecurityConfig).
  */
 @RestController
@@ -27,6 +30,7 @@ public class ZeiterfassungEinstellungenController {
     private final ZeiterfassungEinstellungService einstellungen;
     private final DatevKonfigurationService datev;
     private final UrlaubsverfallEinstellungService urlaubsverfall;
+    private final SteuerberaterStundenartEinstellung steuerberaterStundenart;
 
     @GetMapping("/zeiterfassung")
     public ZeiterfassungEinstellung zeiterfassung() {
@@ -60,6 +64,16 @@ public class ZeiterfassungEinstellungenController {
                 urlaubsverfall.speichereMehrurlaubImEintrittsjahrAnteilig(eingabe.mehrurlaubAnteilig()));
     }
 
+    @GetMapping("/steuerberater-stundenart")
+    public SteuerberaterStundenart steuerberaterStundenart() {
+        return new SteuerberaterStundenart(steuerberaterStundenart.gespeichert().orElse(null));
+    }
+
+    @PutMapping("/steuerberater-stundenart")
+    public SteuerberaterStundenart steuerberaterStundenartSpeichern(@RequestBody SteuerberaterStundenart eingabe) {
+        return new SteuerberaterStundenart(steuerberaterStundenart.speichern(eingabe == null ? null : eingabe.stundenart()));
+    }
+
     @GetMapping("/datev")
     public Konfiguration datev() {
         return datev.einstellungenLaden();
@@ -76,6 +90,9 @@ public class ZeiterfassungEinstellungenController {
 
     /** mehrurlaubAnteilig: {@code true} = Vertragsurlaub im Eintrittsjahr immer zwölfteln (laut Vertrag/Tarif). */
     public record UrlaubEintrittsjahrEinstellung(Boolean mehrurlaubAnteilig) {}
+
+    /** stundenart: {@code SOLL} oder {@code IST}; {@code null} = noch nie gewählt (dann gilt Soll). */
+    public record SteuerberaterStundenart(Stundenart stundenart) {}
 
     /** eingefuehrtAm: ISO-Datum {@code yyyy-MM-dd} oder {@code null} (keine Grenze). */
     public record ZeiterfassungEinstellung(String eingefuehrtAm) {}
