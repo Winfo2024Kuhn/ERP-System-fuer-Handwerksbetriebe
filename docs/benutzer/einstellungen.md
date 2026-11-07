@@ -114,6 +114,8 @@ Was im Hintergrund passiert: Das Passwort wird verschlüsselt gespeichert (mit d
 
 Unter **Vorlagen & Stammdaten → Firma**, Reiter „Firmendaten“: Firmenlogo (erscheint auf allen PDFs), Firmenname, Adresse, Kontaktdaten, „Bewertungs-Link (Google)“, „Firmenfarbe“, „Steuerliche Angaben“ (Steuernummer, USt-IdNr.), „Bankverbindung“ und das „Automatisches Mahnverfahren“ (siehe [Offene Posten und Mahnungen](offene-posten-und-mahnungen.md)). Ohne Steuernummer oder USt-IdNr. lassen sich keine E-Rechnungen erstellen.
 
+Die „Firmenfarbe“ färbt auf Rechnungen den Fortschrittsbalken im Abrechnungsstand und die kleinen Nettobeträge. In den PDF-Berichten erscheinen Überschriften, Tabellenköpfe und hervorgehobene Werte in dieser Farbe: Report Centre, Belege, Kassenbuch, Bestellungen, Projekt-Auswertung, Projektliste und Stückliste. Ohne eingetragene Farbe bleibt es beim bisherigen Rot.
+
 Weitere Reiter: „Lohn-Stammdaten“, „Unfallversicherung“, „Steuerberater“ (Kontakte für die Stundenübermittlung) und „Steuerprüfung“ (Prüfpaket für das Finanzamt).
 
 ## Benutzer verwalten

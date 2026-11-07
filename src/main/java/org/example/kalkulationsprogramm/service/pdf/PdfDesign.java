@@ -18,6 +18,14 @@ public record PdfDesign(Color akzent, Color akzentHell, Image logo, String firme
     public static final Color RAHMEN = new Color(229, 231, 235);
     public static final Color SUMME_HINTERGRUND = new Color(241, 245, 249);
 
+    /**
+     * Feste Statusfarben, unabhängig von der Firmenfarbe: Ein Warnhinweis (z. B. „VORLÄUFIG –
+     * Monat nicht abgeschlossen“ im Kassenbuch) bleibt immer rot (red-600), eine Erfolgsmeldung
+     * („Monat abgeschlossen“) immer grün (green-700). Sie tragen Bedeutung, keine Hausfarbe.
+     */
+    public static final Color WARNUNG = new Color(220, 38, 38);
+    public static final Color ERFOLG = new Color(21, 128, 61);
+
     public static PdfDesign aus(String firmenfarbe, Image logo, String firmenname) {
         Color akzent = PdfFarben.akzent(firmenfarbe);
         return new PdfDesign(akzent, PdfFarben.hell(akzent), logo, firmenname == null ? "" : firmenname.trim());

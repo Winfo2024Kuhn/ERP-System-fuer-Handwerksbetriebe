@@ -3,7 +3,6 @@ package org.example.kalkulationsprogramm.service;
 import org.example.kalkulationsprogramm.util.PdfWriterFabrik;
 import org.openpdf.text.*;
 import org.openpdf.text.Font;
-import org.openpdf.text.Image;
 import org.openpdf.text.Rectangle;
 import org.openpdf.text.pdf.PdfPCell;
 import org.openpdf.text.pdf.PdfPTable;
@@ -12,6 +11,9 @@ import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.Produktkategorie;
 import org.example.kalkulationsprogramm.domain.Zeitbuchung;
 import org.example.kalkulationsprogramm.repository.ZeitbuchungRepository;
+import org.example.kalkulationsprogramm.service.pdf.PdfBerichtBausteine;
+import org.example.kalkulationsprogramm.service.pdf.PdfDesign;
+import org.example.kalkulationsprogramm.service.pdf.PdfFirmenDesign;
 import org.springframework.stereotype.Service;
 
 import java.awt.*;
@@ -24,6 +26,10 @@ import java.util.*;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/**
+ * Regiebericht / Zeitnachweis eines Projekts als PDF. Logo und Firmenfarbe (Titel,
+ * Tabellenkopf, Gesamtstunden, Kurzhinweis) kommen aus {@link PdfFirmenDesign}.
+ */
 @Service
 @RequiredArgsConstructor
 public class ProjektAuswertungPdfService {
@@ -54,7 +60,7 @@ public class ProjektAuswertungPdfService {
             + "eingesetzten Mitarbeiter zugrunde liegen.";
 
     private final ZeitbuchungRepository zeitbuchungRepository;
-    private final FirmeninformationService firmeninformationService;
+    private final PdfFirmenDesign pdfFirmenDesign;
 
     /**
      * Erzeugt den Regiebericht-PDF.
@@ -119,32 +125,12 @@ public class ProjektAuswertungPdfService {
             PdfWriterFabrik.writer(doc, Files.newOutputStream(temp));
             doc.open();
 
-            Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 18, new Color(50, 50, 50));
             Font subTitleFont = FontFactory.getFont(FontFactory.HELVETICA, 12, new Color(100, 100, 100));
 
-            // Titelzeile links, Firmenlogo rechts oben
-            PdfPTable titelZeile = new PdfPTable(new float[]{ 3f, 1f });
-            titelZeile.setWidthPercentage(100);
-
-            PdfPCell titelCell = new PdfPCell();
-            titelCell.setBorder(Rectangle.NO_BORDER);
-            titelCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
-            titelCell.addElement(new Paragraph("REGIEBERICHT / ZEITNACHWEIS", titleFont));
-            titelCell.addElement(new Paragraph("Gruppiert nach: " + groupByLabel(effectiveGroupBy), subTitleFont));
-            titelZeile.addCell(titelCell);
-
-            PdfPCell logoCell = new PdfPCell();
-            logoCell.setBorder(Rectangle.NO_BORDER);
-            logoCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
-            logoCell.setVerticalAlignment(Element.ALIGN_TOP);
-            Image logo = firmeninformationService.loadLogoImage();
-            if (logo != null) {
-                logo.scaleToFit(150, 70);
-                logo.setAlignment(Image.ALIGN_RIGHT);
-                logoCell.addElement(logo);
-            }
-            titelZeile.addCell(logoCell);
-            doc.add(titelZeile);
+            // Titelzeile in Firmenfarbe links, Firmenlogo rechts oben
+            PdfDesign design = pdfFirmenDesign.laden();
+            PdfBerichtBausteine.kopf(doc, design, "REGIEBERICHT / ZEITNACHWEIS",
+                    "Gruppiert nach: " + groupByLabel(effectiveGroupBy));
 
             PdfPTable headerTable = new PdfPTable(2);
             headerTable.setWidthPercentage(100);
@@ -174,16 +160,14 @@ public class ProjektAuswertungPdfService {
                 doc.add(new Paragraph(" "));
             }
 
-            doc.add(buildKurzHinweis());
+            doc.add(buildKurzHinweis(design));
             doc.add(new Paragraph(" "));
 
-            Font headerFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9, Color.WHITE);
-            Font cellFont = FontFactory.getFont(FontFactory.HELVETICA, 9, new Color(55, 65, 81));
-            Font sumFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9, new Color(55, 65, 81));
-            Color headerBg = new Color(220, 38, 38);
-            Color rowAlt = new Color(254, 242, 242);
-            Color borderColor = new Color(229, 231, 235);
-            Color sumBg = new Color(241, 245, 249);
+            Font cellFont = PdfBerichtBausteine.schrift(9, Font.NORMAL, PdfDesign.TEXT_ZELLE);
+            Font sumFont = PdfBerichtBausteine.schrift(9, Font.BOLD, PdfDesign.TEXT_ZELLE);
+            Color rowAlt = design.akzentHell();
+            Color borderColor = PdfDesign.RAHMEN;
+            Color sumBg = PdfDesign.SUMME_HINTERGRUND;
 
             DateTimeFormatter dateFmt = DateTimeFormatter.ofPattern("dd.MM.yy");
             DateTimeFormatter timeFmt = DateTimeFormatter.ofPattern("HH:mm");
@@ -214,12 +198,7 @@ public class ProjektAuswertungPdfService {
                 String[] headers = { "Mitarbeiter", "Qualifikation", "Arbeitsgang", "Produktkategorie",
                         "Datum", "Start", "Ende", "Std." };
                 for (String h : headers) {
-                    PdfPCell cell = new PdfPCell(new Phrase(h, headerFont));
-                    cell.setBackgroundColor(headerBg);
-                    cell.setPaddingTop(8f); cell.setPaddingBottom(8f);
-                    cell.setPaddingLeft(6f); cell.setPaddingRight(6f);
-                    cell.setBorder(Rectangle.NO_BORDER);
-                    table.addCell(cell);
+                    table.addCell(PdfBerichtBausteine.kopfZelle(h, design, Element.ALIGN_LEFT));
                 }
 
                 long groupMinutes = 0;
@@ -327,9 +306,9 @@ public class ProjektAuswertungPdfService {
             totalTable.setHorizontalAlignment(Element.ALIGN_RIGHT);
             totalTable.setSpacingBefore(16f);
 
-            Font totalLabelFont = FontFactory.getFont(FontFactory.HELVETICA, 11, new Color(55, 65, 81));
-            Font totalFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 14, new Color(220, 38, 38));
-            Color totalRowBg = new Color(254, 242, 242);
+            Font totalLabelFont = PdfBerichtBausteine.schrift(11, Font.NORMAL, PdfDesign.TEXT_ZELLE);
+            Font totalFont = PdfBerichtBausteine.schrift(14, Font.BOLD, design.akzent());
+            Color totalRowBg = design.akzentHell();
 
             for (Map.Entry<String, Long> qe : globalQualifikationMinutes.entrySet()) {
                 BigDecimal qh = new BigDecimal(qe.getValue()).divide(new BigDecimal(60), 2,
@@ -471,16 +450,16 @@ public class ProjektAuswertungPdfService {
      * Schmale Hinweiszeile direkt unter dem Dokumentenkopf: macht bereits auf der
      * ersten Bildschirmhoehe deutlich, dass die Zeiten an die Lohnabrechnung gekoppelt sind.
      */
-    private PdfPTable buildKurzHinweis() {
-        Font kurzFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9, new Color(159, 18, 57));
+    private PdfPTable buildKurzHinweis(PdfDesign design) {
+        Font kurzFont = PdfBerichtBausteine.schrift(9, Font.BOLD, design.akzent());
 
         PdfPTable table = new PdfPTable(1);
         table.setWidthPercentage(100);
 
         PdfPCell cell = new PdfPCell(new Phrase(VERBINDLICHKEITS_HINWEIS_KURZ, kurzFont));
-        cell.setBackgroundColor(new Color(254, 242, 242));
+        cell.setBackgroundColor(design.akzentHell());
         cell.setBorder(Rectangle.LEFT);
-        cell.setBorderColor(new Color(220, 38, 38));
+        cell.setBorderColor(design.akzent());
         cell.setBorderWidth(3f);
         cell.setPaddingTop(8f);
         cell.setPaddingBottom(8f);
@@ -495,8 +474,8 @@ public class ProjektAuswertungPdfService {
      * der Aufstellung ueber die Kopplung an die Lohnabrechnung und den Audit-Trail.
      */
     private PdfPTable buildVerbindlichkeitsHinweis() {
-        Font hinweisTitelFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10, new Color(30, 41, 59));
-        Font hinweisTextFont = FontFactory.getFont(FontFactory.HELVETICA, 8.5f, new Color(71, 85, 105));
+        Font hinweisTitelFont = PdfBerichtBausteine.schrift(10, Font.BOLD, PdfDesign.TEXT_DUNKEL);
+        Font hinweisTextFont = PdfBerichtBausteine.schrift(8.5f, Font.NORMAL, new Color(71, 85, 105));
 
         Paragraph titel = new Paragraph(VERBINDLICHKEITS_HINWEIS_TITEL, hinweisTitelFont);
         titel.setSpacingAfter(4f);

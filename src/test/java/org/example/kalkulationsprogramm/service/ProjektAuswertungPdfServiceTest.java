@@ -4,6 +4,10 @@ import org.openpdf.text.pdf.PdfReader;
 import org.openpdf.text.pdf.parser.PdfTextExtractor;
 import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.repository.ZeitbuchungRepository;
+import org.example.kalkulationsprogramm.service.pdf.PdfDesign;
+import org.example.kalkulationsprogramm.service.pdf.PdfDesignPruefung;
+import org.example.kalkulationsprogramm.service.pdf.PdfFarben;
+import org.example.kalkulationsprogramm.service.pdf.PdfFirmenDesign;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -14,6 +18,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.awt.Color;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
@@ -42,7 +47,7 @@ class ProjektAuswertungPdfServiceTest {
     private ZeitbuchungRepository zeitbuchungRepository;
 
     @Mock
-    private FirmeninformationService firmeninformationService;
+    private PdfFirmenDesign pdfFirmenDesign;
 
     @InjectMocks
     private ProjektAuswertungPdfService service;
@@ -397,22 +402,55 @@ class ProjektAuswertungPdfServiceTest {
         }
 
         @Test
-        @DisplayName("Firmenlogo wird aus der Firmeninformation geladen")
-        void logoWirdGeladen() {
+        @DisplayName("Firmenlogo kommt aus dem Firmendesign")
+        void logoWirdGeladen() throws Exception {
             when(zeitbuchungRepository.findByProjektId(1L)).thenReturn(List.of(vollstaendigeBuchung()));
-            when(firmeninformationService.loadLogoImage()).thenReturn(null);
+            when(pdfFirmenDesign.laden()).thenReturn(
+                    PdfDesign.aus(null, PdfDesignPruefung.testLogo(), "Musterbetrieb GmbH"));
 
             erzeugt = service.generatePdf(1L, null, null, "datum", "asc", "arbeitsgang");
 
-            verify(firmeninformationService).loadLogoImage();
-            assertThat(erzeugt).exists();
+            verify(pdfFirmenDesign).laden();
+            assertThat(PdfDesignPruefung.anzahlBilder(Files.readAllBytes(erzeugt))).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("Mit Firmenfarbe: Titel, Tabellenkopf, Summen und Kurzhinweis in dieser Farbe")
+        void firmenfarbe() throws Exception {
+            Zeitbuchung zweite = vollstaendigeBuchung();
+            zweite.setStartZeit(LocalDateTime.of(2026, 4, 8, 8, 0));
+            zweite.setEndeZeit(LocalDateTime.of(2026, 4, 8, 9, 0));
+            when(zeitbuchungRepository.findByProjektId(1L)).thenReturn(List.of(vollstaendigeBuchung(), zweite));
+            when(pdfFirmenDesign.laden()).thenReturn(PdfDesign.aus("#1d4ed8", null, "Musterbetrieb GmbH"));
+            Color blau = new Color(0x1d, 0x4e, 0xd8);
+
+            erzeugt = service.generatePdf(1L, null, null, "datum", "asc", "arbeitsgang");
+            byte[] pdf = Files.readAllBytes(erzeugt);
+
+            assertThat(PdfDesignPruefung.enthaeltFarbe(pdf, blau)).isTrue();
+            assertThat(PdfDesignPruefung.enthaeltFarbe(pdf, PdfFarben.hell(blau))).isTrue();
+            assertThat(PdfDesignPruefung.enthaeltFarbe(pdf, PdfFarben.STANDARD_AKZENT)).isFalse();
+            assertThat(PdfDesignPruefung.enthaeltFarbe(pdf, new Color(159, 18, 57))).isFalse();
+            assertThat(PdfDesignPruefung.enthaeltFarbe(pdf, new Color(254, 242, 242))).isFalse();
+        }
+
+        @Test
+        @DisplayName("Ohne Firmenfarbe bleibt das bisherige Rot")
+        void ohneFirmenfarbe() throws Exception {
+            when(zeitbuchungRepository.findByProjektId(1L)).thenReturn(List.of(vollstaendigeBuchung()));
+            when(pdfFirmenDesign.laden()).thenReturn(PdfDesign.aus(null, null, null));
+
+            erzeugt = service.generatePdf(1L, null, null, "datum", "asc", "arbeitsgang");
+
+            assertThat(PdfDesignPruefung.enthaeltFarbe(Files.readAllBytes(erzeugt), PdfFarben.STANDARD_AKZENT))
+                    .isTrue();
         }
 
         @Test
         @DisplayName("Fehlendes Logo → PDF wird trotzdem erzeugt")
         void ohneLogoTrotzdemPdf() throws Exception {
             when(zeitbuchungRepository.findByProjektId(1L)).thenReturn(List.of(vollstaendigeBuchung()));
-            when(firmeninformationService.loadLogoImage()).thenReturn(null);
+            when(pdfFirmenDesign.laden()).thenReturn(PdfDesign.aus(null, null, null));
 
             erzeugt = service.generatePdf(1L, null, null, "datum", "asc", "arbeitsgang");
 
@@ -423,7 +461,7 @@ class ProjektAuswertungPdfServiceTest {
         @DisplayName("PDF enthält den Verbindlichkeitshinweis zur Lohnabrechnung")
         void hinweisImPdf() throws Exception {
             when(zeitbuchungRepository.findByProjektId(1L)).thenReturn(List.of(vollstaendigeBuchung()));
-            when(firmeninformationService.loadLogoImage()).thenReturn(null);
+            when(pdfFirmenDesign.laden()).thenReturn(PdfDesign.aus(null, null, null));
 
             erzeugt = service.generatePdf(1L, null, null, "datum", "asc", "arbeitsgang");
 

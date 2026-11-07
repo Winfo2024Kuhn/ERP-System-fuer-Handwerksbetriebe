@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.service;
 
+import java.awt.Color;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -13,6 +14,11 @@ import static org.assertj.core.api.Assertions.within;
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
+import org.example.kalkulationsprogramm.service.pdf.PdfDesign;
+import org.example.kalkulationsprogramm.service.pdf.PdfDesignPruefung;
+import org.example.kalkulationsprogramm.service.pdf.PdfFarben;
+import org.example.kalkulationsprogramm.service.pdf.PdfFirmenDesign;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import static org.mockito.ArgumentMatchers.any;
@@ -34,8 +40,16 @@ class ProjektListenPdfServiceTest {
     @Mock
     private ProjektRepository projektRepository;
 
+    @Mock
+    private PdfFirmenDesign pdfFirmenDesign;
+
     @InjectMocks
     private ProjektListenPdfService service;
+
+    @BeforeEach
+    void ohneFirmenfarbe() {
+        when(pdfFirmenDesign.laden()).thenReturn(PdfDesign.aus(null, null, null));
+    }
 
     /** Der Kundenname hängt an der Kunde-Relation ({@code Projekt#getKunde()} ist abgeleitet). */
     private Projekt projekt(Long id, String bauvorhaben, BigDecimal preis) {
@@ -161,5 +175,33 @@ class ProjektListenPdfServiceTest {
                 assertThat(stripper.getText(pdf)).containsSubsequence("Kunde", "Bauvorhaben");
             }
         }
+    }
+
+    @Test
+    void mitFirmenfarbeErscheinenTitelUndTabelleInDieserFarbeMitLogo() throws Exception {
+        Color blau = new Color(0x1d, 0x4e, 0xd8);
+        when(pdfFirmenDesign.laden()).thenReturn(
+                PdfDesign.aus("#1d4ed8", PdfDesignPruefung.testLogo(), "Musterbetrieb GmbH"));
+        Projekt erstes = projekt(6L, "Halle Musterweg", new BigDecimal("100.00"));
+        Projekt zweites = projekt(7L, "Tor Musterhof", new BigDecimal("200.00"));
+        when(projektRepository.findByAbgeschlossenFalseOrderByAnlegedatumDesc()).thenReturn(List.of(erstes, zweites));
+        when(projektRepository.findIdsMitVorherigemProjektFuerKunde(any())).thenReturn(List.of());
+
+        byte[] pdf = service.generatePdf();
+
+        assertThat(PdfDesignPruefung.enthaeltFarbe(pdf, blau)).isTrue();
+        assertThat(PdfDesignPruefung.enthaeltFarbe(pdf, PdfFarben.hell(blau))).isTrue();
+        assertThat(PdfDesignPruefung.enthaeltFarbe(pdf, PdfFarben.STANDARD_AKZENT)).isFalse();
+        assertThat(PdfDesignPruefung.anzahlBilder(pdf)).isEqualTo(1);
+    }
+
+    @Test
+    void ohneFirmenfarbeBleibtEsBeimBisherigenRot() throws Exception {
+        when(projektRepository.findByAbgeschlossenFalseOrderByAnlegedatumDesc()).thenReturn(List.of());
+
+        byte[] pdf = service.generatePdf();
+
+        assertThat(PdfDesignPruefung.enthaeltFarbe(pdf, PdfFarben.STANDARD_AKZENT)).isTrue();
+        assertThat(PdfDesignPruefung.anzahlBilder(pdf)).isZero();
     }
 }

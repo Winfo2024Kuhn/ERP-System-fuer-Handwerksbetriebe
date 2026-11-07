@@ -12,6 +12,9 @@ import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.repository.ArtikelInProjektRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.example.kalkulationsprogramm.repository.SchnittbilderRepository;
+import org.example.kalkulationsprogramm.service.pdf.PdfBerichtBausteine;
+import org.example.kalkulationsprogramm.service.pdf.PdfDesign;
+import org.example.kalkulationsprogramm.service.pdf.PdfFirmenDesign;
 import org.springframework.stereotype.Service;
 
 import java.awt.Color;
@@ -25,6 +28,10 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
+/**
+ * Stückliste eines Projekts als PDF. Logo und Firmenfarbe (Titel, Tabellenkopf) kommen aus
+ * {@link PdfFirmenDesign}; ohne hinterlegte Farbe das bisherige Rot (#dc2626).
+ */
 @Service
 @AllArgsConstructor
 public class StuecklistePdfService {
@@ -33,7 +40,10 @@ public class StuecklistePdfService {
     private final ArtikelInProjektRepository artikelInProjektRepository;
     private final SchnittbilderRepository schnittbilderRepository;
     private final DateiSpeicherService dateiSpeicherService;
+    private final PdfFirmenDesign pdfFirmenDesign;
 
+    /** Graue Wechsel- und Summenzeile – bewusst neutral, nicht in der Firmenfarbe. */
+    private static final Color WECHSELZEILE = new Color(245, 245, 245);
     private static final byte[] NO_IMAGE = new byte[0];
     private final Map<String, byte[]> schnittbildIconCache = new ConcurrentHashMap<>();
 
@@ -49,18 +59,13 @@ public class StuecklistePdfService {
             writer.setCompressionLevel(0);
             doc.open();
 
-            try {
-                Image logo = Image.getInstance(StuecklistePdfService.class.getResource("/static/firmenlogo.png"));
-                logo.scaleToFit(150, 70);
-                doc.add(logo);
-            } catch (Exception ignored) {}
+            PdfDesign design = pdfFirmenDesign.laden();
+            PdfBerichtBausteine.logo(doc, design, 150, 70);
 
-            Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 16, new Color(204, 0, 0));
+            Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 16, design.akzent());
             Font subTitleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 12);
-            Font headerFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10, Color.WHITE);
-            Font cellFont = FontFactory.getFont(FontFactory.HELVETICA, 8);
-            Color headerBg = new Color(204, 0, 0);
-            Color altBg = new Color(245, 245, 245);
+            Font cellFont = PdfBerichtBausteine.schrift(8, Font.NORMAL, Color.BLACK);
+            Color altBg = WECHSELZEILE;
 
             Paragraph title = new Paragraph("St\u00FCckliste", titleFont);
             title.setSpacingAfter(10f);
@@ -111,8 +116,7 @@ public class StuecklistePdfService {
                         String[] headers = {"Art.-Nr.", "Prod.", "Werkst.", "Stk", "L/Stk [mm]", "Ges. (m)", "Form", "WL", "WR", "Komm.", "Vorh.", "Best.", "R. gel."};
                         for (int i = 0; i < headers.length; i++) {
                             String h = headers[i];
-                            PdfPCell cell = new PdfPCell(new Phrase(h, headerFont));
-                            cell.setBackgroundColor(headerBg);
+                            PdfPCell cell = PdfBerichtBausteine.kopfZelle(h, design, Element.ALIGN_LEFT);
                             if (i >= headers.length - 3) { cell.setNoWrap(true); cell.setPaddingLeft(2f); cell.setPaddingRight(2f); }
                             table.addCell(cell);
                         }
@@ -167,21 +171,21 @@ public class StuecklistePdfService {
                                 table.addCell(wrap);
                             }
                         }
-                        // Summenzeile in der Haupttabelle
-                        PdfPCell c0 = makeCell("", cellFont, altBg);
-                        PdfPCell c1 = makeCell("Summe", FontFactory.getFont(FontFactory.HELVETICA_BOLD, 8), altBg);
-                        PdfPCell c2 = makeCell("", cellFont, altBg);
-                        PdfPCell c3 = makeCell("", cellFont, altBg);
-                        PdfPCell c4 = makeCell("", cellFont, altBg);
-                        PdfPCell c5 = makeCell(stripZeros(totalM), FontFactory.getFont(FontFactory.HELVETICA_BOLD, 8), altBg);
-                        String sumComment = "Σ kg: " + (totalKg.compareTo(BigDecimal.ZERO) == 0 ? "0" : stripZeros(totalKg))
-                                + " | Σ Mant.: " + (totalMantel.compareTo(BigDecimal.ZERO) == 0 ? "0" : stripZeros(totalMantel)) + " m²";
-                        PdfPCell c6 = makeCell(sumComment, FontFactory.getFont(FontFactory.HELVETICA_BOLD, 8), altBg);
-                        PdfPCell c7 = makeCell("", cellFont, altBg);
-                        PdfPCell c8 = makeCell("", cellFont, altBg);
-                        PdfPCell c9 = makeCell("", cellFont, altBg);
-                        table.addCell(c0); table.addCell(c1); table.addCell(c2); table.addCell(c3); table.addCell(c4);
-                        table.addCell(c5); table.addCell(c6); table.addCell(c7); table.addCell(c8); table.addCell(c9);
+                        // Summenzeile: alle 13 Spalten belegt, sonst verwirft OpenPDF die unvollständige Zeile.
+                        // Gesamtmeter unter "Ges. (m)", Kilo und Mantelfläche über Form bis Kommentar,
+                        // die drei Abhak-Spalten bleiben leer.
+                        Font sumFont = PdfBerichtBausteine.schrift(8, Font.BOLD, Color.BLACK);
+                        table.addCell(makeCell("", cellFont, altBg));
+                        table.addCell(makeCell("Summe", sumFont, altBg));
+                        for (int i = 0; i < 3; i++) table.addCell(makeCell("", cellFont, altBg));
+                        table.addCell(makeCell(stripZeros(totalM), sumFont, altBg));
+                        // Kein „Σ“: Die CP1252-Schrift des PDFs kennt es nicht und ließe es still weg.
+                        String sumComment = "Summe kg: " + (totalKg.compareTo(BigDecimal.ZERO) == 0 ? "0" : stripZeros(totalKg))
+                                + " | Summe Mant.: " + (totalMantel.compareTo(BigDecimal.ZERO) == 0 ? "0" : stripZeros(totalMantel)) + " m²";
+                        PdfPCell summen = makeCell(sumComment, sumFont, altBg);
+                        summen.setColspan(4);
+                        table.addCell(summen);
+                        for (int i = 0; i < 3; i++) table.addCell(makeCell("", cellFont, altBg));
                         doc.add(table);
                     } else {
                         table = new PdfPTable(new float[]{2f, 4f, 2f, 1.5f, 1.2f, 1.2f, 1.2f, 2f, 1.3f, 1.3f, 1.8f});
@@ -189,8 +193,7 @@ public class StuecklistePdfService {
                         String[] headers = {"Art.-Nr.", "Prod.", "Kat.", "Menge", "Form", "WL", "WR", "Komm.", "Vorh.", "Best.", "R. gel."};
                         for (int i = 0; i < headers.length; i++) {
                             String h = headers[i];
-                            PdfPCell cell = new PdfPCell(new Phrase(h, headerFont));
-                            cell.setBackgroundColor(headerBg);
+                            PdfPCell cell = PdfBerichtBausteine.kopfZelle(h, design, Element.ALIGN_LEFT);
                             if (i >= headers.length - 3) { cell.setNoWrap(true); cell.setPaddingLeft(2f); cell.setPaddingRight(2f); }
                             table.addCell(cell);
                         }
@@ -290,7 +293,7 @@ public class StuecklistePdfService {
             cell.setVerticalAlignment(Element.ALIGN_MIDDLE);
             cell.setPadding(2f);
             cell.addElement(icon);
-            Paragraph label = new Paragraph("Form " + form, FontFactory.getFont(FontFactory.HELVETICA, 6));
+            Paragraph label = new Paragraph("Form " + form, PdfBerichtBausteine.schrift(6, Font.NORMAL, Color.BLACK));
             label.setAlignment(Element.ALIGN_CENTER);
             cell.addElement(label);
             return cell;

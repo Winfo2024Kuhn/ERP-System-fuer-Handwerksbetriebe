@@ -8,11 +8,16 @@ import org.example.kalkulationsprogramm.repository.FirmeninformationRepository;
 import org.example.kalkulationsprogramm.service.BelegPdfService.EigenbelegDaten;
 import org.example.kalkulationsprogramm.service.BelegPdfService.ErzeugtesPdf;
 import org.example.kalkulationsprogramm.service.BelegPdfService.QuittungDaten;
+import org.example.kalkulationsprogramm.service.pdf.PdfDesign;
+import org.example.kalkulationsprogramm.service.pdf.PdfDesignPruefung;
+import org.example.kalkulationsprogramm.service.pdf.PdfFarben;
+import org.example.kalkulationsprogramm.service.pdf.PdfFirmenDesign;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.awt.Color;
 import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -37,12 +42,15 @@ class BelegPdfServiceTest {
     Path tempDir;
 
     private FirmeninformationRepository firmeninformationRepository;
+    private PdfFirmenDesign pdfFirmenDesign;
     private BelegPdfService service;
 
     @BeforeEach
     void setUp() {
         firmeninformationRepository = mock(FirmeninformationRepository.class);
-        service = new BelegPdfService(firmeninformationRepository);
+        pdfFirmenDesign = mock(PdfFirmenDesign.class);
+        when(pdfFirmenDesign.laden()).thenReturn(PdfDesign.aus(null, null, null));
+        service = new BelegPdfService(firmeninformationRepository, pdfFirmenDesign);
         ReflectionTestUtils.setField(service, "uploadPath", tempDir.toString());
     }
 
@@ -273,5 +281,35 @@ class BelegPdfServiceTest {
         assertTrue(text.contains("Parkautomat"), "Grund-Wert fehlt");
         assertTrue(text.contains("Erstellt"), "Ersteller-Block fehlt");
         assertTrue(text.contains("Mustermann"), "Erstellername fehlt");
+    }
+
+    // ======================= Firmendesign =======================
+
+    private static final Color BLAU = new Color(0x1d, 0x4e, 0xd8);
+
+    private byte[] quittungBytes() throws Exception {
+        when(firmeninformationRepository.findFirmeninformation()).thenReturn(Optional.of(firmaMitDaten()));
+        ErzeugtesPdf ergebnis = service.erzeugeQuittung(quittungDaten(new BigDecimal("119.00")));
+        return Files.readAllBytes(tempDir.resolve("belege").resolve(ergebnis.gespeicherterDateiname()));
+    }
+
+    @Test
+    void quittung_mitFirmenfarbe_erscheintInDieserFarbeUndMitLogo() throws Exception {
+        when(pdfFirmenDesign.laden()).thenReturn(
+                PdfDesign.aus("#1d4ed8", PdfDesignPruefung.testLogo(), "Musterbetrieb GmbH"));
+
+        byte[] pdf = quittungBytes();
+
+        assertTrue(PdfDesignPruefung.enthaeltFarbe(pdf, BLAU), "Firmenfarbe fehlt im PDF");
+        assertFalse(PdfDesignPruefung.enthaeltFarbe(pdf, PdfFarben.STANDARD_AKZENT), "Festes Rot darf nicht bleiben");
+        assertEquals(1, PdfDesignPruefung.anzahlBilder(pdf), "Logo aus dem Firmendesign fehlt");
+    }
+
+    @Test
+    void quittung_ohneFirmenfarbe_bleibtBeimBisherigenRotUndOhneLogo() throws Exception {
+        byte[] pdf = quittungBytes();
+
+        assertTrue(PdfDesignPruefung.enthaeltFarbe(pdf, PdfFarben.STANDARD_AKZENT));
+        assertEquals(0, PdfDesignPruefung.anzahlBilder(pdf), "Ohne hinterlegtes Logo kein Ersatzlogo");
     }
 }

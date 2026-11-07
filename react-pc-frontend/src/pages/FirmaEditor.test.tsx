@@ -36,6 +36,16 @@ it('erhält leere Tagesentwürfe und prüft ganze Tage sowie Komma-Prozente vor 
     await waitFor(() => expect(fetcher.mock.calls.some(([, init]) => init?.method === 'PUT' && JSON.parse(init.body).bgSatzOverride === 8.5)).toBe(true));
 });
 
+it('nennt unter der Firmenfarbe alle PDFs, in denen sie erscheint', async () => {
+    const firma = { id: 1, firmenname: 'Testbetrieb', firmenfarbe: '#500010' };
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async (url: string) => ({ ok: true, json: async () => url === '/api/firma' ? firma : [] })));
+    render(<MemoryRouter><ToastProvider><ConfirmProvider><FirmaEditor /></ConfirmProvider></ToastProvider></MemoryRouter>);
+    const hinweis = await screen.findByText(/^Akzentfarbe auf Rechnungen/);
+    for (const bereich of ['Report Centre', 'Belegen', 'Kassenbuch', 'Bestellungen', 'Projekt-Auswertung', 'Projektliste', 'Stückliste', 'bisherige Rot']) {
+        expect(hinweis).toHaveTextContent(bereich);
+    }
+});
+
 it('zeigt fehlgeschlagene Ladeanfragen im eigenen Toast',async()=>{
  vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:false,status:503,json:async()=>[]}));
  render(<MemoryRouter><ToastProvider><ConfirmProvider><FirmaEditor/></ConfirmProvider></ToastProvider></MemoryRouter>);

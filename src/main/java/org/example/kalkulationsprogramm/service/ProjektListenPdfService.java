@@ -4,15 +4,15 @@ import org.example.kalkulationsprogramm.util.PdfWriterFabrik;
 import org.openpdf.text.Document;
 import org.openpdf.text.Element;
 import org.openpdf.text.Font;
-import org.openpdf.text.FontFactory;
 import org.openpdf.text.PageSize;
-import org.openpdf.text.Paragraph;
-import org.openpdf.text.Rectangle;
 import org.openpdf.text.pdf.PdfPCell;
 import org.openpdf.text.pdf.PdfPTable;
 import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
+import org.example.kalkulationsprogramm.service.pdf.PdfBerichtBausteine;
+import org.example.kalkulationsprogramm.service.pdf.PdfDesign;
+import org.example.kalkulationsprogramm.service.pdf.PdfFirmenDesign;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,18 +26,19 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
-/** Erzeugt eine übersichtliche Liste aller Projekte, die noch nicht auf "Beendet" gesetzt wurden. */
+/**
+ * Erzeugt eine übersichtliche Liste aller Projekte, die noch nicht auf "Beendet" gesetzt wurden.
+ * Kopf mit Logo, Tabellenkopf und Wechselzeilen kommen aus dem Firmendesign ({@link PdfFirmenDesign}).
+ */
 @Service
 @RequiredArgsConstructor
 public class ProjektListenPdfService {
 
-    private static final Color HEADER_BG = new Color(220, 38, 38);
-    private static final Color ROW_ALT = new Color(254, 242, 242);
-    private static final Color BORDER = new Color(229, 231, 235);
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd.MM.yyyy");
     private static final NumberFormat CURRENCY_FORMAT = NumberFormat.getCurrencyInstance(Locale.GERMANY);
 
     private final ProjektRepository projektRepository;
+    private final PdfFirmenDesign pdfFirmenDesign;
 
     /**
      * Listet genau die Projekte auf, bei denen der Haken "Beendet" nicht gesetzt ist –
@@ -58,12 +59,9 @@ public class ProjektListenPdfService {
             PdfWriterFabrik.writer(document, output);
             document.open();
 
-            Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 18, new Color(30, 41, 59));
-            Font subtitleFont = FontFactory.getFont(FontFactory.HELVETICA, 10, new Color(100, 116, 139));
-            document.add(new Paragraph("Projekte in Arbeit", titleFont));
-            document.add(new Paragraph("Erstellt am " + LocalDate.now().format(DATE_FORMAT)
-                    + " · " + projekte.size() + " Projekte", subtitleFont));
-            document.add(new Paragraph(" "));
+            PdfDesign design = pdfFirmenDesign.laden();
+            PdfBerichtBausteine.kopf(document, design, "Projekte in Arbeit",
+                    "Erstellt am " + LocalDate.now().format(DATE_FORMAT) + " · " + projekte.size() + " Projekte");
 
             // Spaltenbreiten sind auf das schmalere Hochformat abgestimmt: Auftragsnummer,
             // Datum und Betrag brauchen genug Platz, damit sie nicht umbrechen – der Rest
@@ -74,40 +72,31 @@ public class ProjektListenPdfService {
             table.setHeaderRows(1);
             String[] headers = { "Art", "Auftragsnr.", "Kunde", "Bauvorhaben", "Angelegt", "Betrag" };
             for (String header : headers) {
-                PdfPCell cell = new PdfPCell(new Paragraph(header,
-                        FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9, Color.WHITE)));
-                cell.setBackgroundColor(HEADER_BG);
-                cell.setPadding(6);
-                cell.setBorder(Rectangle.NO_BORDER);
-                table.addCell(cell);
+                table.addCell(PdfBerichtBausteine.kopfZelle(header, design, Element.ALIGN_LEFT));
             }
 
-            Font cellFont = FontFactory.getFont(FontFactory.HELVETICA, 9, new Color(55, 65, 81));
             BigDecimal summe = BigDecimal.ZERO;
             for (int i = 0; i < projekte.size(); i++) {
                 Projekt projekt = projekte.get(i);
-                Color background = i % 2 == 0 ? Color.WHITE : ROW_ALT;
-                addCell(table, ermittleAuftragsart(projekt, folgeauftraege), cellFont, background, Element.ALIGN_CENTER);
-                addCell(table, projekt.getAuftragsnummer(), cellFont, background, Element.ALIGN_LEFT);
-                addCell(table, projekt.getKunde(), cellFont, background, Element.ALIGN_LEFT);
-                addCell(table, projekt.getBauvorhaben(), cellFont, background, Element.ALIGN_LEFT);
-                addCell(table, projekt.getAnlegedatum() == null ? "" : projekt.getAnlegedatum().format(DATE_FORMAT), cellFont, background, Element.ALIGN_LEFT);
+                Color hintergrund = i % 2 == 0 ? Color.WHITE : design.akzentHell();
+                table.addCell(zelle(ermittleAuftragsart(projekt, folgeauftraege), hintergrund, Element.ALIGN_CENTER));
+                table.addCell(zelle(projekt.getAuftragsnummer(), hintergrund, Element.ALIGN_LEFT));
+                table.addCell(zelle(projekt.getKunde(), hintergrund, Element.ALIGN_LEFT));
+                table.addCell(zelle(projekt.getBauvorhaben(), hintergrund, Element.ALIGN_LEFT));
+                table.addCell(zelle(projekt.getAnlegedatum() == null ? "" : projekt.getAnlegedatum().format(DATE_FORMAT),
+                        hintergrund, Element.ALIGN_LEFT));
                 BigDecimal betrag = projekt.getBruttoPreis() == null ? BigDecimal.ZERO : projekt.getBruttoPreis();
-                addCell(table, CURRENCY_FORMAT.format(betrag), cellFont, background, Element.ALIGN_RIGHT);
+                table.addCell(zelle(CURRENCY_FORMAT.format(betrag), hintergrund, Element.ALIGN_RIGHT));
                 summe = summe.add(betrag);
             }
 
-            PdfPCell sumLabel = new PdfPCell(new Paragraph("Gesamtsumme", FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9)));
+            Font summenSchrift = PdfBerichtBausteine.schrift(9, Font.BOLD, PdfDesign.TEXT_DUNKEL);
+            PdfPCell sumLabel = PdfBerichtBausteine.zelle("Gesamtsumme", PdfDesign.SUMME_HINTERGRUND,
+                    Element.ALIGN_RIGHT, summenSchrift);
             sumLabel.setColspan(5);
-            sumLabel.setHorizontalAlignment(Element.ALIGN_RIGHT);
-            sumLabel.setPadding(6);
-            sumLabel.setBackgroundColor(new Color(241, 245, 249));
             table.addCell(sumLabel);
-            PdfPCell sumValue = new PdfPCell(new Paragraph(CURRENCY_FORMAT.format(summe), FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9)));
-            sumValue.setHorizontalAlignment(Element.ALIGN_RIGHT);
-            sumValue.setPadding(6);
-            sumValue.setBackgroundColor(new Color(241, 245, 249));
-            table.addCell(sumValue);
+            table.addCell(PdfBerichtBausteine.zelle(CURRENCY_FORMAT.format(summe), PdfDesign.SUMME_HINTERGRUND,
+                    Element.ALIGN_RIGHT, summenSchrift));
 
             document.add(table);
             document.close();
@@ -117,14 +106,9 @@ public class ProjektListenPdfService {
         }
     }
 
-    private void addCell(PdfPTable table, String value, Font font, Color background, int alignment) {
-        PdfPCell cell = new PdfPCell(new Paragraph(value == null ? "" : value, font));
-        cell.setBackgroundColor(background);
-        cell.setBorderColor(BORDER);
-        cell.setBorderWidth(0.5f);
-        cell.setPadding(5);
-        cell.setHorizontalAlignment(alignment);
-        table.addCell(cell);
+    private static PdfPCell zelle(String wert, Color hintergrund, int ausrichtung) {
+        return PdfBerichtBausteine.zelle(wert, hintergrund, ausrichtung,
+                PdfBerichtBausteine.schrift(9, Font.NORMAL, PdfDesign.TEXT_ZELLE));
     }
 
     /** "F" = Folgeauftrag (Kunde hatte schon ein Projekt), "E" = Erstauftrag. */

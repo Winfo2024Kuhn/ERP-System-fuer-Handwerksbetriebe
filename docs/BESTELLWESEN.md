@@ -195,7 +195,8 @@ Das Senden setzt **nicht** automatisch „Bestellt“ – das Häkchen setzt man
 
 Das PDF ist A4 quer und enthält:
 
-- **Kopf:** Firmenlogo.
+- **Kopf:** Firmenlogo (aus Vorlagen & Stammdaten → Firma; ohne Logo bleibt der Kopf leer).
+- **Farben:** Überschrift „Bauvorhaben: …“ und Tabellenkopf in der Firmenfarbe, ohne hinterlegte Farbe im bisherigen Rot (#dc2626); die Wechselzeilen bleiben grau.
 - **Hinweistext:** je Auftrag eine eigene Rechnung, Lieferungen möglichst zusammenfassen, Zuschnitte auf die Lagerlängen optimieren.
 - **Je Bauvorhaben eine Tabelle** („Bauvorhaben: <Name>“) mit den Spalten Projektnummer, Kunde, Artikelnummer, Produkt, Produkttext, Form (Schnittbild-Symbol), Winkel L, Winkel R, Kommentar, Werkstoff, Kategorie, Menge.
 - **Am Ende:** eine feste Übersicht der Schnittbilder, wenn sie im Programm hinterlegt ist.
