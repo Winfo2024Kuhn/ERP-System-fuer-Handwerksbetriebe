@@ -8,8 +8,12 @@ import org.openpdf.text.pdf.PdfPCell;
 import org.openpdf.text.pdf.PdfPTable;
 import org.openpdf.text.pdf.PdfWriter;
 import lombok.AllArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.dto.Bestellung.BestellungResponseDto;
 import org.example.kalkulationsprogramm.repository.SchnittbilderRepository;
+import org.example.kalkulationsprogramm.service.pdf.PdfBerichtBausteine;
+import org.example.kalkulationsprogramm.service.pdf.PdfDesign;
+import org.example.kalkulationsprogramm.service.pdf.PdfFirmenDesign;
 import org.springframework.stereotype.Service;
 
 import java.awt.*;
@@ -24,6 +28,11 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
+/**
+ * Bestell-PDFs für Lieferanten und Projekte. Logo und Firmenfarbe (Titel, Tabellenkopf)
+ * kommen aus {@link PdfFirmenDesign}; ohne hinterlegte Farbe das bisherige Rot (#dc2626).
+ */
+@Slf4j
 @Service
 @AllArgsConstructor
 public class BestellungPdfService {
@@ -31,8 +40,10 @@ public class BestellungPdfService {
     private final BestellungService bestellungService;
     private final SchnittbilderRepository schnittbilderRepository;
     private final DateiSpeicherService dateiSpeicherService;
-    private final FirmeninformationService firmeninformationService;
+    private final PdfFirmenDesign pdfFirmenDesign;
 
+    /** Graue Wechselzeile – bewusst neutral, nicht in der Firmenfarbe. */
+    private static final Color WECHSELZEILE = new Color(245, 245, 245);
     private static final byte[] NO_IMAGE = new byte[0];
     private final Map<String, byte[]> schnittbildIconCache = new ConcurrentHashMap<>();
 
@@ -52,7 +63,8 @@ public class BestellungPdfService {
             writer.setCompressionLevel(0);
             doc.open();
 
-            addCompanyLogo(doc);
+            PdfDesign design = pdfFirmenDesign.laden();
+            PdfBerichtBausteine.logo(doc, design, 150, 70);
             doc.add(new Paragraph(" "));
             String infoText = "Bitte stellen Sie je Auftrag eine separate Rechnung aus. Lieferungen können – wenn möglich – +"
                     +
@@ -63,11 +75,9 @@ public class BestellungPdfService {
             info.setSpacingAfter(15f);
             doc.add(info);
 
-            Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 16, new Color(204, 0, 0));
-            Font headerFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10, Color.WHITE);
-            Font cellFont = FontFactory.getFont(FontFactory.HELVETICA, 8);
-            Color headerBg = new Color(204, 0, 0);
-            Color altBg = new Color(245, 245, 245);
+            Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 16, design.akzent());
+            Font cellFont = PdfBerichtBausteine.schrift(8, Font.NORMAL, Color.BLACK);
+            Color altBg = WECHSELZEILE;
             for (Map.Entry<String, List<BestellungResponseDto>> entry : byProjekt.entrySet()) {
                 String heading = "Bauvorhaben: " + entry.getKey();
                 Paragraph title = new Paragraph(heading, titleFont);
@@ -78,9 +88,7 @@ public class BestellungPdfService {
                 String[] headers = { "Projektnummer", "Kunde", "Artikelnummer", "Produkt", "Produkttext", "Form",
                         "Winkel L", "Winkel R", "Kommentar", "Werkstoff", "Kategorie", "Menge" };
                 for (String h : headers) {
-                    PdfPCell cell = new PdfPCell(new Phrase(h, headerFont));
-                    cell.setBackgroundColor(headerBg);
-                    table.addCell(cell);
+                    table.addCell(PdfBerichtBausteine.kopfZelle(h, design, Element.ALIGN_LEFT));
                 }
                 boolean alternate = false;
                 for (BestellungResponseDto b : entry.getValue()) {
@@ -137,8 +145,7 @@ public class BestellungPdfService {
                 }
             } catch (IOException ignored) {
             }
-            System.out.println("[BestellungPdfService] Generated file: " + temp.toAbsolutePath() + ", exists="
-                    + Files.exists(temp));
+            log.debug("Bestell-PDF erzeugt: {}", temp.getFileName());
             if (!Files.exists(temp)) {
                 Files.createDirectories(temp.getParent());
                 Files.createFile(temp);
@@ -167,7 +174,8 @@ public class BestellungPdfService {
             writer.setCompressionLevel(0);
             doc.open();
 
-            addCompanyLogo(doc);
+            PdfDesign design = pdfFirmenDesign.laden();
+            PdfBerichtBausteine.logo(doc, design, 150, 70);
             doc.add(new Paragraph(" "));
             String infoText = "Bitte stellen Sie je Auftrag eine separate Rechnung aus. " +
                     "Lieferungen können – wenn möglich – zusammengefasst werden; idealerweise erfolgt eine Gesamtsendung, "
@@ -178,11 +186,9 @@ public class BestellungPdfService {
             info.setSpacingAfter(15f);
             doc.add(info);
 
-            Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 16, new Color(204, 0, 0));
-            Font headerFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10, Color.WHITE);
-            Font cellFont = FontFactory.getFont(FontFactory.HELVETICA, 8);
-            Color headerBg = new Color(204, 0, 0);
-            Color altBg = new Color(245, 245, 245);
+            Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 16, design.akzent());
+            Font cellFont = PdfBerichtBausteine.schrift(8, Font.NORMAL, Color.BLACK);
+            Color altBg = WECHSELZEILE;
 
             for (Map.Entry<String, List<BestellungResponseDto>> entry : byKat.entrySet()) {
                 String heading = entry.getKey();
@@ -194,9 +200,7 @@ public class BestellungPdfService {
                 String[] headers = { "Artikelnummer", "Produkt", "Produkttext", "Form", "Winkel L", "Winkel R",
                         "Werkstoff", "Kommentar", "Menge" };
                 for (String h : headers) {
-                    PdfPCell cell = new PdfPCell(new Phrase(h, headerFont));
-                    cell.setBackgroundColor(headerBg);
-                    table.addCell(cell);
+                    table.addCell(PdfBerichtBausteine.kopfZelle(h, design, Element.ALIGN_LEFT));
                 }
                 boolean alternate = false;
                 for (BestellungResponseDto b : entry.getValue()) {
@@ -260,21 +264,6 @@ public class BestellungPdfService {
         }
     }
 
-    /**
-     * Fuegt das hochgeladene Firmenlogo oben im PDF ein. Ist kein Logo hinterlegt
-     * (oder die Datei fehlt), wird das Logo weggelassen – es gibt bewusst
-     * keinen Fallback auf ein Software-Logo, damit niemals ein fremdes Logo
-     * auf Handwerker-Dokumenten erscheint.
-     */
-    private void addCompanyLogo(Document doc) throws DocumentException {
-        Image logo = firmeninformationService.loadLogoImage();
-        if (logo == null) {
-            return;
-        }
-        logo.scaleToFit(150, 70);
-        doc.add(logo);
-    }
-
     private PdfPCell makeCutCell(String form, Font font, Color bg) {
         if (form == null || form.isBlank()) {
             return makeCell("", font, bg);
@@ -293,7 +282,7 @@ public class BestellungPdfService {
             cell.setVerticalAlignment(Element.ALIGN_MIDDLE);
             cell.setPadding(2f);
             cell.addElement(icon);
-            Paragraph label = new Paragraph("Form " + form, FontFactory.getFont(FontFactory.HELVETICA, 6));
+            Paragraph label = new Paragraph("Form " + form, PdfBerichtBausteine.schrift(6, Font.NORMAL, Color.BLACK));
             label.setAlignment(Element.ALIGN_CENTER);
             cell.addElement(label);
             return cell;

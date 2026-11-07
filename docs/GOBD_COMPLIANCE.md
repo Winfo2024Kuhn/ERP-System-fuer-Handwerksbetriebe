@@ -500,7 +500,7 @@ Belege durchlaufen nach dem Upload einen KI-Analyse-Workflow (`BelegKiAnalyseSta
 
 ### 11.3 Monatsexport für den Steuerberater
 
-Der `BelegeKasseExportPdfService` erzeugt das **Monats-Kassenbuch als PDF** (Briefkopf, Festschreibungsstand, fortlaufendes Journal mit laufendem Kassenbestand, Kassenstürze und die Belegbilder – ein Beleg pro Seite mit Nummer und Fingerabdruck der Datei), das an den Steuerberater übergeben wird. Zusammen mit dem DATEV-Export entspricht das dem Lieferweg „Vorsystem → Buchhaltung“ und ist die GoBD-relevante Übergabestelle.
+Der `BelegeKasseExportPdfService` erzeugt das **Monats-Kassenbuch als PDF** (Briefkopf, Festschreibungsstand, fortlaufendes Journal mit laufendem Kassenbestand, Kassenstürze und die Belegbilder – ein Beleg pro Seite mit Nummer und Fingerabdruck der Datei), das an den Steuerberater übergeben wird. Der Service setzt das PDF nur zusammen: Journal, Summenblock und Kassenstürze baut `service/kassenbuchpdf/KassenbuchJournalPdf`, den Belegbilder-Anhang `KassenbuchBelegbilderPdf`. Logo und Firmenfarbe kommen aus dem gemeinsamen Firmendesign; der Festschreibungsstand bleibt unabhängig davon grün („abgeschlossen“) bzw. rot („VORLÄUFIG“). Zusammen mit dem DATEV-Export entspricht das dem Lieferweg „Vorsystem → Buchhaltung“ und ist die GoBD-relevante Übergabestelle.
 
 ### 11.4 Hash-Kette des Kassenbuchs
 

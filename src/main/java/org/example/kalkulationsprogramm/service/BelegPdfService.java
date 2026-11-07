@@ -1,7 +1,6 @@
 package org.example.kalkulationsprogramm.service;
 
 import org.example.kalkulationsprogramm.util.PdfWriterFabrik;
-import org.openpdf.text.BadElementException;
 import org.openpdf.text.Document;
 import org.openpdf.text.DocumentException;
 import org.openpdf.text.Element;
@@ -17,7 +16,6 @@ import org.openpdf.text.pdf.PdfPTable;
 
 import java.awt.Color;
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -36,6 +34,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.domain.Firmeninformation;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.repository.FirmeninformationRepository;
+import org.example.kalkulationsprogramm.service.pdf.PdfDesign;
+import org.example.kalkulationsprogramm.service.pdf.PdfFirmenDesign;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -55,10 +55,11 @@ import org.springframework.stereotype.Service;
  * Der Hash landet stattdessen ueber {@code Beleg.dateiHash} an der Buchung,
  * genau dort, wo ihn auch ein gescannter Beleg hat.</p>
  *
- * <p>Layout und Farbpalette sind bewusst an {@link BelegeKasseExportPdfService}
- * angelehnt (gleicher Briefkopf, gleiche OpenPDF-Bibliothek), aber als eigene
- * private Kopien gehalten -- dieser Service kennt {@code Beleg} nicht und
- * arbeitet ausschliesslich mit den beiden Daten-Records.</p>
+ * <p>Layout ist bewusst an {@link BelegeKasseExportPdfService} angelehnt (gleicher
+ * Briefkopf, gleiche OpenPDF-Bibliothek). Logo und Firmenfarbe (Titel) kommen aus
+ * {@link PdfFirmenDesign}; ohne hinterlegte Farbe bleibt es beim bisherigen Rot.
+ * Dieser Service kennt {@code Beleg} nicht und arbeitet ausschliesslich mit den
+ * beiden Daten-Records.</p>
  */
 @Slf4j
 @Service
@@ -66,17 +67,17 @@ import org.springframework.stereotype.Service;
 public class BelegPdfService {
 
     private final FirmeninformationRepository firmeninformationRepository;
+    private final PdfFirmenDesign pdfFirmenDesign;
 
     @Value("${upload.path:uploads}")
     private String uploadPath;
 
-    // Dieselbe Farbpalette wie BelegeKasseExportPdfService (Zeile 79-88 dort) --
-    // eigene Kopie, damit dieser Service unabhaengig bleibt.
-    private static final Color HEADER_BG   = new Color(220, 38, 38);   // rose-600
-    private static final Color BORDER      = new Color(229, 231, 235); // slate-200
-    private static final Color TEXT_DARK   = new Color(30, 41, 59);    // slate-800
-    private static final Color TEXT_MUTED  = new Color(100, 116, 139); // slate-500
-    private static final Color TEXT_CELL   = new Color(55, 65, 81);    // slate-700
+    // Gedaempfte Textfarben aus dem gemeinsamen PDF-Design; die Akzentfarbe (Titel)
+    // und das Logo kommen je PDF aus PdfFirmenDesign.laden().
+    private static final Color BORDER      = PdfDesign.RAHMEN;
+    private static final Color TEXT_DARK   = PdfDesign.TEXT_DUNKEL;
+    private static final Color TEXT_MUTED  = PdfDesign.TEXT_GEDAEMPFT;
+    private static final Color TEXT_CELL   = PdfDesign.TEXT_ZELLE;
     private static final Color FOOTER_GREY = new Color(148, 163, 184); // slate-400
 
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("dd.MM.yyyy");
@@ -165,9 +166,10 @@ public class BelegPdfService {
         PdfWriterFabrik.writer(doc, out);
         doc.open();
 
+        PdfDesign design = pdfFirmenDesign.laden();
         Firmeninformation firma = firmeninformationRepository.findFirmeninformation().orElse(null);
-        addBriefkopf(doc, firma);
-        addTitel(doc, titel);
+        addBriefkopf(doc, firma, design.logo());
+        addTitel(doc, titel, design);
         addWerteTabelle(doc, zeilen);
         addFusstext(doc, fusstext);
         addErstellerZeile(doc, ersteller);
@@ -177,14 +179,13 @@ public class BelegPdfService {
     }
 
     /**
-     * Briefkopf mit Firmenlogo links und Firmenstammdaten rechts -- eigene
-     * Kopie von {@code BelegeKasseExportPdfService.addBriefkopf}. Fallbacks:
-     * Logo nicht gepflegt/Datei fehlt: nur Firmen-Text rechts. Keine
-     * Firmeninformation in der DB: nur das (eventuelle) Static-Logo. Beides
-     * fehlt: stillschweigend ueberspringen -- PDF bleibt valide.
+     * Briefkopf mit Firmenlogo (aus dem Firmendesign) links und Firmenstammdaten
+     * rechts. Fallbacks: kein Logo hinterlegt: nur Firmen-Text rechts (bewusst kein
+     * Software-Logo als Ersatz). Keine Firmeninformation in der DB: nur das Logo.
+     * Beides fehlt: stillschweigend ueberspringen -- PDF bleibt valide.
      */
-    private void addBriefkopf(Document doc, Firmeninformation firma) throws DocumentException {
-        Image logo = ladeFirmenlogo(firma);
+    private void addBriefkopf(Document doc, Firmeninformation firma, Image firmenlogo) throws DocumentException {
+        Image logo = firmenlogo == null ? null : Image.getInstance(firmenlogo);
         if (logo == null && firma == null) {
             return;
         }
@@ -229,33 +230,6 @@ public class BelegPdfService {
         doc.add(kopf);
     }
 
-    private Image ladeFirmenlogo(Firmeninformation firma) {
-        String dateiname = firma != null ? firma.getLogoDateiname() : null;
-        if (dateiname != null && !dateiname.isBlank()) {
-            // Pfad-Traversal blocken -- Defense-in-Depth, der Upload-Pfad sollte
-            // den Dateinamen ohnehin sanitisieren, aber wir pruefen hier nochmal.
-            String safe = dateiname.trim();
-            if (!safe.contains("..") && !safe.contains("/") && !safe.contains("\\")) {
-                Path base = Path.of(uploadPath, "firma", "logo").toAbsolutePath().normalize();
-                Path logoPath = base.resolve(safe).normalize();
-                if (logoPath.startsWith(base) && Files.exists(logoPath)) {
-                    try {
-                        return Image.getInstance(logoPath.toString());
-                    } catch (IOException | BadElementException ex) {
-                        // Datei kaputt / kein gueltiges Bild -- Fallback unten greift
-                    }
-                }
-            }
-        }
-        try {
-            java.net.URL url = getClass().getResource("/static/firmenlogo_icon.png");
-            if (url != null) return Image.getInstance(url);
-        } catch (IOException | BadElementException ignored) {
-            // Kein Logo verfuegbar -- PDF wird ohne Logo gerendert.
-        }
-        return null;
-    }
-
     private void addRightLine(PdfPCell cell, String text, Font font) {
         if (text == null || text.isBlank()) return;
         Paragraph p = new Paragraph(text, font);
@@ -278,8 +252,9 @@ public class BelegPdfService {
         return prefix + value.trim();
     }
 
-    private void addTitel(Document doc, String titel) throws DocumentException {
-        Font titelFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 18, TEXT_DARK);
+    /** Titel ("Quittung", "Ersatzbeleg") in der Firmenfarbe. */
+    private void addTitel(Document doc, String titel, PdfDesign design) throws DocumentException {
+        Font titelFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 18, design.akzent());
         Paragraph p = new Paragraph(titel, titelFont);
         p.setSpacingBefore(4f);
         p.setSpacingAfter(12f);

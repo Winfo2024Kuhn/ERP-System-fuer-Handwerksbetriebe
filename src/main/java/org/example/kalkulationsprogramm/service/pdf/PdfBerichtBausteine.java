@@ -25,8 +25,8 @@ import java.util.Locale;
 import java.time.format.DateTimeFormatter;
 
 /**
- * Wiederkehrende Bausteine der Berichts-PDFs: Kopf mit Titel und Firmenlogo,
- * Tabellenzellen in Firmenfarbe und eine Fußzeile mit Firmenname, Datum und Seitenzahl.
+ * Wiederkehrende Bausteine der Berichts-PDFs: Kopf mit Titel und Firmenlogo (oder nur das
+ * Logo), Tabellenzellen in Firmenfarbe und eine Fußzeile mit Firmenname, Datum und Seitenzahl.
  */
 public final class PdfBerichtBausteine {
 
@@ -75,6 +75,20 @@ public final class PdfBerichtBausteine {
 
         zeile.setSpacingAfter(14f);
         document.add(zeile);
+    }
+
+    /**
+     * Firmenlogo als eigener Absatz (links oben), auf höchstens {@code breite} × {@code hoehe}
+     * verkleinert. Ohne hinterlegtes Logo passiert nichts – bewusst kein Software-Logo als Ersatz.
+     */
+    public static void logo(Document document, PdfDesign design, float breite, float hoehe)
+            throws DocumentException {
+        if (design.logo() == null) {
+            return;
+        }
+        Image kopie = Image.getInstance(design.logo());
+        kopie.scaleToFit(breite, hoehe);
+        document.add(kopie);
     }
 
     public static PdfPCell kopfZelle(String text, PdfDesign design, int ausrichtung) {
