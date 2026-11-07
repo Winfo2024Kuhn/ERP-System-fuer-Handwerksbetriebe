@@ -76,7 +76,7 @@ Baue Komponenten **nicht von Hand nach**, wenn ein MCP-Server sie liefern kann. 
   - `src/components/ui/`: Atome
   - `src/components/`: geteilte Fach-Bausteine
   - `src/features/{name}/`: Domänenlogik
-  - `src/hooks/`: geteilte React-Hooks (z. B. `useHakenSpeichern` für Haken in Listen: Zeile sperren, Fehler-Toast, neu laden; `useVerzoegertesLoeschen` für Löschen mit „Rückgängig“)
+  - `src/hooks/`: geteilte React-Hooks (z. B. `useHakenSpeichern` für Haken in Listen: Zeile sperren, Fehler-Toast, neu laden; `useVerzoegertesLoeschen` für Löschen mit „Rückgängig“; `useNavigationsSperre` hält Seiten- und Adresswechsel an, solange Ungesichertes offen ist, und fragt per `entscheiden` nach – Rückfrage „Verwerfen?“ auf „Leistungen & Kategorien“, Entwurf sichern im E-Mail-Center; optional Browser-Warnung beim Schließen. Kein eigenes `useBlocker` pro Seite)
   - `src/pages/`: Seiten
   - `src/lib/`: reine Hilfsfunktionen
 
