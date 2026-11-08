@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import { Plus, X } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -59,6 +60,7 @@ interface ZeileProps {
 }
 
 function AnsprechpartnerZeile({ ap, nummer, aendern, entfernen, alsLohnAnsprechpartner }: ZeileProps) {
+    const anredeId = useId();
     return (
         <div className="rounded-lg border border-slate-200 p-3 space-y-2 bg-slate-50">
             <div className="flex items-center justify-between">
@@ -68,15 +70,17 @@ function AnsprechpartnerZeile({ ap, nummer, aendern, entfernen, alsLohnAnsprechp
                     variant="ghost"
                     size="sm"
                     onClick={entfernen}
-                    aria-label="Ansprechpartner entfernen"
+                    aria-label={`Ansprechpartner ${nummer} entfernen`}
+                    title="Entfernen"
                 >
-                    <X className="w-4 h-4" />
+                    <X aria-hidden="true" className="w-4 h-4" />
                 </Button>
             </div>
             <div className="grid grid-cols-3 gap-2">
                 <div className="space-y-1">
-                    <Label className="text-xs">Anrede</Label>
+                    <Label htmlFor={anredeId} className="text-xs">Anrede</Label>
                     <Select
+                        id={anredeId}
                         options={ANREDE_OPTIONS}
                         value={ap.anrede || ''}
                         onChange={v => aendern({ anrede: v || null })}
@@ -105,10 +109,12 @@ function AnsprechpartnerZeile({ ap, nummer, aendern, entfernen, alsLohnAnsprechp
 }
 
 function KleinesFeld({ label, value, onChange }: { label: string; value: string; onChange: (wert: string) => void }) {
+    const id = useId();
     return (
         <div className="space-y-1">
-            <Label className="text-xs">{label}</Label>
+            <Label htmlFor={id} className="text-xs">{label}</Label>
             <Input
+                id={id}
                 value={value || ''}
                 onChange={e => onChange(e.target.value)}
             />

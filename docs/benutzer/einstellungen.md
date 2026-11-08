@@ -118,6 +118,14 @@ Die „Firmenfarbe“ färbt auf Rechnungen den Fortschrittsbalken im Abrechnung
 
 Weitere Reiter: „Lohn-Stammdaten“, „Unfallversicherung“, „Steuerberater“ (Kontakte für die Stundenübermittlung) und „Steuerprüfung“ (Prüfpaket für das Finanzamt).
 
+### Steuerberater
+
+Im Reiter „Steuerberater“ legt „Neuer Steuerberater“ eine Kanzlei an (Name, Telefon, Haupt-E-Mail, weitere Adressen, Ansprechpartner, „Gültig ab“/„Gültig bis“). Pflicht sind Name und Haupt-E-Mail. Die Unterreiter „Lohnabrechnungen im System“ und „BWA / Auswertungen“ zeigen, was schon abgelegt ist, gefiltert nach Jahr bzw. Steuerberater.
+
+Was im Hintergrund passiert: Kommt eine E-Mail von der Haupt-E-Mail eines Steuerberaters, liest das Programm die PDF-Anhänge und legt BWA und Lohnabrechnungen dort ab. Mit dem Haken „Auch andere E-Mail-Adressen der Kanzlei erkennen“ gilt das auch für andere Absender derselben Kanzlei (gleicher Teil nach dem @); auf der Karte steht dann „Ganze Kanzlei wird erkannt“. Ohne Haken zählt nur die Haupt-E-Mail.
+
+Löschen fragt nach und nennt den Namen. Der Steuerberater verschwindet aus der Liste, bereits abgelegte Lohnabrechnungen und BWA bleiben erhalten. Neue E-Mails dieser Kanzlei werden danach nicht mehr ausgewertet.
+
 ## Benutzer verwalten
 
 Oben rechts auf den eigenen Namen klicken → „Benutzer verwalten“ (nur Admins). Links stehen die Benutzer; das Plus legt einen neuen an. Felder:

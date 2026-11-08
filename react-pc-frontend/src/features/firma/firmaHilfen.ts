@@ -29,3 +29,7 @@ export function meldungAusFehlertext(text: string, ersatz: string, beiKeinemJson
         return beiKeinemJson(text);
     }
 }
+
+/** Trefferzahl über einer Liste: „1 Dokument gefunden“, sonst „n Dokumente gefunden“. */
+export const trefferText = (anzahl: number, einzahl: string, mehrzahl: string): string =>
+    `${anzahl} ${anzahl === 1 ? einzahl : mehrzahl} gefunden`;

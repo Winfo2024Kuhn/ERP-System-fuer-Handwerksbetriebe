@@ -4,6 +4,7 @@ import { designPruefung } from './hilfen/design';
 
 // Sichert die Firma-Seite nach dem Aufteilen von FirmaEditor.tsx (Issue #425):
 // alle Reiter, Unterreiter und der Steuerberater-Dialog erscheinen wie vorher.
+// Dazu: Steuerberater anlegen mit Ladezustand und Erfolgsmeldung, Erklärung am Haken.
 
 const JAHR = new Date().getFullYear();
 
@@ -47,6 +48,7 @@ test('Firma: alle Reiter, Steuerberater-Unterreiter und Dialog wie gewohnt', asy
         if (pfad === '/api/auth/me') return json(route, { id: 1, username: 'test', displayName: 'Test Büro', active: true, roles: ['ADMIN'], admin: true, requiresInitialSetup: false });
         if (pfad === '/api/notifications/summary') return json(route, { totalCount: 0, categories: [], recentItems: [] });
         if (pfad === '/api/firma') return json(route, FIRMA);
+        if (pfad === '/api/firma/steuerberater' && route.request().method() === 'POST') return json(route, { ...STEUERBERATER[0], id: 4, name: 'Kanzlei Musterfrau' });
         if (pfad === '/api/firma/steuerberater') return json(route, STEUERBERATER);
         if (pfad === '/api/lohn-stammdaten/gewerke') return json(route, [{ id: 4, name: 'Metallbau', bgName: 'BGHM', bgSatzProzent: 3.6, aktiv: true }]);
         if (pfad === '/api/lohnabrechnungen/jahre' || pfad === '/api/bwa/jahre') return json(route, [JAHR]);
@@ -72,7 +74,7 @@ test('Firma: alle Reiter, Steuerberater-Unterreiter und Dialog wie gewohnt', asy
 
     await page.getByRole('button', { name: 'Lohnabrechnungen im System' }).click();
     await expect(page.getByText('Max Mustermann')).toBeVisible();
-    await expect(page.getByText('1 Dokumente gefunden')).toBeVisible();
+    await expect(page.getByText('1 Dokument gefunden')).toBeVisible();
     await designPruefung(page, testInfo, 'firma-reiter-lohnabrechnungen');
 
     await page.getByRole('button', { name: 'BWA / Auswertungen' }).click();
@@ -81,11 +83,27 @@ test('Firma: alle Reiter, Steuerberater-Unterreiter und Dialog wie gewohnt', asy
 
     await page.getByRole('button', { name: 'Kontakte' }).click();
     await page.getByRole('button', { name: 'Neuer Steuerberater' }).click();
-    const dialog = page.getByRole('dialog').filter({ hasText: 'Neuer Steuerberater' });
+    const dialog = page.getByRole('dialog', { name: 'Neuer Steuerberater' });
     await dialog.getByRole('button', { name: 'Ansprechpartner hinzufügen' }).click();
     await expect(dialog.getByText('Ansprechpartner 1')).toBeVisible();
     await designPruefung(page, testInfo, 'firma-steuerberater-dialog', { primaerAktion: dialog.getByRole('button', { name: 'Speichern' }) });
 
+    // Erklärung am Haken: geöffnet, nichts abgeschnitten.
+    await dialog.getByRole('button', { name: 'Mehr zu: Andere E-Mail-Adressen der Kanzlei' }).click();
+    const info = page.getByRole('dialog', { name: 'Andere E-Mail-Adressen der Kanzlei' });
+    await expect(info.getByText('Ohne Haken werden nur E-Mails von der Haupt-E-Mail ausgewertet.', { exact: false })).toBeVisible();
+    await designPruefung(page, testInfo, 'firma-steuerberater-dialog-info');
+    await page.keyboard.press('Escape');
+    await expect(info).toBeHidden();
+
+    await dialog.getByRole('button', { name: 'Ansprechpartner 1 entfernen' }).click();
+    await dialog.getByLabel('Name', { exact: true }).fill('Kanzlei Musterfrau');
+    await dialog.getByLabel(/^Haupt-E-Mail/).fill('kanzlei@example.org');
+    await dialog.getByRole('button', { name: 'Speichern' }).click();
+    await expect(page.getByText('Steuerberater gespeichert.')).toBeVisible();
+    await expect(dialog).toBeHidden();
+
     expect(aufrufe).toContain(`GET /api/lohnabrechnungen/jahr/${JAHR}`);
     expect(aufrufe).toContain(`GET /api/bwa/jahr/${JAHR}`);
+    expect(aufrufe.filter(a => a === 'POST /api/firma/steuerberater')).toHaveLength(1);
 });

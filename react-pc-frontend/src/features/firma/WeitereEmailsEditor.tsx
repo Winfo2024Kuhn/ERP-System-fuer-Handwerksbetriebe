@@ -33,6 +33,7 @@ export function WeitereEmailsEditor({ weitereEmails, aktualisieren }: Props) {
             {weitereEmails.map((mail, idx) => (
                 <div key={idx} className="flex items-center gap-2">
                     <Input
+                        aria-label={`Weitere E-Mail-Adresse ${idx + 1}`}
                         value={mail}
                         onChange={e => {
                             const wert = e.target.value;
@@ -45,9 +46,10 @@ export function WeitereEmailsEditor({ weitereEmails, aktualisieren }: Props) {
                         variant="ghost"
                         size="sm"
                         onClick={() => aktualisieren(prev => weitereEmailEntfernen(prev, idx))}
-                        aria-label="E-Mail entfernen"
+                        aria-label={`Weitere E-Mail-Adresse ${idx + 1} entfernen`}
+                        title="Entfernen"
                     >
-                        <X className="w-4 h-4" />
+                        <X aria-hidden="true" className="w-4 h-4" />
                     </Button>
                 </div>
             ))}

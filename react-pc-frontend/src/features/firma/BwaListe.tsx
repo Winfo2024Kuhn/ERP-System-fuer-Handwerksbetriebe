@@ -1,7 +1,7 @@
 import { Download, RefreshCw } from 'lucide-react';
 import { Card } from '../../components/ui/card';
 import { UnterlagenFilter } from './UnterlagenFilter';
-import { formatiereBetrag } from './firmaHilfen';
+import { formatiereBetrag, trefferText } from './firmaHilfen';
 import type { BwaUploadDto } from './firmaTypen';
 import type { useSteuerberaterUnterlagen } from './useSteuerberaterUnterlagen';
 
@@ -18,7 +18,7 @@ export function BwaListe({ unterlagen }: Props) {
                 jahr={unterlagen.jahr}
                 verfuegbareJahre={unterlagen.verfuegbareJahre}
                 onJahr={unterlagen.setJahr}
-                anzahlText={`${bwaListe.length} Auswertungen gefunden`}
+                anzahlText={trefferText(bwaListe.length, 'Auswertung', 'Auswertungen')}
             />
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

@@ -1,3 +1,4 @@
+import { isoDatum } from '../../lib/datum';
 import type { SteuerberaterAnsprechpartner, SteuerberaterEntwurf } from './firmaTypen';
 
 // Reine Änderungen am Steuerberater im Dialog; jede liefert einen neuen Entwurf.
@@ -5,7 +6,7 @@ type Vorher = SteuerberaterEntwurf | null;
 
 /** Vorbelegung für „Neuer Steuerberater“. */
 export const neuerSteuerberater = (heute: Date): SteuerberaterEntwurf => ({
-    aktiv: true, autoProcessEmails: true, gueltigAb: heute.toISOString().split('T')[0],
+    aktiv: true, autoProcessEmails: true, gueltigAb: isoDatum(heute),
 });
 
 export const weitereEmailHinzufuegen = (prev: Vorher): SteuerberaterEntwurf => ({
@@ -52,3 +53,14 @@ export const lohnAnsprechpartnerSetzen = (prev: Vorher, idx: number): Steuerbera
     ...prev,
     ansprechpartnerListe: (prev?.ansprechpartnerListe || []).map((a, i) => ({ ...a, istLohnAnsprechpartner: i === idx })),
 });
+
+/**
+ * Prüft den Entwurf vor dem Speichern: Name und Haupt-E-Mail sind Pflicht
+ * (das Backend lehnt eine fehlende E-Mail ab), „Gültig ab“ darf leer bleiben.
+ * Liefert die Meldung für den Nutzer oder `null`, wenn alles passt.
+ */
+export function pruefeSteuerberaterEntwurf(entwurf: Vorher): string | null {
+    if (!entwurf?.name?.trim()) return 'Bitte Namen eintragen.';
+    if (!entwurf.email?.trim()) return 'Bitte Haupt-E-Mail eintragen.';
+    return null;
+}
