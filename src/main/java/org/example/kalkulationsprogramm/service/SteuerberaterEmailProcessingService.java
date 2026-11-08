@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.repository.*;
+import org.example.kalkulationsprogramm.util.FreemailDomains;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -88,7 +89,18 @@ public class SteuerberaterEmailProcessingService {
     }
 
     /**
-     * Findet Steuerberater anhand der E-Mail-Adresse oder Domain.
+     * Findet den Steuerberater zu einem Absender.
+     *
+     * <ol>
+     *   <li>Exakter Treffer der Haupt-E-Mail eines aktiven Steuerberaters – immer, auch auf
+     *       Freemail-Domains.</li>
+     *   <li>Exakter Treffer einer eingetragenen weiteren E-Mail eines aktiven Steuerberaters –
+     *       unabhängig von {@code autoProcessEmails}, denn die Adresse ist ausdrücklich
+     *       eingetragen; bei mehreren Kanzleien zählt die mit der kleinsten ID.</li>
+     *   <li>Domain-Match: andere Absender derselben Kanzlei-Domain, wenn der Steuerberater
+     *       {@code autoProcessEmails} hat. Nicht bei Freemail-Domains ({@link FreemailDomains}):
+     *       Bei gmx.de &amp; Co. wäre sonst jeder fremde Absender dieser Domain „die Kanzlei“.</li>
+     * </ol>
      */
     private SteuerberaterKontakt findSteuerberaterByEmail(String fromAddress) {
         if (fromAddress == null || fromAddress.isBlank()) {
@@ -103,12 +115,18 @@ public class SteuerberaterEmailProcessingService {
             return exact.get();
         }
 
-        // 2. Domain-Match (alle aktiven Steuerberater mit autoProcessEmails prüfen)
-        String domain = emailLower.contains("@") 
-                ? emailLower.substring(emailLower.lastIndexOf("@") + 1) 
+        // 2. Exakter Match auf eine eingetragene weitere E-Mail
+        List<SteuerberaterKontakt> weitere = steuerberaterRepository.findeAktiveMitWeitererEmail(emailLower);
+        if (!weitere.isEmpty()) {
+            return weitere.getFirst();
+        }
+
+        // 3. Domain-Match (alle aktiven Steuerberater mit autoProcessEmails prüfen)
+        String domain = emailLower.contains("@")
+                ? emailLower.substring(emailLower.lastIndexOf("@") + 1)
                 : null;
-        
-        if (domain != null) {
+
+        if (domain != null && !FreemailDomains.istFreemailDomain(domain)) {
             List<SteuerberaterKontakt> aktive = steuerberaterRepository.findByAktivTrueAndAutoProcessEmailsTrue();
             for (SteuerberaterKontakt sb : aktive) {
                 if (sb.getEmail() != null && sb.getEmail().toLowerCase().endsWith("@" + domain)) {

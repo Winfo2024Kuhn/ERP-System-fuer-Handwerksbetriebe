@@ -160,7 +160,7 @@ export function formatRecipientList(input?: string, singleNameOverride?: string)
 export { escapeHtml } from './htmlSanitizer';
 
 /** Liefert den Domain-Teil einer Adresse in Kleinbuchstaben, sonst einen leeren String. */
-function domainVon(value?: string): string {
+export function domainVon(value?: string): string {
     const address = extractEmailAddress(value).toLowerCase();
     const at = address.lastIndexOf("@");
     return at > 0 ? address.slice(at + 1) : "";

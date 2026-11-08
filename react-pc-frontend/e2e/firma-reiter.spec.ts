@@ -4,7 +4,8 @@ import { designPruefung } from './hilfen/design';
 
 // Sichert die Firma-Seite nach dem Aufteilen von FirmaEditor.tsx (Issue #425):
 // alle Reiter, Unterreiter und der Steuerberater-Dialog erscheinen wie vorher.
-// Dazu: Steuerberater anlegen mit Ladezustand und Erfolgsmeldung, Erklärung am Haken.
+// Dazu: Steuerberater anlegen mit Ladezustand und Erfolgsmeldung, Erklärung am Haken,
+// Hinweis bei Freemail-Haupt-E-Mail und Ablehnung einer falsch geschriebenen Haupt-E-Mail.
 
 const JAHR = new Date().getFullYear();
 
@@ -91,14 +92,34 @@ test('Firma: alle Reiter, Steuerberater-Unterreiter und Dialog wie gewohnt', asy
     // Erklärung am Haken: geöffnet, nichts abgeschnitten.
     await dialog.getByRole('button', { name: 'Mehr zu: Andere E-Mail-Adressen der Kanzlei' }).click();
     const info = page.getByRole('dialog', { name: 'Andere E-Mail-Adressen der Kanzlei' });
-    await expect(info.getByText('Ohne Haken werden nur E-Mails von der Haupt-E-Mail ausgewertet.', { exact: false })).toBeVisible();
+    await expect(info.getByText('Ohne Haken werden nur die Haupt-E-Mail und die weiteren E-Mail-Adressen ausgewertet.', { exact: false })).toBeVisible();
+    await expect(info.getByText('Bei Adressen von gmx.de, web.de, gmail.com, t-online.de', { exact: false })).toBeVisible();
     await designPruefung(page, testInfo, 'firma-steuerberater-dialog-info');
     await page.keyboard.press('Escape');
     await expect(info).toBeHidden();
 
     await dialog.getByRole('button', { name: 'Ansprechpartner 1 entfernen' }).click();
     await dialog.getByLabel('Name', { exact: true }).fill('Kanzlei Musterfrau');
-    await dialog.getByLabel(/^Haupt-E-Mail/).fill('kanzlei@example.org');
+    const hauptEmail = dialog.getByLabel(/^Haupt-E-Mail/);
+    const haken = dialog.getByRole('checkbox', { name: 'Auch andere E-Mail-Adressen der Kanzlei erkennen' });
+    const freemailHinweis = dialog.getByText('Die Haupt-E-Mail liegt bei einem freien Anbieter.', { exact: false });
+
+    // Freemail-Haupt-E-Mail: Hinweis unter dem Haken, verschwindet ohne Haken.
+    await hauptEmail.fill('max.mustermann@gmx.de');
+    await expect(haken).toBeChecked();
+    await expect(freemailHinweis).toBeVisible();
+    await designPruefung(page, testInfo, 'firma-steuerberater-dialog-freemail', { primaerAktion: dialog.getByRole('button', { name: 'Speichern' }) });
+    await haken.uncheck();
+    await expect(freemailHinweis).toBeHidden();
+
+    // Falsch geschriebene Haupt-E-Mail: Fehlermeldung, nichts wird gesendet.
+    await hauptEmail.fill('max@');
+    await dialog.getByRole('button', { name: 'Speichern' }).click();
+    await expect(page.getByText('Die Haupt-E-Mail sieht nicht richtig aus, bitte prüfen (Beispiel: name@kanzlei.de).')).toBeVisible();
+    await expect(dialog).toBeVisible();
+    expect(aufrufe.filter(a => /^(POST|PUT) \/api\/firma\/steuerberater/.test(a))).toHaveLength(0);
+
+    await hauptEmail.fill('kanzlei@example.org');
     await dialog.getByRole('button', { name: 'Speichern' }).click();
     await expect(page.getByText('Steuerberater gespeichert.')).toBeVisible();
     await expect(dialog).toBeHidden();
@@ -106,4 +127,5 @@ test('Firma: alle Reiter, Steuerberater-Unterreiter und Dialog wie gewohnt', asy
     expect(aufrufe).toContain(`GET /api/lohnabrechnungen/jahr/${JAHR}`);
     expect(aufrufe).toContain(`GET /api/bwa/jahr/${JAHR}`);
     expect(aufrufe.filter(a => a === 'POST /api/firma/steuerberater')).toHaveLength(1);
+    expect(aufrufe.filter(a => a.startsWith('PUT /api/firma/steuerberater'))).toHaveLength(0);
 });

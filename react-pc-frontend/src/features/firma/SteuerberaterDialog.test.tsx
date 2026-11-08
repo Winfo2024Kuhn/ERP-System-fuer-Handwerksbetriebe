@@ -102,4 +102,36 @@ describe('SteuerberaterDialog', () => {
         expect(await screen.findByText('Steuerberater gespeichert.')).toBeVisible();
         expect(screen.queryByRole('dialog', { name: 'Neuer Steuerberater' })).toBeNull();
     });
+    it('erklärt im Info-Button, dass der Haken bei Freemail-Adressen nicht greift', async () => {
+        const user = userEvent.setup();
+        rendern();
+        await user.click(screen.getByRole('button', { name: 'Öffnen' }));
+        const dialog = screen.getByRole('dialog', { name: 'Neuer Steuerberater' });
+        await user.click(within(dialog).getByRole('button', { name: /Mehr zu/ }));
+        expect(await screen.findByText(/Bei Adressen von gmx\.de, web\.de, gmail\.com, t-online\.de/)).toBeVisible();
+        expect(screen.getByText(/Ohne Haken werden nur die Haupt-E-Mail und die weiteren E-Mail-Adressen ausgewertet\./)).toBeVisible();
+        expect(screen.getByText(/von der Haupt-E-Mail oder einer der weiteren E-Mail-Adressen/)).toBeVisible();
+    });
+
+    it('zeigt bei Freemail-Haupt-E-Mail und gesetztem Haken einen Hinweis', async () => {
+        const user = userEvent.setup();
+        rendern();
+        await user.click(screen.getByRole('button', { name: 'Öffnen' }));
+        const d = within(screen.getByRole('dialog', { name: 'Neuer Steuerberater' }));
+        const hinweis = /gilt der Haken nicht/;
+        await user.type(d.getByLabelText(/^Haupt-E-Mail/), 'max.mustermann@gmx.de');
+        expect(d.getByText(hinweis)).toHaveTextContent(
+            'Die Haupt-E-Mail liegt bei einem freien Anbieter. Dort gilt der Haken nicht, erkannt werden nur die eingetragenen Adressen.',
+        );
+        await user.click(d.getByRole('checkbox', { name: 'Auch andere E-Mail-Adressen der Kanzlei erkennen' }));
+        expect(d.queryByText(hinweis)).toBeNull();
+    });
+
+    it('zeigt bei einer Kanzlei-Domain keinen Freemail-Hinweis', async () => {
+        const user = userEvent.setup();
+        rendern();
+        await user.click(screen.getByRole('button', { name: 'Bearbeiten öffnen' }));
+        const d = within(screen.getByRole('dialog', { name: 'Steuerberater bearbeiten' }));
+        expect(d.queryByText(/gilt der Haken nicht/)).toBeNull();
+    });
 });
