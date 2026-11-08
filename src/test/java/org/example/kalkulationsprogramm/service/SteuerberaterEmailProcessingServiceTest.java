@@ -348,4 +348,77 @@ class SteuerberaterEmailProcessingServiceTest {
 
         assertThat(verarbeitet).isTrue();
     }
+
+    /**
+     * Freemail-Domain: Hat der Steuerberater eine gmx.de-Adresse, ist nicht jeder
+     * gmx.de-Absender die Kanzlei. Kein Domain-Match, keine Zuordnung, keine Auswertung.
+     */
+    @Test
+    void fremdeAbsenderDerselbenFreemailDomainWerdenIgnoriert() {
+        SteuerberaterKontakt freemailKanzlei = freemailSteuerberater();
+        when(steuerberaterRepository.findByEmailIgnoreCase(anyString())).thenReturn(Optional.empty());
+        // lenient: nach dem Fix wird die Liste bei Freemail gar nicht mehr abgefragt
+        lenient().when(steuerberaterRepository.findByAktivTrueAndAutoProcessEmailsTrue())
+                .thenReturn(List.of(freemailKanzlei));
+        email.setFromAddress("Max.Mustermann@GMX.de");
+
+        boolean verarbeitet = service.processSteuerberaterEmail(email);
+
+        assertThat(verarbeitet).isFalse();
+        assertThat(email.getSteuerberater()).isNull();
+        verify(steuerberaterRepository, never()).findByAktivTrueAndAutoProcessEmailsTrue();
+        verify(emailRepository, never()).save(any());
+        verifyNoInteractions(dokumentAnalyseService);
+    }
+
+    /**
+     * Freemail-Domain: Die Haupt-E-Mail selbst wird weiterhin erkannt (exakter Treffer).
+     */
+    @Test
+    void hauptEmailAufFreemailDomainWirdWeiterhinErkannt() {
+        SteuerberaterKontakt freemailKanzlei = freemailSteuerberater();
+        when(steuerberaterRepository.findByEmailIgnoreCase("steuerbuero.mustermann@gmx.de"))
+                .thenReturn(Optional.of(freemailKanzlei));
+        when(lohnabrechnungRepository.existsBySourceEmailIdAndOriginalDateiname(anyLong(), anyString()))
+                .thenReturn(true); // Verarbeitung selbst hier nicht relevant
+        email.setFromAddress("steuerbuero.mustermann@gmx.de");
+
+        boolean verarbeitet = service.processSteuerberaterEmail(email);
+
+        assertThat(verarbeitet).isTrue();
+        assertThat(email.getSteuerberater()).isSameAs(freemailKanzlei);
+        verify(steuerberaterRepository, never()).findByAktivTrueAndAutoProcessEmailsTrue();
+    }
+
+    /**
+     * Ausdrücklich eingetragene weitere E-Mail einer Freemail-Kanzlei wird exakt erkannt –
+     * auch ohne Haken „andere Adressen der Kanzlei erkennen“.
+     */
+    @Test
+    void weitereEmailEinerFreemailKanzleiWirdErkannt() {
+        SteuerberaterKontakt freemailKanzlei = freemailSteuerberater();
+        freemailKanzlei.setAutoProcessEmails(false);
+        freemailKanzlei.getWeitereEmails().add("lohn.mustermann@gmx.de");
+        when(steuerberaterRepository.findByEmailIgnoreCase(anyString())).thenReturn(Optional.empty());
+        when(steuerberaterRepository.findeAktiveMitWeitererEmail("lohn.mustermann@gmx.de"))
+                .thenReturn(List.of(freemailKanzlei));
+        when(lohnabrechnungRepository.existsBySourceEmailIdAndOriginalDateiname(anyLong(), anyString()))
+                .thenReturn(true); // Verarbeitung selbst hier nicht relevant
+        email.setFromAddress("Lohn.Mustermann@gmx.de");
+
+        boolean verarbeitet = service.processSteuerberaterEmail(email);
+
+        assertThat(verarbeitet).isTrue();
+        assertThat(email.getSteuerberater()).isSameAs(freemailKanzlei);
+        verify(steuerberaterRepository, never()).findByAktivTrueAndAutoProcessEmailsTrue();
+    }
+
+    private SteuerberaterKontakt freemailSteuerberater() {
+        SteuerberaterKontakt kanzlei = new SteuerberaterKontakt();
+        kanzlei.setName("Steuerbüro Mustermann");
+        kanzlei.setEmail("steuerbuero.mustermann@gmx.de");
+        kanzlei.setAktiv(true);
+        kanzlei.setAutoProcessEmails(true);
+        return kanzlei;
+    }
 }

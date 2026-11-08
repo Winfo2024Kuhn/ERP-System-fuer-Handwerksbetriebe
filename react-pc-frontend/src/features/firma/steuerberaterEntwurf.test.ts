@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     ansprechpartnerAendern, ansprechpartnerEntfernen, ansprechpartnerHinzufuegen, lohnAnsprechpartnerSetzen,
-    neuerSteuerberater, pruefeSteuerberaterEntwurf, weitereEmailAendern, weitereEmailEntfernen, weitereEmailHinzufuegen,
+    kanzleiHakenGreiftNicht, neuerSteuerberater, pruefeSteuerberaterEntwurf, weitereEmailAendern, weitereEmailEntfernen, weitereEmailHinzufuegen,
 } from './steuerberaterEntwurf';
 import type { SteuerberaterEntwurf } from './firmaTypen';
 
@@ -72,5 +72,44 @@ describe('pruefeSteuerberaterEntwurf', () => {
 
     it('lässt einen vollständigen Entwurf durch, auch ohne „Gültig ab“', () => {
         expect(pruefeSteuerberaterEntwurf({ name: 'Kanzlei Mustermann', email: 'kanzlei@example.org', gueltigAb: '' })).toBeNull();
+    });
+
+    const FORMAT = 'Die Haupt-E-Mail sieht nicht richtig aus, bitte prüfen (Beispiel: name@kanzlei.de).';
+
+    it.each(['max', 'max@', 'a@b.de, c@d.de', '"Max" <max@example.com>', 'max mustermann@example.com'])(
+        'lehnt die Haupt-E-Mail „%s“ mit klarer Meldung ab',
+        email => {
+            expect(pruefeSteuerberaterEntwurf({ name: 'Kanzlei Mustermann', email })).toBe(FORMAT);
+        },
+    );
+
+    it('nimmt eine einzelne Adresse an, auch mit Leerzeichen am Rand', () => {
+        expect(pruefeSteuerberaterEntwurf({ name: 'Kanzlei Mustermann', email: 'max.mustermann@example.com' })).toBeNull();
+        expect(pruefeSteuerberaterEntwurf({ name: 'Kanzlei Mustermann', email: ' max.mustermann@example.com ' })).toBeNull();
+    });
+
+    it('prüft ausgefüllte weitere E-Mails und nennt die Nummer, leere Zeilen stören nicht', () => {
+        const basis = { name: 'Kanzlei Mustermann', email: 'kanzlei@example.org' };
+        expect(pruefeSteuerberaterEntwurf({ ...basis, weitereEmails: ['lohn@example.org', 'max@'] }))
+            .toBe('Die weitere E-Mail-Adresse 2 sieht nicht richtig aus, bitte prüfen (Beispiel: name@kanzlei.de).');
+        expect(pruefeSteuerberaterEntwurf({ ...basis, weitereEmails: ['', ' ', 'lohn@example.org'] })).toBeNull();
+    });
+});
+
+describe('kanzleiHakenGreiftNicht', () => {
+    it('meldet Freemail-Adressen nur bei gesetztem Haken', () => {
+        expect(kanzleiHakenGreiftNicht({ email: 'max.mustermann@GMX.de', autoProcessEmails: true })).toBe(true);
+        expect(kanzleiHakenGreiftNicht({ email: 'max.mustermann@gmx.de', autoProcessEmails: false })).toBe(false);
+    });
+
+    it('meldet nichts bei Kanzlei-Domain, leerer oder unfertiger Adresse', () => {
+        expect(kanzleiHakenGreiftNicht({ email: 'kanzlei@example.org', autoProcessEmails: true })).toBe(false);
+        expect(kanzleiHakenGreiftNicht({ email: '', autoProcessEmails: true })).toBe(false);
+        expect(kanzleiHakenGreiftNicht({ email: 'max', autoProcessEmails: true })).toBe(false);
+        expect(kanzleiHakenGreiftNicht(null)).toBe(false);
+    });
+
+    it('gilt auch, wenn der Haken nie angefasst wurde (Vorgabe: an)', () => {
+        expect(kanzleiHakenGreiftNicht({ email: 'max.mustermann@web.de' })).toBe(true);
     });
 });

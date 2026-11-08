@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+    domainVon,
     extractEmailAddress,
     extractDisplayName,
     formatRecipient,
@@ -122,6 +123,19 @@ describe('formatRecipient', () => {
 
     it('liefert leeren String ohne Eingabe', () => {
         expect(formatRecipient(undefined)).toBe('');
+    });
+});
+
+describe('domainVon', () => {
+    it('liefert die Domain in Kleinbuchstaben, auch mit Anzeigenamen', () => {
+        expect(domainVon('Max.Mustermann@GMX.de')).toBe('gmx.de');
+        expect(domainVon('"Max Mustermann" <max@Kanzlei.example>')).toBe('kanzlei.example');
+    });
+
+    it('liefert einen leeren String ohne erkennbare Domain', () => {
+        expect(domainVon(undefined)).toBe('');
+        expect(domainVon('max')).toBe('');
+        expect(domainVon('@gmx.de')).toBe('');
     });
 });
 

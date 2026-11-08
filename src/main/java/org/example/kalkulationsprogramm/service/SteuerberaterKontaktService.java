@@ -132,39 +132,6 @@ public class SteuerberaterKontaktService {
         });
     }
 
-    /**
-     * Prüft ob eine E-Mail-Adresse zu einem Steuerberater gehört (Haupt-EMail oder weitere).
-     */
-    @Transactional(readOnly = true)
-    public boolean istSteuerberaterEmail(String email) {
-        if (repository.existsByEmailIgnoreCaseAndAktivTrue(email)) return true;
-        
-        // Check manually in all active (since ElementCollection query might be complex to add to repo right now)
-        // Optimization: Create a repo method later properly
-        return repository.findByAktivTrue().stream()
-                .anyMatch(sk -> sk.getWeitereEmails() != null && sk.getWeitereEmails().stream().anyMatch(e -> e.equalsIgnoreCase(email)));
-    }
-
-    /**
-     * Findet den Steuerberater anhand der E-Mail-Adresse.
-     */
-    @Transactional(readOnly = true)
-    public SteuerberaterKontaktDto findByEmail(String email) {
-        // Try Primary
-        if (repository.existsByEmailIgnoreCaseAndAktivTrue(email)) {
-            return repository.findByEmailIgnoreCase(email)
-                    .map(this::toDto)
-                    .orElse(null);
-        }
-        
-        // Try Secondary
-        return repository.findByAktivTrue().stream()
-                .filter(sk -> sk.getWeitereEmails() != null && sk.getWeitereEmails().stream().anyMatch(e -> e.equalsIgnoreCase(email)))
-                .findFirst()
-                .map(this::toDto)
-                .orElse(null);
-    }
-
     private SteuerberaterKontaktDto toDto(SteuerberaterKontakt sk) {
         SteuerberaterKontaktDto dto = new SteuerberaterKontaktDto();
         dto.setId(sk.getId());

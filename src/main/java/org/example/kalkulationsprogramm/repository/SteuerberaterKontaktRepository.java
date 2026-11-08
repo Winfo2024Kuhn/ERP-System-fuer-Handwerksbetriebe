@@ -23,9 +23,12 @@ public interface SteuerberaterKontaktRepository extends JpaRepository<Steuerbera
     List<SteuerberaterKontakt> findByAktivTrueAndAutoProcessEmailsTrue();
 
     /**
-     * Prüft ob eine E-Mail-Adresse zu einem Steuerberater gehört.
+     * Aktive Kanzleien, bei denen die Adresse als weitere E-Mail eingetragen ist
+     * (Groß-/Kleinschreibung egal), nach ID sortiert.
      */
-    boolean existsByEmailIgnoreCaseAndAktivTrue(String email);
+    @Query("SELECT DISTINCT s FROM SteuerberaterKontakt s JOIN s.weitereEmails w "
+            + "WHERE s.aktiv = true AND LOWER(w) = LOWER(:email) ORDER BY s.id ASC")
+    List<SteuerberaterKontakt> findeAktiveMitWeitererEmail(@Param("email") String email);
 
     /** Telefonverzeichnis für die Anrufzuordnung: je Zeile {@code [id, name, telefon]} der Kanzlei. */
     @Query("SELECT s.id, s.name, s.telefon FROM SteuerberaterKontakt s WHERE s.telefon IS NOT NULL AND s.telefon <> ''")

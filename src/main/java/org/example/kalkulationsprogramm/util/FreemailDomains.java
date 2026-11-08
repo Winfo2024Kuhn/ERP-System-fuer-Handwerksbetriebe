@@ -5,15 +5,16 @@ import java.util.Set;
 
 /**
  * Freemail-Anbieter (gmail.com, gmx.de, t-online.de, …) für die Zuordnung von
- * E-Mails zu Lieferanten.
+ * E-Mails zu Partnern anhand der Absender-Domain (Lieferanten, Steuerberater).
  *
  * <p>Bei einer eigenen Firmen-Domain gehört jede Adresse dahinter zum selben Partner –
- * bei gmx.de oder t-online.de sagt die Domain gar nichts aus. Hat ein Lieferant so eine
- * Adresse, würde sonst jede fremde Mail derselben Domain auf seiner Karte landen. Bei
- * diesen Domains zählt deshalb nur die exakt hinterlegte Adresse, nie die Domain.</p>
+ * bei gmx.de oder t-online.de sagt die Domain gar nichts aus. Hat ein Lieferant oder
+ * Steuerberater so eine Adresse, würde sonst jede fremde Mail derselben Domain bei ihm
+ * landen. Bei diesen Domains zählt deshalb nur die exakt hinterlegte Adresse, nie die Domain.</p>
  *
- * <p>Einzige Quelle im Backend (genutzt von {@code LieferantEmailResolver} und dem
- * Rückwirkend-Zuordnen in {@code EmailBackfillEventListener}). Das PC-Frontend führt
+ * <p>Einzige Quelle im Backend (genutzt von {@code LieferantEmailResolver}, dem
+ * Rückwirkend-Zuordnen in {@code EmailBackfillEventListener} und der Kanzlei-Erkennung in
+ * {@code SteuerberaterEmailProcessingService}). Das PC-Frontend führt
  * dieselbe Liste in {@code react-pc-frontend/src/lib/freemailDomains.ts};
  * {@code FreemailDomainsTest} prüft, dass beide gleich bleiben.</p>
  */
