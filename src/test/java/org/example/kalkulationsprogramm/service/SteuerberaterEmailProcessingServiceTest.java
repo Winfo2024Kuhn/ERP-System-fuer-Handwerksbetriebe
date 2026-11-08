@@ -12,9 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -38,7 +36,7 @@ import static org.mockito.Mockito.*;
 class SteuerberaterEmailProcessingServiceTest {
 
     @Mock
-    private SteuerberaterKontaktRepository steuerberaterRepository;
+    private SteuerberaterAbsenderErkennung absenderErkennung;
     @Mock
     private MitarbeiterRepository mitarbeiterRepository;
     @Mock
@@ -49,10 +47,8 @@ class SteuerberaterEmailProcessingServiceTest {
     private EmailRepository emailRepository;
     @Mock
     private DokumentAnalyseService dokumentAnalyseService;
-    @Spy
-    private ObjectMapper objectMapper = JsonMapper.builderWithJackson2Defaults().build();
+    private final ObjectMapper objectMapper = JsonMapper.builderWithJackson2Defaults().build();
 
-    @InjectMocks
     private SteuerberaterEmailProcessingService service;
 
     @TempDir
@@ -69,9 +65,14 @@ class SteuerberaterEmailProcessingServiceTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        ReflectionTestUtils.setField(service, "mailAttachmentDir", mailAttachmentDir.toString());
-        ReflectionTestUtils.setField(service, "lohnabrechnungDir", lohnabrechnungDir.toString());
-        ReflectionTestUtils.setField(service, "bwaDir", lohnabrechnungDir.toString());
+        // Ablagen echt verdrahtet, damit Split, Zuordnung und Speichern mitgeprüft werden
+        SteuerberaterLohnabrechnungAblage lohnabrechnungAblage = new SteuerberaterLohnabrechnungAblage(
+                mitarbeiterRepository, lohnabrechnungRepository, lohnabrechnungDir.toString());
+        SteuerberaterBwaAblage bwaAblage = new SteuerberaterBwaAblage(
+                bwaUploadRepository, dokumentAnalyseService, objectMapper, mailAttachmentDir.toString());
+        service = new SteuerberaterEmailProcessingService(absenderErkennung, lohnabrechnungAblage, bwaAblage,
+                emailRepository, lohnabrechnungRepository, dokumentAnalyseService, objectMapper,
+                mailAttachmentDir.toString());
 
         steuerberater = new SteuerberaterKontakt();
         steuerberater.setName("Steuerkanzlei Test");
@@ -116,7 +117,7 @@ class SteuerberaterEmailProcessingServiceTest {
     }
 
     private void mockSteuerberaterErkannt() {
-        when(steuerberaterRepository.findByEmailIgnoreCase(anyString()))
+        when(absenderErkennung.erkenne("kanzlei@steuerkanzlei-test.example"))
                 .thenReturn(Optional.of(steuerberater));
     }
 
@@ -322,103 +323,73 @@ class SteuerberaterEmailProcessingServiceTest {
      */
     @Test
     void fremdeAbsenderWerdenIgnoriert() {
-        when(steuerberaterRepository.findByEmailIgnoreCase(anyString())).thenReturn(Optional.empty());
-        when(steuerberaterRepository.findByAktivTrueAndAutoProcessEmailsTrue()).thenReturn(List.of());
+        when(absenderErkennung.erkenne("max.mustermann@example.com")).thenReturn(Optional.empty());
         email.setFromAddress("max.mustermann@example.com");
 
         boolean verarbeitet = service.processSteuerberaterEmail(email);
 
         assertThat(verarbeitet).isFalse();
-        verifyNoInteractions(dokumentAnalyseService);
-    }
-
-    /**
-     * Domain-Match: Auch andere Absender derselben Kanzlei-Domain werden erkannt.
-     */
-    @Test
-    void andereAbsenderDerSteuerberaterDomainWerdenErkannt() {
-        when(steuerberaterRepository.findByEmailIgnoreCase(anyString())).thenReturn(Optional.empty());
-        when(steuerberaterRepository.findByAktivTrueAndAutoProcessEmailsTrue())
-                .thenReturn(List.of(steuerberater));
-        when(lohnabrechnungRepository.existsBySourceEmailIdAndOriginalDateiname(anyLong(), anyString()))
-                .thenReturn(true); // Verarbeitung selbst hier nicht relevant
-        email.setFromAddress("sekretariat@steuerkanzlei-test.example");
-
-        boolean verarbeitet = service.processSteuerberaterEmail(email);
-
-        assertThat(verarbeitet).isTrue();
-    }
-
-    /**
-     * Freemail-Domain: Hat der Steuerberater eine gmx.de-Adresse, ist nicht jeder
-     * gmx.de-Absender die Kanzlei. Kein Domain-Match, keine Zuordnung, keine Auswertung.
-     */
-    @Test
-    void fremdeAbsenderDerselbenFreemailDomainWerdenIgnoriert() {
-        SteuerberaterKontakt freemailKanzlei = freemailSteuerberater();
-        when(steuerberaterRepository.findByEmailIgnoreCase(anyString())).thenReturn(Optional.empty());
-        // lenient: nach dem Fix wird die Liste bei Freemail gar nicht mehr abgefragt
-        lenient().when(steuerberaterRepository.findByAktivTrueAndAutoProcessEmailsTrue())
-                .thenReturn(List.of(freemailKanzlei));
-        email.setFromAddress("Max.Mustermann@GMX.de");
-
-        boolean verarbeitet = service.processSteuerberaterEmail(email);
-
-        assertThat(verarbeitet).isFalse();
         assertThat(email.getSteuerberater()).isNull();
-        verify(steuerberaterRepository, never()).findByAktivTrueAndAutoProcessEmailsTrue();
         verify(emailRepository, never()).save(any());
         verifyNoInteractions(dokumentAnalyseService);
     }
 
     /**
-     * Freemail-Domain: Die Haupt-E-Mail selbst wird weiterhin erkannt (exakter Treffer).
+     * Erkannte Steuerberater-Mail wird dem Steuerberater zugeordnet und gespeichert.
      */
     @Test
-    void hauptEmailAufFreemailDomainWirdWeiterhinErkannt() {
-        SteuerberaterKontakt freemailKanzlei = freemailSteuerberater();
-        when(steuerberaterRepository.findByEmailIgnoreCase("steuerbuero.mustermann@gmx.de"))
-                .thenReturn(Optional.of(freemailKanzlei));
+    void erkannteMailWirdDemSteuerberaterZugeordnet() {
+        mockSteuerberaterErkannt();
         when(lohnabrechnungRepository.existsBySourceEmailIdAndOriginalDateiname(anyLong(), anyString()))
                 .thenReturn(true); // Verarbeitung selbst hier nicht relevant
-        email.setFromAddress("steuerbuero.mustermann@gmx.de");
 
-        boolean verarbeitet = service.processSteuerberaterEmail(email);
+        assertThat(service.processSteuerberaterEmail(email)).isTrue();
 
-        assertThat(verarbeitet).isTrue();
-        assertThat(email.getSteuerberater()).isSameAs(freemailKanzlei);
-        verify(steuerberaterRepository, never()).findByAktivTrueAndAutoProcessEmailsTrue();
+        assertThat(email.getSteuerberater()).isSameAs(steuerberater);
+        verify(emailRepository).save(email);
     }
 
     /**
-     * Ausdrücklich eingetragene weitere E-Mail einer Freemail-Kanzlei wird exakt erkannt –
-     * auch ohne Haken „andere Adressen der Kanzlei erkennen“.
+     * BWA-Dateiname geht ohne Klassifizierungs-Aufruf direkt an die BWA-Ablage.
      */
     @Test
-    void weitereEmailEinerFreemailKanzleiWirdErkannt() {
-        SteuerberaterKontakt freemailKanzlei = freemailSteuerberater();
-        freemailKanzlei.setAutoProcessEmails(false);
-        freemailKanzlei.getWeitereEmails().add("lohn.mustermann@gmx.de");
-        when(steuerberaterRepository.findByEmailIgnoreCase(anyString())).thenReturn(Optional.empty());
-        when(steuerberaterRepository.findeAktiveMitWeitererEmail("lohn.mustermann@gmx.de"))
-                .thenReturn(List.of(freemailKanzlei));
-        when(lohnabrechnungRepository.existsBySourceEmailIdAndOriginalDateiname(anyLong(), anyString()))
-                .thenReturn(true); // Verarbeitung selbst hier nicht relevant
-        email.setFromAddress("Lohn.Mustermann@gmx.de");
+    void bwaDateinameGehtDirektZurBwaAblage() {
+        mockSteuerberaterErkannt();
+        attachment.setOriginalFilename("BWA_2026-05.pdf");
+        when(bwaUploadRepository.existsBySourceEmailIdAndOriginalDateiname(42L, "BWA_2026-05.pdf"))
+                .thenReturn(true);
 
-        boolean verarbeitet = service.processSteuerberaterEmail(email);
+        assertThat(service.processSteuerberaterEmail(email)).isTrue();
 
-        assertThat(verarbeitet).isTrue();
-        assertThat(email.getSteuerberater()).isSameAs(freemailKanzlei);
-        verify(steuerberaterRepository, never()).findByAktivTrueAndAutoProcessEmailsTrue();
+        verifyNoInteractions(dokumentAnalyseService);
+        verify(lohnabrechnungRepository, never()).existsBySourceEmailIdAndOriginalDateiname(anyLong(), anyString());
     }
 
-    private SteuerberaterKontakt freemailSteuerberater() {
-        SteuerberaterKontakt kanzlei = new SteuerberaterKontakt();
-        kanzlei.setName("Steuerbüro Mustermann");
-        kanzlei.setEmail("steuerbuero.mustermann@gmx.de");
-        kanzlei.setAktiv(true);
-        kanzlei.setAutoProcessEmails(true);
-        return kanzlei;
+    /**
+     * Ohne verwertbare KI-Antwort rettet der Dateiname eine Lohnabrechnung:
+     * ganze PDF, Mitarbeiter und Monat aus dem Namen.
+     */
+    @Test
+    void ohneKiAntwortRettetDerDateinameDieLohnabrechnung() {
+        mockSteuerberaterErkannt();
+        attachment.setOriginalFilename("Lohn_Mustermann_2026-04.pdf");
+        when(mitarbeiterRepository.findAktiveMenschen()).thenReturn(List.of(max));
+        when(lohnabrechnungRepository.existsBySourceEmailIdAndOriginalDateiname(anyLong(), anyString()))
+                .thenReturn(false);
+        when(lohnabrechnungRepository.findByMitarbeiterIdAndJahrAndMonat(1L, 2026, 4))
+                .thenReturn(Optional.empty());
+        when(dokumentAnalyseService.rufKiMitPrompt(any(), anyString(), anyString(), anyBoolean()))
+                .thenReturn("kein JSON");
+
+        service.processSteuerberaterEmail(email);
+
+        ArgumentCaptor<Lohnabrechnung> captor = ArgumentCaptor.forClass(Lohnabrechnung.class);
+        verify(lohnabrechnungRepository).save(captor.capture());
+        Lohnabrechnung la = captor.getValue();
+        assertThat(la.getMitarbeiter()).isSameAs(max);
+        assertThat(la.getJahr()).isEqualTo(2026);
+        assertThat(la.getMonat()).isEqualTo(4);
+        assertThat(la.getBruttolohn()).isNull();
+        assertThat(lohnabrechnungDir.resolve(la.getGespeicherterDateiname())).exists();
     }
 }

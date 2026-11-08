@@ -21,7 +21,7 @@ class SteuerberaterBwaGemeinkostenTest {
     private final ObjectMapper mapper = JsonMapper.builderWithJackson2Defaults().build();
 
     private BigDecimal ausJson(String json) throws Exception {
-        return SteuerberaterEmailProcessingService.ermittleGemeinkosten(mapper.readTree(json));
+        return SteuerberaterBwaAblage.ermittleGemeinkosten(mapper.readTree(json));
     }
 
     @Test
