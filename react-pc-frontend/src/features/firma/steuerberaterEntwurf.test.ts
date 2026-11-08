@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     ansprechpartnerAendern, ansprechpartnerEntfernen, ansprechpartnerHinzufuegen, lohnAnsprechpartnerSetzen,
-    neuerSteuerberater, weitereEmailAendern, weitereEmailEntfernen, weitereEmailHinzufuegen,
+    neuerSteuerberater, pruefeSteuerberaterEntwurf, weitereEmailAendern, weitereEmailEntfernen, weitereEmailHinzufuegen,
 } from './steuerberaterEntwurf';
 import type { SteuerberaterEntwurf } from './firmaTypen';
 
@@ -13,6 +13,10 @@ describe('neuerSteuerberater', () => {
     it('startet aktiv, mit automatischer Verarbeitung und heutigem Datum', () => {
         expect(neuerSteuerberater(new Date('2026-11-08T10:00:00Z')))
             .toEqual({ aktiv: true, autoProcessEmails: true, gueltigAb: '2026-11-08' });
+    });
+
+    it('nimmt kurz nach Mitternacht das heutige Ortsdatum, nicht den UTC-Vortag', () => {
+        expect(neuerSteuerberater(new Date(2026, 2, 1, 0, 30)).gueltigAb).toBe('2026-03-01');
     });
 });
 
@@ -52,5 +56,21 @@ describe('Ansprechpartner', () => {
         const entwurf: SteuerberaterEntwurf = { ansprechpartnerListe: [ap('Mustermann', true), ap('Musterfrau')] };
         expect(ansprechpartnerEntfernen(entwurf, 0).ansprechpartnerListe).toEqual([ap('Musterfrau')]);
         expect(lohnAnsprechpartnerSetzen(entwurf, 1).ansprechpartnerListe?.map(a => a.istLohnAnsprechpartner)).toEqual([false, true]);
+    });
+});
+
+describe('pruefeSteuerberaterEntwurf', () => {
+    it('verlangt einen Namen', () => {
+        expect(pruefeSteuerberaterEntwurf(null)).toBe('Bitte Namen eintragen.');
+        expect(pruefeSteuerberaterEntwurf({ name: '   ', email: 'kanzlei@example.org' })).toBe('Bitte Namen eintragen.');
+    });
+
+    it('verlangt eine Haupt-E-Mail', () => {
+        expect(pruefeSteuerberaterEntwurf({ name: 'Kanzlei Mustermann' })).toBe('Bitte Haupt-E-Mail eintragen.');
+        expect(pruefeSteuerberaterEntwurf({ name: 'Kanzlei Mustermann', email: ' ' })).toBe('Bitte Haupt-E-Mail eintragen.');
+    });
+
+    it('lässt einen vollständigen Entwurf durch, auch ohne „Gültig ab“', () => {
+        expect(pruefeSteuerberaterEntwurf({ name: 'Kanzlei Mustermann', email: 'kanzlei@example.org', gueltigAb: '' })).toBeNull();
     });
 });

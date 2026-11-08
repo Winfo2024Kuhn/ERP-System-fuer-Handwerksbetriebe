@@ -31,31 +31,28 @@ export function useSteuerberaterUnterlagen(sichtbar: boolean, unterreiter: Steue
             showError('Abrechnungsjahre konnten nicht geladen werden.');
         }), [showError]);
 
-    const ladeLohnabrechnungen = useCallback(() => fetch(lohnabrechnungenUrl(steuerberaterFilter, jahr))
-        .then(async (res) => {
-            if (!res.ok) throw new Error('Lohnabrechnungen konnten nicht geladen werden.');
-            setLohnabrechnungen(await res.json());
-        })
-        .catch((e) => {
-            console.error('Fehler beim Laden der Lohnabrechnungen', e);
-            showError('Lohnabrechnungen konnten nicht geladen werden.');
-        }), [jahr, steuerberaterFilter, showError]);
-
-    const ladeBwaListe = useCallback(() => fetch(`/api/bwa/jahr/${jahr}`)
-        .then(async (res) => {
-            if (!res.ok) throw new Error('Auswertungen konnten nicht geladen werden.');
-            setBwaListe(await res.json());
-        })
-        .catch((e) => {
-            console.error('Fehler beim Laden der BWA-Liste', e);
-            showError('Auswertungen konnten nicht geladen werden.');
-        }), [jahr, showError]);
-
+    // Laden im Effekt: Jahr-, Filter- oder Reiterwechsel bricht die alte Anfrage ab,
+    // damit ihre späte Antwort die neuere Liste nicht überschreibt.
     useEffect(() => {
-        if (!sichtbar) return;
-        if (unterreiter === 'lohnabrechnungen') void ladeLohnabrechnungen();
-        if (unterreiter === 'bwa') void ladeBwaListe();
-    }, [sichtbar, unterreiter, ladeLohnabrechnungen, ladeBwaListe]);
+        if (!sichtbar || (unterreiter !== 'lohnabrechnungen' && unterreiter !== 'bwa')) return;
+        const abbruch = new AbortController();
+        const lohn = unterreiter === 'lohnabrechnungen';
+        const fehlertext = lohn ? 'Lohnabrechnungen konnten nicht geladen werden.' : 'Auswertungen konnten nicht geladen werden.';
+        const url = lohn ? lohnabrechnungenUrl(steuerberaterFilter, jahr) : `/api/bwa/jahr/${jahr}`;
+        fetch(url, { signal: abbruch.signal })
+            .then(async (res) => {
+                if (!res.ok) throw new Error(fehlertext);
+                const liste = await res.json();
+                if (abbruch.signal.aborted) return;
+                if (lohn) setLohnabrechnungen(liste); else setBwaListe(liste);
+            })
+            .catch((e) => {
+                if (abbruch.signal.aborted) return;
+                console.error(fehlertext, e);
+                showError(fehlertext);
+            });
+        return () => abbruch.abort();
+    }, [sichtbar, unterreiter, jahr, steuerberaterFilter, showError]);
 
     return {
         jahr, setJahr, verfuegbareJahre, steuerberaterFilter, setSteuerberaterFilter,

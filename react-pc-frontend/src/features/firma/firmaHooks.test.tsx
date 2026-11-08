@@ -8,7 +8,7 @@ import { useFirmaDaten } from './useFirmaDaten';
 import { useFirmenLogo } from './useFirmenLogo';
 import { useSteuerberaterKontakte } from './useSteuerberaterKontakte';
 import { useSteuerberaterUnterlagen } from './useSteuerberaterUnterlagen';
-import type { SteuerberaterUnterreiter } from './firmaTypen';
+import type { SteuerberaterKontakt, SteuerberaterUnterreiter } from './firmaTypen';
 
 /** Dummy-Daten (DSGVO): Max Mustermann, Kanzlei Mustermann. */
 const wrapper = ({ children }: { children: ReactNode }) => <ToastProvider><ConfirmProvider>{children}</ConfirmProvider></ToastProvider>;
@@ -22,6 +22,8 @@ const datei = (type: string, size = 10) => {
     Object.defineProperty(f, 'size', { value: size });
     return f;
 };
+
+const KANZLEI = { name: 'Kanzlei Mustermann', email: 'kanzlei@example.org' };
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -54,9 +56,9 @@ describe('useFirmenLogo', () => {
         vi.stubGlobal('fetch', fetchMock);
         const { result } = renderHook(() => useFirmenLogo('', vi.fn()), { wrapper });
         await act(() => result.current.hochladen(datei('application/pdf')));
-        expect(await screen.findByText('Ungültiger Dateityp – erlaubt sind PNG, JPEG und WebP.')).toBeVisible();
+        expect(await screen.findByText('Ungültiger Dateityp. Erlaubt sind PNG, JPEG und WebP.')).toBeVisible();
         await act(() => result.current.hochladen(datei('image/png', 2 * 1024 * 1024 + 1)));
-        expect(await screen.findByText('Datei zu groß – maximal 2 MB.')).toBeVisible();
+        expect(await screen.findByText('Datei zu groß. Erlaubt sind höchstens 2 MB.')).toBeVisible();
         expect(fetchMock).not.toHaveBeenCalled();
     });
 
@@ -102,11 +104,12 @@ describe('useSteuerberaterKontakte', () => {
         act(() => result.current.neuAnlegen());
         expect(result.current.dialogOffen).toBe(true);
         expect(result.current.entwurf).toMatchObject({ aktiv: true, autoProcessEmails: true });
+        act(() => result.current.setEntwurf(prev => ({ ...prev, ...KANZLEI })));
         await act(() => result.current.speichern());
         expect(fetchMock).toHaveBeenCalledWith('/api/firma/steuerberater', expect.objectContaining({ method: 'POST' }));
         expect(result.current.dialogOffen).toBe(false);
 
-        act(() => result.current.setEntwurf({ id: 3, name: 'Kanzlei Mustermann' }));
+        act(() => result.current.setEntwurf({ id: 3, ...KANZLEI }));
         await act(() => result.current.speichern());
         expect(fetchMock).toHaveBeenCalledWith('/api/firma/steuerberater/3', expect.objectContaining({ method: 'PUT' }));
     });
@@ -115,9 +118,65 @@ describe('useSteuerberaterKontakte', () => {
         vi.stubGlobal('fetch', vi.fn().mockResolvedValue(antwort('Name fehlt', false)));
         const { result } = renderHook(() => useSteuerberaterKontakte(), { wrapper });
         act(() => result.current.neuAnlegen());
+        act(() => result.current.setEntwurf(prev => ({ ...prev, ...KANZLEI })));
         await act(() => result.current.speichern());
         expect(await screen.findByText('Fehler beim Speichern: Name fehlt')).toBeVisible();
         expect(result.current.dialogOffen).toBe(true);
+        expect(result.current.speichert).toBe(false);
+    });
+
+    it('meldet während des Speicherns „speichert“ und danach den Erfolg', async () => {
+        let antworten: (r: Response) => void = () => {};
+        vi.stubGlobal('fetch', vi.fn().mockImplementation((_url: string, init?: RequestInit) => init?.method
+            ? new Promise<Response>(resolve => { antworten = resolve; })
+            : Promise.resolve(antwort([]))));
+        const { result } = renderHook(() => useSteuerberaterKontakte(), { wrapper });
+        act(() => result.current.neuAnlegen());
+        act(() => result.current.setEntwurf(prev => ({ ...prev, ...KANZLEI })));
+        let fertig: Promise<void> = Promise.resolve();
+        act(() => { fertig = result.current.speichern(); });
+        expect(result.current.speichert).toBe(true);
+        await act(async () => { antworten(antwort({})); await fertig; });
+        expect(result.current.speichert).toBe(false);
+        expect(await screen.findByText('Steuerberater gespeichert.')).toBeVisible();
+    });
+
+    it('setzt „speichert“ auch bei Netzwerkfehler zurück', async () => {
+        vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('offline')));
+        const { result } = renderHook(() => useSteuerberaterKontakte(), { wrapper });
+        act(() => result.current.neuAnlegen());
+        act(() => result.current.setEntwurf(prev => ({ ...prev, ...KANZLEI })));
+        await act(() => result.current.speichern());
+        expect(result.current.speichert).toBe(false);
+        expect(await screen.findByText('Steuerberater konnte nicht gespeichert werden. Bitte Verbindung prüfen.')).toBeVisible();
+    });
+
+    it('speichert ohne Haupt-E-Mail nicht und sagt, was fehlt', async () => {
+        const fetchMock = vi.fn();
+        vi.stubGlobal('fetch', fetchMock);
+        const { result } = renderHook(() => useSteuerberaterKontakte(), { wrapper });
+        act(() => result.current.neuAnlegen());
+        act(() => result.current.setEntwurf(prev => ({ ...prev, name: 'Kanzlei Mustermann' })));
+        await act(() => result.current.speichern());
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(await screen.findByText('Bitte Haupt-E-Mail eintragen.')).toBeVisible();
+        expect(result.current.dialogOffen).toBe(true);
+        expect(result.current.speichert).toBe(false);
+    });
+
+    it('nennt beim Löschen den Namen und meldet den Erfolg', async () => {
+        const user = userEvent.setup();
+        const fetchMock = vi.fn().mockResolvedValue(antwort([]));
+        vi.stubGlobal('fetch', fetchMock);
+        const { result } = renderHook(() => useSteuerberaterKontakte(), { wrapper });
+        let fertig: Promise<void> = Promise.resolve();
+        act(() => { fertig = result.current.loeschen({ id: 3, name: 'Kanzlei Mustermann' } as SteuerberaterKontakt); });
+        expect(await screen.findByText('„Kanzlei Mustermann“ wirklich löschen? Bereits abgelegte Lohnabrechnungen und BWA bleiben erhalten.')).toBeVisible();
+        expect(fetchMock).not.toHaveBeenCalled();
+        await user.click(screen.getByRole('button', { name: 'Steuerberater löschen' }));
+        await act(() => fertig);
+        expect(fetchMock).toHaveBeenCalledWith('/api/firma/steuerberater/3', { method: 'DELETE' });
+        expect(await screen.findByText('Steuerberater gelöscht.')).toBeVisible();
     });
 });
 
@@ -133,12 +192,12 @@ describe('useSteuerberaterUnterlagen', () => {
         expect(fetchMock).not.toHaveBeenCalled();
 
         rerender({ sichtbar: true, unterreiter: 'lohnabrechnungen' });
-        await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(`/api/lohnabrechnungen/jahr/${jahr}`));
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(`/api/lohnabrechnungen/jahr/${jahr}`, expect.anything()));
         act(() => result.current.setSteuerberaterFilter('3'));
-        await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(`/api/lohnabrechnungen/steuerberater/3/jahr/${jahr}`));
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(`/api/lohnabrechnungen/steuerberater/3/jahr/${jahr}`, expect.anything()));
 
         rerender({ sichtbar: true, unterreiter: 'bwa' });
-        await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(`/api/bwa/jahr/${jahr}`));
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(`/api/bwa/jahr/${jahr}`, expect.anything()));
     });
 
     it('führt die Jahre zusammen und meldet Ladefehler', async () => {
@@ -151,5 +210,37 @@ describe('useSteuerberaterUnterlagen', () => {
         vi.stubGlobal('fetch', vi.fn().mockResolvedValue(antwort([], false)));
         await act(() => result.current.ladeJahre());
         expect(await screen.findByText('Abrechnungsjahre konnten nicht geladen werden.')).toBeVisible();
+    });
+
+    it('verwirft die späte Antwort eines alten Jahres', async () => {
+        const jahr = new Date().getFullYear();
+        const offen = new Map<string, (r: Response) => void>();
+        vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string, init?: RequestInit) => new Promise<Response>((resolve, reject) => {
+            offen.set(url, resolve);
+            init?.signal?.addEventListener('abort', () => reject(new DOMException('abgebrochen', 'AbortError')));
+        })));
+        const { result } = renderHook(() => useSteuerberaterUnterlagen(true, 'bwa'), { wrapper });
+        await waitFor(() => expect(offen.has(`/api/bwa/jahr/${jahr}`)).toBe(true));
+        act(() => result.current.setJahr(jahr - 1));
+        await waitFor(() => expect(offen.has(`/api/bwa/jahr/${jahr - 1}`)).toBe(true));
+
+        await act(async () => { offen.get(`/api/bwa/jahr/${jahr - 1}`)?.(antwort([{ id: 2, jahr: jahr - 1 }])); });
+        await act(async () => { offen.get(`/api/bwa/jahr/${jahr}`)?.(antwort([{ id: 1, jahr }])); });
+        expect(result.current.bwaListe).toEqual([{ id: 2, jahr: jahr - 1 }]);
+        expect(screen.queryByText('Auswertungen konnten nicht geladen werden.')).toBeNull();
+    });
+
+    it('verwirft auch bei Lohnabrechnungen die späte Antwort des alten Filters', async () => {
+        const jahr = new Date().getFullYear();
+        const offen = new Map<string, (r: Response) => void>();
+        vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => new Promise<Response>(resolve => { offen.set(url, resolve); })));
+        const { result } = renderHook(() => useSteuerberaterUnterlagen(true, 'lohnabrechnungen'), { wrapper });
+        await waitFor(() => expect(offen.has(`/api/lohnabrechnungen/jahr/${jahr}`)).toBe(true));
+        act(() => result.current.setSteuerberaterFilter('3'));
+        await waitFor(() => expect(offen.has(`/api/lohnabrechnungen/steuerberater/3/jahr/${jahr}`)).toBe(true));
+
+        await act(async () => { offen.get(`/api/lohnabrechnungen/steuerberater/3/jahr/${jahr}`)?.(antwort([{ id: 7 }])); });
+        await act(async () => { offen.get(`/api/lohnabrechnungen/jahr/${jahr}`)?.(antwort([{ id: 6 }, { id: 7 }])); });
+        expect(result.current.lohnabrechnungen).toEqual([{ id: 7 }]);
     });
 });

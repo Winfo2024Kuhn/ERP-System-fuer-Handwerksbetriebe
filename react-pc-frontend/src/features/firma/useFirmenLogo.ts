@@ -23,11 +23,11 @@ export function useFirmenLogo(logoDateiname: string | undefined, geaendert: (log
 
     const hochladen = async (file: File) => {
         if (!ERLAUBTE_TYPEN.includes(file.type)) {
-            toast.error('Ungültiger Dateityp – erlaubt sind PNG, JPEG und WebP.');
+            toast.error('Ungültiger Dateityp. Erlaubt sind PNG, JPEG und WebP.');
             return;
         }
         if (file.size > MAX_GROESSE) {
-            toast.error('Datei zu groß – maximal 2 MB.');
+            toast.error('Datei zu groß. Erlaubt sind höchstens 2 MB.');
             return;
         }
         setLaedtHoch(true);

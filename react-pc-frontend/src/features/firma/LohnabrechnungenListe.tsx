@@ -2,7 +2,7 @@ import { Calendar, Download, FileText } from 'lucide-react';
 import { Label } from '../../components/ui/label';
 import { Select } from '../../components/ui/select-custom';
 import { UnterlagenFilter } from './UnterlagenFilter';
-import { formatiereBetrag } from './firmaHilfen';
+import { formatiereBetrag, trefferText } from './firmaHilfen';
 import type { LohnabrechnungDto, SteuerberaterKontakt } from './firmaTypen';
 import type { useSteuerberaterUnterlagen } from './useSteuerberaterUnterlagen';
 
@@ -20,11 +20,12 @@ export function LohnabrechnungenListe({ unterlagen, steuerberater }: Props) {
                 jahr={unterlagen.jahr}
                 verfuegbareJahre={unterlagen.verfuegbareJahre}
                 onJahr={unterlagen.setJahr}
-                anzahlText={`${lohnabrechnungen.length} Dokumente gefunden`}
+                anzahlText={trefferText(lohnabrechnungen.length, 'Dokument', 'Dokumente')}
             >
                 <div className="w-64">
-                    <Label>Steuerberater Filter</Label>
+                    <Label htmlFor="lohnabrechnungen-steuerberater">Steuerberater</Label>
                     <Select
+                        id="lohnabrechnungen-steuerberater"
                         value={unterlagen.steuerberaterFilter}
                         onChange={unterlagen.setSteuerberaterFilter}
                         options={[

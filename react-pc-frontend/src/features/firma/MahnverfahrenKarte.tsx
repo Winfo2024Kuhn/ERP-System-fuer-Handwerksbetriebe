@@ -76,7 +76,7 @@ export function MahnverfahrenKarte({ firma, aendern }: Props) {
             <div className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
                 <Info className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
                 <p className="text-sm text-slate-600">
-                    Schon überfällige Rechnungen starten mit der Zahlungserinnerung — danach gelten die
+                    Schon überfällige Rechnungen starten mit der Zahlungserinnerung. Danach gelten die
                     eingestellten Abstände. Automatisch gemahnt werden nur Rechnungen, die mit dem Programm
                     geschrieben wurden.
                 </p>

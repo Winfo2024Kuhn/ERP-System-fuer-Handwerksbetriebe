@@ -33,9 +33,9 @@ export function UnfallversicherungReiter({ firma, gewerke, aendern, speichert, o
             <div>
                 <h3 className="text-lg font-semibold text-slate-900">Gewerk &amp; Unfallversicherung</h3>
                 <p className="text-sm text-slate-500 mt-1">
-                    Wähle dein Gewerk – wir schlagen dir die passende Berufsgenossenschaft (BG) und einen
-                    Standard-Beitragssatz vor. Wenn du den genauen Satz aus deinem Beitragsbescheid kennst,
-                    trägst du ihn unten ein.
+                    Wählen Sie Ihr Gewerk. Dann schlagen wir Ihnen die passende Berufsgenossenschaft (BG) und
+                    einen Standard-Beitragssatz vor. Kennen Sie den genauen Satz aus Ihrem Beitragsbescheid,
+                    tragen Sie ihn unten ein.
                 </p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatiereBetrag, jahreZusammenfuehren, lohnabrechnungenUrl, meldungAusFehlertext } from './firmaHilfen';
+import { formatiereBetrag, jahreZusammenfuehren, lohnabrechnungenUrl, meldungAusFehlertext, trefferText } from './firmaHilfen';
 
 describe('jahreZusammenfuehren', () => {
     it('nimmt das aktuelle Jahr immer mit und sortiert absteigend ohne Doppelte', () => {
@@ -41,5 +41,17 @@ describe('meldungAusFehlertext', () => {
     it('nimmt den Text für Nicht-JSON, auch bei null', () => {
         expect(meldungAusFehlertext('Serverfehler', 'Ersatz', text => `Fehler: ${text}`)).toBe('Fehler: Serverfehler');
         expect(meldungAusFehlertext('null', 'Ersatz', () => 'kein JSON')).toBe('kein JSON');
+    });
+});
+
+describe('trefferText', () => {
+    it('nimmt bei genau einem Treffer die Einzahl', () => {
+        expect(trefferText(1, 'Dokument', 'Dokumente')).toBe('1 Dokument gefunden');
+        expect(trefferText(1, 'Auswertung', 'Auswertungen')).toBe('1 Auswertung gefunden');
+    });
+
+    it('nimmt bei null und mehreren Treffern die Mehrzahl', () => {
+        expect(trefferText(0, 'Dokument', 'Dokumente')).toBe('0 Dokumente gefunden');
+        expect(trefferText(12, 'Auswertung', 'Auswertungen')).toBe('12 Auswertungen gefunden');
     });
 });

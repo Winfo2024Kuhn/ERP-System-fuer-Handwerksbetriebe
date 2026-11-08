@@ -1,10 +1,10 @@
-import { RefreshCw, Save } from 'lucide-react';
+import { Loader2, Save } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 
 interface Props {
     speichert: boolean;
     onSpeichern: () => void;
-    /** 'spinner': Drehsymbol statt Diskette; 'text': „Speichert...“ statt „Speichern“. */
+    /** 'spinner': Drehsymbol statt Diskette; 'text': „Speichert …“ statt „Speichern“. */
     ladeAnzeige: 'spinner' | 'text';
 }
 
@@ -14,12 +14,11 @@ export function FirmaSpeichernKnopf({ speichert, onSpeichern, ladeAnzeige }: Pro
         <Button
             onClick={onSpeichern}
             disabled={speichert}
-            className="bg-rose-600 text-white hover:bg-rose-700"
         >
             {speichert && ladeAnzeige === 'spinner'
-                ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                : <Save className="w-4 h-4 mr-2" />}
-            {speichert && ladeAnzeige === 'text' ? 'Speichert...' : 'Speichern'}
+                ? <Loader2 aria-hidden="true" className="w-4 h-4 mr-2 motion-safe:animate-spin" />
+                : <Save aria-hidden="true" className="w-4 h-4 mr-2" />}
+            {speichert && ladeAnzeige === 'text' ? 'Speichert …' : 'Speichern'}
         </Button>
     );
 }

@@ -1,13 +1,14 @@
 import { Edit2, Plus, Trash2 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Card } from '../../components/ui/card';
+import { formatDatum } from '../../lib/datum';
 import type { SteuerberaterKontakt } from './firmaTypen';
 
 interface Props {
     steuerberater: SteuerberaterKontakt[];
     onNeu: () => void;
     onBearbeiten: (sb: SteuerberaterKontakt) => void;
-    onLoeschen: (id: number) => void;
+    onLoeschen: (sb: SteuerberaterKontakt) => void;
 }
 
 /** Unterreiter „Kontakte“: Steuerberater als Karten mit Bearbeiten/Löschen. */
@@ -16,13 +17,10 @@ export function SteuerberaterKontakteListe({ steuerberater, onNeu, onBearbeiten,
         <div className="space-y-4">
             <div className="flex justify-between items-center">
                 <p className="text-slate-500 text-sm">
-                    Steuerberater-Kontakte für automatische BWA-Erkennung
+                    Steuerberater-Kontakte für die automatische Erkennung von BWA und Lohnabrechnungen
                 </p>
-                <Button
-                    onClick={onNeu}
-                    className="bg-rose-600 text-white hover:bg-rose-700"
-                >
-                    <Plus className="w-4 h-4 mr-2" />
+                <Button onClick={onNeu}>
+                    <Plus aria-hidden="true" className="w-4 h-4 mr-2" />
                     Neuer Steuerberater
                 </Button>
             </div>
@@ -44,7 +42,7 @@ export function SteuerberaterKontakteListe({ steuerberater, onNeu, onBearbeiten,
 interface KarteProps {
     sb: SteuerberaterKontakt;
     onBearbeiten: (sb: SteuerberaterKontakt) => void;
-    onLoeschen: (id: number) => void;
+    onLoeschen: (sb: SteuerberaterKontakt) => void;
 }
 
 function SteuerberaterKarte({ sb, onBearbeiten, onLoeschen }: KarteProps) {
@@ -59,10 +57,10 @@ function SteuerberaterKarte({ sb, onBearbeiten, onLoeschen }: KarteProps) {
                     )}
                     <div className="flex gap-4 mt-2 text-xs text-slate-500">
                         <div>
-                            <span className="font-medium">Von:</span> {sb.gueltigAb ? new Date(sb.gueltigAb).toLocaleDateString() : 'Offen'}
+                            <span className="font-medium">Von:</span> {formatDatum(sb.gueltigAb) || 'Offen'}
                         </div>
                         <div>
-                            <span className="font-medium">Bis:</span> {sb.gueltigBis ? new Date(sb.gueltigBis).toLocaleDateString() : 'Offen'}
+                            <span className="font-medium">Bis:</span> {formatDatum(sb.gueltigBis) || 'Offen'}
                         </div>
                     </div>
                     {sb.weitereEmails && sb.weitereEmails.length > 0 && (
@@ -76,23 +74,27 @@ function SteuerberaterKarte({ sb, onBearbeiten, onLoeschen }: KarteProps) {
                         variant="ghost"
                         size="sm"
                         onClick={() => onBearbeiten(sb)}
+                        aria-label={`${sb.name} bearbeiten`}
+                        title="Bearbeiten"
                     >
-                        <Edit2 className="w-4 h-4" />
+                        <Edit2 aria-hidden="true" className="w-4 h-4" />
                     </Button>
                     <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => onLoeschen(sb.id)}
+                        onClick={() => onLoeschen(sb)}
+                        aria-label={`${sb.name} löschen`}
+                        title="Löschen"
                         className="text-red-600 hover:text-red-700"
                     >
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 aria-hidden="true" className="w-4 h-4" />
                     </Button>
                 </div>
             </div>
             <div className="flex gap-2 mt-3">
                 {sb.autoProcessEmails && (
-                    <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">
-                        Auto-Verarbeitung aktiv
+                    <span className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
+                        Ganze Kanzlei wird erkannt
                     </span>
                 )}
             </div>

@@ -45,7 +45,7 @@ export function SteuerberaterReiter({ unterreiter, onUnterreiter, kontakte, unte
                     steuerberater={kontakte.steuerberater}
                     onNeu={kontakte.neuAnlegen}
                     onBearbeiten={kontakte.bearbeiten}
-                    onLoeschen={id => void kontakte.loeschen(id)}
+                    onLoeschen={sb => void kontakte.loeschen(sb)}
                 />
             )}
             {unterreiter === 'lohnabrechnungen' && (
