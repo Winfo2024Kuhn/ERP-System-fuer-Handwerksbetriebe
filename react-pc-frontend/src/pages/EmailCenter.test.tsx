@@ -14,26 +14,29 @@ vi.mock('../auth/AuthContext', async (original) => ({
 }));
 
 // ---- Mock data ----
+// Die Liste zeigt neueste zuerst. Feste, verschiedene Zeitstempel halten die Reihenfolge 1, 2, 3 stabil;
+// je Mail ein eigenes new Date() vertauschte sie, wenn dazwischen eine Millisekunde verging.
+const jetzt = Date.now();
 const mockEmails = [
     {
         id: 1, type: 'EMAIL', direction: 'IN' as const,
         subject: 'Angebot für Treppe', sender: 'Max Mustermann',
         fromAddress: 'max@example.com', body: 'Hallo, hier ist das Angebot.',
-        sentAt: new Date().toISOString(), isRead: false,
+        sentAt: new Date(jetzt).toISOString(), isRead: false,
         zuordnungTyp: 'KEINE', attachments: []
     },
     {
         id: 2, type: 'EMAIL', direction: 'IN' as const,
         subject: 'Rechnung 2024-001', sender: 'Erika Musterfrau',
         fromAddress: 'erika@example.com', body: 'Anbei die Rechnung.',
-        sentAt: new Date().toISOString(), isRead: true,
+        sentAt: new Date(jetzt - 1).toISOString(), isRead: true,
         zuordnungTyp: 'KEINE', attachments: []
     },
     {
         id: 3, type: 'EMAIL', direction: 'OUT' as const,
         subject: 'Re: Terminbestätigung', sender: 'Test Firma',
         fromAddress: 'info@test.com', recipient: 'kunde@example.com',
-        body: 'Termin bestätigt.', sentAt: new Date().toISOString(),
+        body: 'Termin bestätigt.', sentAt: new Date(jetzt - 2).toISOString(),
         isRead: true, zuordnungTyp: 'KEINE', attachments: []
     }
 ];
