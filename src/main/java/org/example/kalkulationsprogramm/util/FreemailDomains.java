@@ -14,7 +14,7 @@ import java.util.Set;
  *
  * <p>Einzige Quelle im Backend (genutzt von {@code LieferantEmailResolver}, dem
  * Rückwirkend-Zuordnen in {@code EmailBackfillEventListener} und der Kanzlei-Erkennung in
- * {@code SteuerberaterEmailProcessingService}). Das PC-Frontend führt
+ * {@code SteuerberaterAbsenderErkennung}). Das PC-Frontend führt
  * dieselbe Liste in {@code react-pc-frontend/src/lib/freemailDomains.ts};
  * {@code FreemailDomainsTest} prüft, dass beide gleich bleiben.</p>
  */
