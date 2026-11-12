@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../components/ui/toast';
 import {
-    adressenVon, aktuellesFrontendProfil, lohnAnsprechpartner, useSteuerberaterEmpfaenger, type SteuerberaterKontakt,
+    adressenVon, lohnAnsprechpartner, useSteuerberaterEmpfaenger, type SteuerberaterKontakt,
 } from './useSteuerberaterEmpfaenger';
 
 vi.mock('../email/mailEditorHtml', () => ({ ladeStandardSignatur: vi.fn(() => Promise.resolve('<p>Max Mustermann</p>')) }));
@@ -47,14 +47,6 @@ describe('Hilfsfunktionen', () => {
     it('sammelt Adressen ohne Doppelte und Leere', () => {
         expect(adressenVon(KANZLEI_A)).toEqual(['kanzlei@example.com', 'info@example.com', 'max@example.com', 'lohn@example.com']);
         expect(adressenVon(null)).toEqual([]);
-    });
-    it('liest das Frontend-Profil nur, wenn es gültig ist', () => {
-        expect(aktuellesFrontendProfil()).toBeNull();
-        localStorage.setItem('frontendUserSelection', JSON.stringify({ id: 3, displayName: 'Max Mustermann' }));
-        expect(aktuellesFrontendProfil()).toEqual({ id: 3, displayName: 'Max Mustermann' });
-        localStorage.setItem('frontendUserSelection', '{kaputt');
-        vi.spyOn(console, 'warn').mockImplementation(() => {});
-        expect(aktuellesFrontendProfil()).toBeNull();
     });
 });
 

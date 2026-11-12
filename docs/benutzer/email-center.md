@@ -30,6 +30,8 @@ Ohne Suchbegriff:
 
 Ein Klick auf eine E-Mail zeigt rechts den ganzen Verlauf. Unter „Gehört zu“ steht, zu welchem Projekt, welcher Anfrage oder welchem Lieferanten sie gehört; ein Klick darauf öffnet den Vorgang. Ältere zitierte Teile sind eingeklappt („Zitierten Verlauf anzeigen“). Bei Weiterleitungen bleibt die weitergeleitete Mail sichtbar, älterer Verlauf darunter wird eingeklappt.
 
+Adressen im Text (`https://…`, `www.…`, E-Mail-Adressen) sind in allen E-Mails anklickbar, auch wenn der Absender sie nur als Text geschrieben hat. Ein Klick öffnet sie in einem neuen Tab.
+
 Anhänge stehen unter der E-Mail. PDFs öffnen sich in einer Vorschau mit „Download“, Bilder in einem Bildbetrachter, andere Dateien werden heruntergeladen. Escape schließt nur die Vorschau, der Verlauf bleibt offen. Bei mehreren Anhängen lädt „Alle Anhänge herunterladen“ (im Menü „…“) alle als ZIP-Datei.
 
 ## E-Mail einem Projekt oder einer Anfrage zuordnen
@@ -48,7 +50,24 @@ Automatisch ordnet das Programm so zu: Antworten folgen der vorigen E-Mail. E-Ma
 6. Anhänge in das Feld ziehen oder anklicken. Große Fotos werden verkleinert; der Balken zeigt, wie viel Platz noch ist.
 7. „E-Mail senden“.
 
-Ohne „Gehört zu“ fragt das Programm vor dem Senden nach. Mit „Einzeln verschicken – jeder sieht nur sich selbst“ bekommt jeder Empfänger eine eigene E-Mail. „KI-Optimierung“ formuliert den eigenen Text neu, wenn ein KI-Schlüssel eingerichtet ist.
+Ohne „Gehört zu“ fragt das Programm vor dem Senden nach. Mit „Als Rundmail verschicken – jeder sieht nur sich selbst“ bekommt jeder Empfänger eine eigene E-Mail. „KI-Optimierung“ formuliert den eigenen Text neu, wenn ein KI-Schlüssel eingerichtet ist.
+
+## Text formatieren und Links einfügen
+
+Die Leiste steht in der Kopfzeile „Nachricht“ neben „KI-Optimierung“ (in anderen Mail-Fenstern, z. B. Stundenübermittlung oder Abwesenheitsnotiz, direkt über dem Text):
+- **Fett**, *Kursiv*, Unterstrichen: Text markieren und den Knopf drücken, oder Strg+B / Strg+I / Strg+U (Mac: ⌘).
+- „Schrift“: Größe (Klein, Normal, Groß, Überschrift), Textfarbe, „Gelb markieren“, „Durchgestrichen“, „Formatierung entfernen“.
+- „Absatz“: Aufzählung, Nummerierung, Ausrichtung links/Mitte/rechts, Einzug.
+
+**Link mit eigenem Text**, z. B. ein OneDrive-Freigabelink hinter „Hier klicken“:
+1. Den Text markieren, der zum Link werden soll (oder den Cursor an die Stelle setzen).
+2. Den Link-Knopf drücken oder Strg+K (Mac: ⌘K).
+3. „Angezeigter Text“ prüfen und bei „Link-Adresse“ die Adresse einfügen. Fehlt `https://`, ergänzt das Programm es; eine E-Mail-Adresse wird zum Mail-Link. Bleibt der Text leer, steht die Adresse selbst in der E-Mail.
+4. „Link einfügen“.
+
+Wer eine Adresse über markierten Text einfügt (Strg+V), macht den Text direkt zum Link. Eine eingefügte Adresse ohne Markierung wird gleich als Link eingesetzt. Nackte Adressen im Text verschickt das Programm ebenfalls als Link.
+
+Ein Klick auf einen Link im Text zeigt eine kleine Leiste mit der Adresse: „Ändern“ (Text oder Adresse), Öffnen in einem neuen Tab, Entfernen (der Text bleibt stehen). Escape schließt sie. Jeder, der die E-Mail hat, kann den Link öffnen; wer eine OneDrive-Datei sehen oder bearbeiten darf, wird bei der Freigabe in OneDrive festgelegt.
 
 ## Antworten und Weiterleiten
 
@@ -99,7 +118,7 @@ Unter **Kommunikation → E-Mail-Einstellungen**, Reiter „Signaturen“ → �
 Unter **Kommunikation → E-Mail-Einstellungen**, Reiter „Abwesenheitsnotizen“ → „Neue Abwesenheit“:
 1. „Titel“ (z. B. Betriebsferien Weihnachten) und „Zeitraum“.
 2. Die Postfächer anhaken, für die sie gilt.
-3. Betreff und Text der automatischen Antwort; `{{start}}` und `{{ende}}` setzen die Daten ein.
+3. Betreff und Text der automatischen Antwort; `{{start}}` und `{{ende}}` setzen die Daten ein. Der Text lässt sich wie eine E-Mail formatieren und mit Links versehen.
 4. „Abwesenheit planen“.
 
 Die Notiz schaltet sich zum Zeitraum selbst ein und aus. Jeder Absender bekommt pro Notiz nur eine Antwort.

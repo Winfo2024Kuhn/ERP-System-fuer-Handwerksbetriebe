@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useToast } from '../../components/ui/toast';
 import { ladeStandardSignatur } from '../email/mailEditorHtml';
+import { aktuellesFrontendProfil } from '../../lib/frontendProfil';
 import { monatsname } from './zeitraum';
 
 export interface SteuerberaterAnsprechpartner {
@@ -25,22 +26,6 @@ export interface SteuerberaterKontakt {
 export interface Option {
     value: string;
     label: string;
-}
-
-const FRONTEND_USER_STORAGE_KEY = 'frontendUserSelection';
-
-/** Am Rechner gewähltes Profil (für Signatur und Absender) – `null`, wenn keins gewählt ist. */
-export function aktuellesFrontendProfil(): { id: number; displayName: string } | null {
-    try {
-        const raw = localStorage.getItem(FRONTEND_USER_STORAGE_KEY);
-        const parsed: unknown = raw ? JSON.parse(raw) : null;
-        if (parsed && typeof parsed === 'object' && typeof (parsed as { id?: unknown }).id === 'number') {
-            return parsed as { id: number; displayName: string };
-        }
-    } catch (err) {
-        console.warn('Frontend-Profil konnte nicht gelesen werden:', err);
-    }
-    return null;
 }
 
 /** Lohn-Ansprechpartner eines Steuerberaters, sonst der erste, sonst `null`. */

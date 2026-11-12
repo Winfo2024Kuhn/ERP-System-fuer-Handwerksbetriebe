@@ -115,6 +115,27 @@ describe('htmlFuerVersand', () => {
     it('liefert bei leerer Eingabe einen leeren String', () => {
         expect(htmlFuerVersand(undefined)).toBe('');
     });
+
+    it('macht nackte Adressen zu Links, ohne den Punkt am Satzende', () => {
+        expect(htmlFuerVersand('<p>siehe https://onedrive.example.com/f/c/abc?e=x.</p>'))
+            .toBe('<p>siehe <a href="https://onedrive.example.com/f/c/abc?e=x">https://onedrive.example.com/f/c/abc?e=x</a>.</p>');
+    });
+
+    it('verlinkt vorhandene Links und Signatur-Links nicht doppelt', () => {
+        const html = htmlFuerVersand(
+            '<p><a href="https://onedrive.example.com/f/c/abc">Hier klicken</a></p>'
+            + '<div class="email-signature"><a href="mailto:max@example.com">max@example.com</a> · www.example.com</div>',
+        );
+        expect(html).toBe(
+            '<p><a href="https://onedrive.example.com/f/c/abc">Hier klicken</a></p>'
+            + '<div class="email-signature"><a href="mailto:max@example.com">max@example.com</a> · <a href="https://www.example.com">www.example.com</a></div>',
+        );
+    });
+
+    it('verlinkt keine gefährlichen Adressen und lässt maskiertes HTML Text', () => {
+        const html = htmlFuerVersand('<p>javascript:alert(1) &lt;img src=x onerror=alert(1)&gt;</p>');
+        expect(html).toBe('<p>javascript:alert(1) &lt;img src=x onerror=alert(1)&gt;</p>');
+    });
 });
 
 describe('klartextAlsAbsaetze', () => {

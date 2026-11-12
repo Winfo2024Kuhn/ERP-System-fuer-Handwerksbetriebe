@@ -1,4 +1,4 @@
-/* eslint-disable react-refresh/only-export-components -- baueMailText ist reine Textlogik und wird separat getestet (siehe EmailComposeForm.tsx, gleiches Muster) */
+/* eslint-disable react-refresh/only-export-components -- baueMailText ist reine Textlogik und wird separat getestet */
 import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, Calendar, FileText, User, CheckCircle, Trash, Plus, Mail, Loader2 } from "lucide-react";
 import { Card } from "./ui/card";
@@ -6,7 +6,7 @@ import { Button } from "./ui/button";
 import { ImageViewer } from "./ui/image-viewer";
 import { CreateReklamationModal } from "./CreateReklamationModal";
 import { EmailComposeModal } from "./EmailComposeModal";
-import { MAX_ATTACHMENT_BYTES, formatFileSize } from "./EmailComposeForm";
+import { MAX_ATTACHMENT_BYTES, formatFileSize } from "../features/email/compose/anhangGrenze";
 import { escapeHtml } from "./emailContentFrameUtils";
 import { waehleInfoEmpfaenger } from '../lib/emailAddress';
 import { useToast } from './ui/toast';

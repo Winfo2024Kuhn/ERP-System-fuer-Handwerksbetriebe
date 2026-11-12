@@ -6,11 +6,13 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { useToast } from './ui/toast';
 import { htmlFuerVersand, setzeEditorHtml } from '../features/email/mailEditorHtml';
+import { MailNachrichtFeld } from '../features/email/editor/MailNachrichtFeld';
 import { steuerberaterPdfUrl } from '../features/report-centre/api';
 import { PdfAnhangChip } from '../features/report-centre/PdfAnhangChip';
 import { SteuerberaterEmpfaengerFelder } from '../features/report-centre/SteuerberaterEmpfaengerFelder';
 import { usePdfAnhang } from '../features/report-centre/usePdfAnhang';
-import { aktuellesFrontendProfil, useSteuerberaterEmpfaenger } from '../features/report-centre/useSteuerberaterEmpfaenger';
+import { useSteuerberaterEmpfaenger } from '../features/report-centre/useSteuerberaterEmpfaenger';
+import { aktuellesFrontendProfil } from '../lib/frontendProfil';
 import { stundenMailText } from '../features/report-centre/stundenMail';
 import type { Stundenart } from '../features/report-centre/stundenart';
 import { StundenartHinweis } from '../features/report-centre/StundenartHinweis';
@@ -149,11 +151,7 @@ export function SteuerberaterEmailModal({
                     </div>
                     <div className="space-y-2">
                         <Label>Nachricht (direkt bearbeitbar)</Label>
-                        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-                            <div ref={editorRef} aria-label="Nachricht" role="textbox" aria-multiline="true"
-                                className="min-h-[200px] max-h-[360px] overflow-auto p-4 outline-none focus:ring-2 focus:ring-inset focus:ring-rose-200"
-                                contentEditable suppressContentEditableWarning />
-                        </div>
+                        <MailNachrichtFeld editorRef={editorRef} ariaLabel="Nachricht" className="max-h-[360px]" />
                     </div>
                 </div>
 

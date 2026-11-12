@@ -3,7 +3,8 @@ import type { ReactElement } from 'react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from './ui/toast';
-import { EmailComposeForm, formatFileSize, MAX_ATTACHMENT_BYTES } from './EmailComposeForm';
+import { EmailComposeForm } from './EmailComposeForm';
+import { formatFileSize, MAX_ATTACHMENT_BYTES } from '../features/email/compose/anhangGrenze';
 
 /**
  * Lückentests für das Schreiben-Fenster: Anrede, Vorgangs-Daten, KI-Formulierung,
@@ -210,7 +211,8 @@ describe('EmailComposeForm – Text, Signatur und KI', () => {
 
         routen['/api/email/beautify'] = { status: 500, body: {} };
         await kiStilWaehlen();
-        expect(await screen.findByText('Formulierung fehlgeschlagen. Bitte erneut versuchen.')).toBeInTheDocument();
+        // Hinweis am Formular und Toast
+        expect(await screen.findAllByText('Formulierung fehlgeschlagen. Bitte erneut versuchen.')).toHaveLength(2);
     });
 
     it('fragt vor der KI nach dem Stil und schickt ihn mit', async () => {
@@ -332,7 +334,8 @@ describe('EmailComposeForm – Anhänge', () => {
         const gross = new File(['x'], 'plan.pdf', { type: 'application/pdf' });
         Object.defineProperty(gross, 'size', { value: MAX_ATTACHMENT_BYTES + 1 });
         await act(async () => { fireEvent.change(dateiInput(), { target: { files: [gross] } }); });
-        expect(await screen.findByText(/Anhänge dürfen zusammen höchstens/)).toBeInTheDocument();
+        // Hinweis am Formular und Toast
+        expect(await screen.findAllByText(/Anhänge dürfen zusammen höchstens/)).toHaveLength(2);
         expect(screen.queryByText('plan.pdf')).not.toBeInTheDocument();
     });
 
@@ -365,7 +368,8 @@ describe('EmailComposeForm – Anhänge', () => {
         await userEvent.click(checkboxAufmass);
         await waitFor(() => expect(within(auswahl).getByText('1 Datei(en) ausgewählt')).toBeInTheDocument());
         await userEvent.click(within(auswahl).getByText('kaputt.pdf').closest('label')!.querySelector('input')!);
-        expect(await screen.findByText('"kaputt.pdf" konnte nicht angehängt werden.')).toBeInTheDocument();
+        // Hinweis am Formular und Toast
+        expect(await screen.findAllByText('"kaputt.pdf" konnte nicht angehängt werden.')).toHaveLength(2);
         await userEvent.click(checkboxAufmass);
         await waitFor(() => expect(within(auswahl).getByText('0 Datei(en) ausgewählt')).toBeInTheDocument());
         await userEvent.click(within(auswahl).getByRole('button', { name: 'Auswahl übernehmen' }));
