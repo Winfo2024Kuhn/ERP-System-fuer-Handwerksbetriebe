@@ -5,6 +5,8 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Select } from './ui/select-custom';
 import { htmlFuerVersand, ladeStandardSignatur, setzeEditorHtml } from '../features/email/mailEditorHtml';
+import { MailNachrichtFeld } from '../features/email/editor/MailNachrichtFeld';
+import { aktuellesFrontendProfil } from '../lib/frontendProfil';
 import { briefanrede } from '../lib/briefanrede';
 
 /**
@@ -66,27 +68,6 @@ interface SteuerberaterBelegExportModalProps {
     onSuccess?: () => void;
     anhang?: { dateiname: string; blob: Blob; jahr: number; monat: number } | null;
 }
-
-const FRONTEND_USER_STORAGE_KEY = 'frontendUserSelection';
-
-interface FrontendUserSelection {
-    id: number;
-    displayName: string;
-}
-
-const getCurrentFrontendUser = (): FrontendUserSelection | null => {
-    try {
-        const raw = localStorage.getItem(FRONTEND_USER_STORAGE_KEY);
-        if (!raw) return null;
-        const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed.id === 'number') {
-            return parsed as FrontendUserSelection;
-        }
-    } catch (err) {
-        console.warn('Frontend-Profil konnte nicht gelesen werden:', err);
-    }
-    return null;
-};
 
 const MONATSNAMEN = [
     'Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
@@ -338,7 +319,7 @@ ${sig}
 `;
     }, [entries, paketMonat, jahr]);
 
-    const loadSignature = useCallback(() => ladeStandardSignatur(getCurrentFrontendUser()?.id), []);
+    const loadSignature = useCallback(() => ladeStandardSignatur(aktuellesFrontendProfil()?.id), []);
 
     // Geschlossen: Auswahl und Texte leeren. Geöffnet (oder anderer Monat): sofort „wird geladen“.
     const steuerberaterFuer = isOpen ? `${monat}|${jahr}|${paketMonat}|${paketJahr}` : null;
@@ -450,7 +431,7 @@ ${sig}
         setSending(true);
         setError(null);
         try {
-            const currentUser = getCurrentFrontendUser();
+            const currentUser = aktuellesFrontendProfil();
             const formData = new FormData();
             const dtoPayload = {
                 sender: null,
@@ -610,15 +591,7 @@ ${sig}
 
                     <div className="space-y-2">
                         <Label>Nachricht (direkt bearbeitbar)</Label>
-                        <div className="border border-slate-200 rounded-lg overflow-hidden bg-white">
-                            <div
-                                ref={editorRef}
-                                className="p-4 min-h-[300px] overflow-auto outline-none focus:ring-2 focus:ring-rose-200"
-                                style={{ maxHeight: '500px' }}
-                                contentEditable
-                                suppressContentEditableWarning
-                            />
-                        </div>
+                        <MailNachrichtFeld editorRef={editorRef} ariaLabel="Nachricht" className="min-h-[300px] max-h-[500px]" />
                     </div>
                 </div>
             </div>

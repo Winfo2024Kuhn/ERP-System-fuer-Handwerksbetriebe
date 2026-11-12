@@ -1,5 +1,6 @@
 import { escapeHtml } from '../../lib/emailAddress';
 import { parseHtmlInert, sanitizeHtml } from '../../lib/htmlSanitizer';
+import { verlinkeAdressen } from '../../lib/linkErkennungDom';
 
 /**
  * Gemeinsame HTML-Bausteine der Mail-Editoren (E-Mail-Formular, Bestellung,
@@ -54,12 +55,14 @@ export function setzeEditorHtml(editor: HTMLElement | null | undefined, html: st
 /**
  * Bereitet Editor-HTML für den Versand auf: bereinigt, ohne `<style>`-Blöcke
  * (die Mailprogramme sonst als Text zeigen oder auf die ganze Mail anwenden)
- * und ohne `contenteditable`.
+ * und ohne `contenteditable`. Nackte Adressen werden zu Links, damit sie auch
+ * in Mailprogrammen klickbar sind, die selbst nichts erkennen.
  */
 export function htmlFuerVersand(rawHtml?: string | null): string {
     const wrapper = parseHtmlInert(sanitizeHtml(rawHtml));
     wrapper.querySelectorAll('style').forEach(n => n.remove());
     wrapper.querySelectorAll('[contenteditable]').forEach(n => n.removeAttribute('contenteditable'));
+    verlinkeAdressen(wrapper);
     return wrapper.innerHTML.trim();
 }
 

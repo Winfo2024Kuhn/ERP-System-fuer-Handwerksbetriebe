@@ -8,7 +8,7 @@
  *
  * DSGVO: ausschliesslich Dummy-Daten.
  */
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import BestellungEditor, { BestellungEmailModal } from './BestellungEditor';
@@ -166,5 +166,25 @@ describe('Bedarf-Seite', () => {
 
         expect(await screen.findByRole('button', { name: /PDF/ })).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: /^E-Mail$/ })).not.toBeInTheDocument();
+    });
+});
+
+describe('BestellungEmailModal Ebenen', () => {
+    it('Link-Dialog und Menüs liegen über dem eigenen z-50-Fenster', async () => {
+        render(
+            <ToastProvider><ConfirmProvider>
+                <BestellungEmailModal isOpen onClose={vi.fn()} lieferantId={1}
+                    lieferantName="Mustermann Stahlhandel" onSuccess={vi.fn()} />
+            </ConfirmProvider></ToastProvider>,
+        );
+        const feld = await screen.findByRole('textbox', { name: 'Nachricht' });
+        fireEvent.keyDown(feld, { key: 'k', ctrlKey: true });
+        const linkDialog = await screen.findByRole('dialog', { name: 'Link einfügen' });
+        expect(Number(linkDialog.parentElement!.style.zIndex)).toBeGreaterThan(50);
+
+        await userEvent.keyboard('{Escape}');
+        await userEvent.click(screen.getByRole('button', { name: 'Schrift' }));
+        const menue = await screen.findByRole('menu');
+        expect(Number(menue.style.zIndex)).toBeGreaterThan(51);
     });
 });

@@ -23,8 +23,10 @@ import { Card } from "../components/ui/card";
 import { PageLayout } from '../components/layout/PageLayout';
 import { Select } from '../components/ui/select-custom';
 import { cn } from "../lib/utils";
-import { sanitizeHtml } from "../lib/htmlSanitizer";
-import { formuliereMitKi, htmlFuerVersand, ladeStandardSignatur } from "../features/email/mailEditorHtml";
+import { formuliereMitKi, htmlFuerVersand, ladeStandardSignatur, setzeEditorHtml } from "../features/email/mailEditorHtml";
+import { MailNachrichtFeld } from "../features/email/editor/MailNachrichtFeld";
+import { DialogEbene } from "../components/ui/dialog";
+import { aktuellesFrontendProfil } from '../lib/frontendProfil';
 import { Input } from "../components/ui/input";
 import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
@@ -67,27 +69,6 @@ interface UploadedFile {
 }
 
 // Frontend-Profil aus localStorage
-const FRONTEND_USER_STORAGE_KEY = 'frontendUserSelection';
-
-interface FrontendUserSelection {
-    id: number;
-    displayName: string;
-}
-
-const getCurrentFrontendUser = (): FrontendUserSelection | null => {
-    try {
-        const raw = localStorage.getItem(FRONTEND_USER_STORAGE_KEY);
-        if (!raw) return null;
-        const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed.id === 'number') {
-            return parsed as FrontendUserSelection;
-        }
-    } catch (err) {
-        console.warn('Frontend-Profil konnte nicht gelesen werden:', err);
-    }
-    return null;
-};
-
 // ==================== TYPES ====================
 interface Bestellung {
     id: number;
@@ -202,7 +183,6 @@ export const BestellungEmailModal: React.FC<BestellungEmailModalProps> = ({
     const [fromAddresses, setFromAddresses] = useState<string[]>([]);
     const [subject, setSubject] = useState('');
     const [body, setBody] = useState('');
-    const sicheresBody = useMemo(() => sanitizeHtml(body), [body]);
     const [signature, setSignature] = useState('');
     const [sending, setSending] = useState(false);
     const [beautifying, setBeautifying] = useState(false);
@@ -212,7 +192,7 @@ export const BestellungEmailModal: React.FC<BestellungEmailModalProps> = ({
     const pdfPreviewUrl = `/api/bestellungen/lieferant/${lieferantId}/pdf`;
 
     // Signatur laden
-    const loadSignature = useCallback(() => ladeStandardSignatur(getCurrentFrontendUser()?.id), []);
+    const loadSignature = useCallback(() => ladeStandardSignatur(aktuellesFrontendProfil()?.id), []);
 
     // Modal initialisieren: Formular zurücksetzen, sobald der Dialog (für einen
     // anderen Lieferanten) aufgeht. `null` als Startwert, damit das auch beim
@@ -266,7 +246,7 @@ export const BestellungEmailModal: React.FC<BestellungEmailModalProps> = ({
 
         // Absender-Adressen laden – User-Adresse steht durch frontendUserId
         // an erster Stelle und wird damit als Default uebernommen.
-        const userForAddresses = getCurrentFrontendUser();
+        const userForAddresses = aktuellesFrontendProfil();
         const addressesUrl = userForAddresses?.id
             ? `/api/email/from-addresses?frontendUserId=${userForAddresses.id}`
             : '/api/email/from-addresses';
@@ -283,7 +263,7 @@ export const BestellungEmailModal: React.FC<BestellungEmailModalProps> = ({
         loadSignature().then(sig => {
             setSignature(sig);
             const initialBody = `<p>Sehr geehrte Damen und Herren,</p><p><br></p><p>bitte erstellen Sie uns ein Angebot für die angehängten Positionen.</p><p><br></p>${sig}`;
-            setBody(initialBody);
+            setBody(setzeEditorHtml(editorRef.current, initialBody));
         });
     }, [isOpen, lieferantId, lieferantName, loadSignature]);
 
@@ -307,7 +287,7 @@ export const BestellungEmailModal: React.FC<BestellungEmailModalProps> = ({
                 toast.error(ergebnis.meldung);
                 return;
             }
-            setBody(ergebnis.html);
+            setBody(setzeEditorHtml(editorRef.current, ergebnis.html));
         } catch (err) {
             console.error('KI-Formulierung fehlgeschlagen:', err);
             toast.error('Formulierung fehlgeschlagen. Bitte erneut versuchen.');
@@ -360,7 +340,7 @@ export const BestellungEmailModal: React.FC<BestellungEmailModalProps> = ({
         setSending(true);
 
         try {
-            const user = getCurrentFrontendUser();
+            const user = aktuellesFrontendProfil();
             const formData = new FormData();
 
             const dtoPayload = {
@@ -600,14 +580,15 @@ export const BestellungEmailModal: React.FC<BestellungEmailModalProps> = ({
                                     label="KI Formulierung"
                                 />
                             </div>
-                            <div
-                                ref={editorRef}
-                                contentEditable
-                                suppressContentEditableWarning
-                                dangerouslySetInnerHTML={{ __html: sicheresBody }}
-                                onBlur={() => setBody(editorRef.current?.innerHTML || '')}
-                                className="min-h-[250px] p-4 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-rose-500 prose prose-sm max-w-none"
-                            />
+                            {/* Eigenes Fenster mit z-50: Link-Dialog, Menüs und Link-Leiste darüber legen. */}
+                            <DialogEbene ueberZIndex={50}>
+                                <MailNachrichtFeld
+                                    editorRef={editorRef}
+                                    ariaLabel="Nachricht"
+                                    className="min-h-[250px] prose prose-sm max-w-none"
+                                    onInput={() => setBody(editorRef.current?.innerHTML || '')}
+                                />
+                            </DialogEbene>
                         </div>
 
                         {/* Zusätzliche Anhänge */}

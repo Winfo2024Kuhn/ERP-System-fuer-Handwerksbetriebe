@@ -17,12 +17,6 @@ import {
     Sparkles,
     Plane,
     Info,
-    Bold,
-    Italic,
-    Underline,
-    List,
-    ListOrdered,
-    Eraser,
     Inbox,
     AlertTriangle
 } from 'lucide-react';
@@ -40,6 +34,8 @@ import { formatPostfach, type PostfachKurz } from '../features/email/postfach';
 import { ladeSignaturen } from '../features/email/signatur/signaturApi';
 import type { SignaturDto } from '../features/email/signatur/signaturTypen';
 import { SignaturVerwaltung } from '../features/email/signatur/SignaturVerwaltung';
+import { MailNachrichtFeld } from '../features/email/editor/MailNachrichtFeld';
+import { aktuellesFrontendProfil } from '../lib/frontendProfil';
 
 // Types
 interface OutOfOfficeEntry {
@@ -95,32 +91,10 @@ const fehlerTextAus = async (res: Response, standard: string): Promise<string> =
     return standard;
 };
 
-// Aktuelles Frontend-Profil aus localStorage holen
-const FRONTEND_USER_STORAGE_KEY = 'frontendUserSelection';
-
-interface FrontendUserSelection {
-    id: number;
-    displayName: string;
-}
-
-const getCurrentFrontendUser = (): FrontendUserSelection | null => {
-    try {
-        const raw = localStorage.getItem(FRONTEND_USER_STORAGE_KEY);
-        if (!raw) return null;
-        const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed.id === 'number') {
-            return parsed as FrontendUserSelection;
-        }
-    } catch (err) {
-        console.warn('Frontend-Profil konnte nicht gelesen werden:', err);
-    }
-    return null;
-};
-
 // Lädt die nutzerspezifische Standard-Signatur (FrontendUserProfile.defaultSignature)
 const fetchUserDefaultSignatureHtml = async (): Promise<string> => {
     try {
-        const currentUser = getCurrentFrontendUser();
+        const currentUser = aktuellesFrontendProfil();
         const params = new URLSearchParams();
         if (currentUser?.id) {
             params.set('frontendUserId', String(currentUser.id));
@@ -606,28 +580,6 @@ ${signatureHtml}`;
         }
     };
 
-    // Simple rich-text formatting via document.execCommand.
-    // execCommand is deprecated but still universally supported in browsers and
-    // is exactly what EmailComposeForm-style native contentEditable editors use.
-    const applyFormat = (command: string, value?: string) => {
-        const editor = messageEditorRef.current;
-        if (!editor) return;
-        editor.focus();
-        // Re-apply saved range if focus was lost (e.g. clicking a toolbar button).
-        const selection = window.getSelection();
-        if (messageRangeRef.current && editor.contains(messageRangeRef.current.startContainer)) {
-            if (selection) {
-                selection.removeAllRanges();
-                selection.addRange(messageRangeRef.current);
-            }
-        }
-        document.execCommand(command, false, value);
-        if (editingOoo) {
-            setEditingOoo({ ...editingOoo, message: editor.innerHTML });
-        }
-        saveMessageRange();
-    };
-
     return (
         <div className="space-y-6">
             {/* Section Tabs */}
@@ -932,89 +884,23 @@ ${signatureHtml}`;
                                         <MessageSquare className="w-3.5 h-3.5 text-rose-500" />
                                         Nachricht
                                     </Label>
-                                    <div className="border border-slate-200 rounded-lg bg-white overflow-hidden focus-within:border-rose-300 focus-within:ring-2 focus-within:ring-rose-200 transition-colors">
-                                        {/* Mini-Toolbar */}
-                                        <div className="flex flex-wrap gap-1 items-center bg-rose-50 border-b border-rose-100 px-2 py-1.5">
-                                            <button
-                                                type="button"
-                                                onMouseDown={(e) => e.preventDefault()}
-                                                onClick={() => applyFormat('bold')}
-                                                className="p-1.5 rounded text-rose-700 hover:bg-rose-100 transition-colors"
-                                                title="Fett (Ctrl+B)"
-                                            >
-                                                <Bold className="w-4 h-4" />
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onMouseDown={(e) => e.preventDefault()}
-                                                onClick={() => applyFormat('italic')}
-                                                className="p-1.5 rounded text-rose-700 hover:bg-rose-100 transition-colors"
-                                                title="Kursiv (Ctrl+I)"
-                                            >
-                                                <Italic className="w-4 h-4" />
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onMouseDown={(e) => e.preventDefault()}
-                                                onClick={() => applyFormat('underline')}
-                                                className="p-1.5 rounded text-rose-700 hover:bg-rose-100 transition-colors"
-                                                title="Unterstrichen (Ctrl+U)"
-                                            >
-                                                <Underline className="w-4 h-4" />
-                                            </button>
-                                            <span className="w-px h-5 bg-rose-200 mx-1" />
-                                            <button
-                                                type="button"
-                                                onMouseDown={(e) => e.preventDefault()}
-                                                onClick={() => applyFormat('insertUnorderedList')}
-                                                className="p-1.5 rounded text-rose-700 hover:bg-rose-100 transition-colors"
-                                                title="Aufzählung"
-                                            >
-                                                <List className="w-4 h-4" />
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onMouseDown={(e) => e.preventDefault()}
-                                                onClick={() => applyFormat('insertOrderedList')}
-                                                className="p-1.5 rounded text-rose-700 hover:bg-rose-100 transition-colors"
-                                                title="Nummerierte Liste"
-                                            >
-                                                <ListOrdered className="w-4 h-4" />
-                                            </button>
-                                            <span className="w-px h-5 bg-rose-200 mx-1" />
-                                            <button
-                                                type="button"
-                                                onMouseDown={(e) => e.preventDefault()}
-                                                onClick={() => applyFormat('removeFormat')}
-                                                className="p-1.5 rounded text-rose-700 hover:bg-rose-100 transition-colors"
-                                                title="Formatierung entfernen"
-                                            >
-                                                <Eraser className="w-4 h-4" />
-                                            </button>
-                                        </div>
-                                        {/* Editor — uncontrolled contentEditable preserves complex HTML
-                                            (signature tables, inline styles) without normalization.
-                                            Mirrors the EmailComposeForm pattern. */}
-                                        <div
-                                            ref={messageEditorRef}
-                                            className="p-4 min-h-[260px] max-h-[480px] overflow-auto outline-none prose prose-sm max-w-none"
-                                            contentEditable
-                                            suppressContentEditableWarning
-                                            onMouseUp={saveMessageRange}
-                                            onKeyUp={saveMessageRange}
-                                            onInput={(e) => {
-                                                if (editingOoo) {
-                                                    setEditingOoo({ ...editingOoo, message: e.currentTarget.innerHTML });
-                                                }
-                                            }}
-                                            onBlur={(e) => {
-                                                saveMessageRange();
-                                                if (editingOoo) {
-                                                    setEditingOoo({ ...editingOoo, message: e.currentTarget.innerHTML });
-                                                }
-                                            }}
-                                        />
-                                    </div>
+                                    <MailNachrichtFeld
+                                        editorRef={messageEditorRef}
+                                        ariaLabel="Abwesenheitsnachricht"
+                                        className="min-h-[260px] max-h-[480px] prose prose-sm max-w-none"
+                                        onAuswahl={saveMessageRange}
+                                        onInput={(e) => {
+                                            if (editingOoo) {
+                                                setEditingOoo({ ...editingOoo, message: e.currentTarget.innerHTML });
+                                            }
+                                        }}
+                                        onBlur={(e) => {
+                                            saveMessageRange();
+                                            if (editingOoo) {
+                                                setEditingOoo({ ...editingOoo, message: e.currentTarget.innerHTML });
+                                            }
+                                        }}
+                                    />
                                     <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
                                         <span className="text-xs text-slate-400 mr-1">Am Cursor einfügen:</span>
                                         <PlaceholderChip token="{{start}}" label="Start" onClick={() => insertMessagePlaceholder('{{start}}')} />

@@ -4,7 +4,8 @@ import { ToastProvider } from './ui/toast';
 const render = (ui: ReactElement) => rtlRender(<ToastProvider>{ui}</ToastProvider>);
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { EmailComposeForm, MAX_ATTACHMENT_BYTES } from './EmailComposeForm';
+import { EmailComposeForm } from './EmailComposeForm';
+import { MAX_ATTACHMENT_BYTES } from '../features/email/compose/anhangGrenze';
 
 /**
  * Regressionstests fuer die Rueckfrage "E-Mail-Adresse speichern?".

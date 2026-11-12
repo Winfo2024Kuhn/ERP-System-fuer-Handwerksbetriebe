@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { escapeHtml, isLikelyPlainText } from './emailContentFrameUtils';
 import { collapseThreadQuotes } from '../features/email/threadQuotes';
+import { verlinkeAdressen } from '../lib/linkErkennungDom';
 
 interface EmailContentFrameProps {
     html: string;
@@ -39,6 +40,9 @@ export const EmailContentFrame: React.FC<EmailContentFrameProps> = ({ html, clas
         if (hideQuotes) {
             collapseThreadQuotes(iframe.contentWindow.document, updateHeight, { keepForwardedContent });
         }
+        // Nackte Adressen klickbar machen – erst nach dem Einklappen, damit die
+        // Zitat-Erkennung den Originaltext sieht; eingeklappte Zitate bekommen sie trotzdem.
+        verlinkeAdressen(iframe.contentWindow.document.body, { neuerTab: true });
 
         updateHeight();
 

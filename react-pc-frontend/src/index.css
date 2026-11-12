@@ -67,6 +67,32 @@ body {
   padding-left: 1.5rem;
 }
 
+/* Mail-Textfeld (features/email/editor): Tailwinds Grundstil nimmt Listen die
+   Punkte und Überschriften die Größe. Hier sieht man, was beim Empfänger ankommt. */
+.mail-text-feld ul {
+  list-style: disc;
+  padding-left: 1.5rem;
+  margin: 0.25rem 0;
+}
+
+.mail-text-feld ol {
+  list-style: decimal;
+  padding-left: 1.5rem;
+  margin: 0.25rem 0;
+}
+
+.mail-text-feld h3 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin: 0.5rem 0 0.25rem;
+}
+
+.mail-text-feld a {
+  color: #e11d48;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 /* Tiptap Editor Styles */
 .tiptap-editor-content {
   min-height: 200px;

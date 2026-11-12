@@ -165,7 +165,7 @@ import { useDokumentKontext } from './useDokumentKontext';
 import { EmailFormatDialog, type PdfFormat } from './EmailFormatDialog';
 import { EmailValidityDialog } from './EmailValidityDialog';
 import { OnlineAnnahmeDialog } from './OnlineAnnahmeDialog';
-import type { VorDemSendenErgebnis } from '../EmailComposeForm';
+import type { VorDemSendenErgebnis } from '../../features/email/compose/emailComposeTypen';
 import { useToast } from '../ui/toast';
 import { useConfirm } from '../ui/confirm-dialog';
 import { TabSchliessenHinweis } from '../lock/TabSchliessenHinweis';
@@ -4170,7 +4170,6 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                 initialRecipient={kontextDaten.kundenEmails?.[0]}
                 initialSubject={emailSubject}
                 initialBody={emailBody}
-                gueltigkeitTage={gueltigkeitTage ?? undefined}
                 vorDemSenden={buchungBeimSenden ? bucheVorDemSenden : undefined}
                 anhangVorschauGesperrt={buchungBeimSenden
                     ? 'Vorschau und Download erst nach dem Senden: Die Rechnung wird beim Senden gebucht.'

@@ -168,6 +168,26 @@ describe('EmailSettings – Abwesenheitsnotiz pro Postfach', () => {
         expect(aufrufe(mock, '/api/email/outofoffice', 'GET').length).toBeGreaterThanOrEqual(2);
     });
 
+    it('Bearbeiten: Nachricht mit Formatierungsleiste, Platzhalter landet an der Cursorstelle', async () => {
+        stubbe();
+        const user = await zeigeAbwesenheiten();
+        await user.click(await screen.findByRole('button', { name: 'Sommerurlaub bearbeiten' }));
+
+        const feld = await screen.findByRole('textbox', { name: 'Abwesenheitsnachricht' });
+        await waitFor(() => expect(feld).toHaveTextContent('Bin im Urlaub.'));
+        expect(screen.getByRole('toolbar', { name: 'Formatierung' })).toBeInTheDocument();
+
+        const text = feld.querySelector('p')!.firstChild!;
+        const range = document.createRange();
+        range.setStart(text, 3);
+        range.collapse(true);
+        window.getSelection()!.removeAllRanges();
+        window.getSelection()!.addRange(range);
+        await user.click(screen.getAllByTitle('{{start}} am Cursor einfügen').at(-1)!);
+
+        expect(feld.innerHTML).toBe('<p>Bin{{start}} im Urlaub.</p>');
+    });
+
     it('Bearbeiten: ein nicht mehr wählbares Postfach wird nicht angehakt und als entfernt angezeigt', async () => {
         stubbe({ waehlbar: [{ ...MAX, eigenes: true }] });
         const user = await zeigeAbwesenheiten();

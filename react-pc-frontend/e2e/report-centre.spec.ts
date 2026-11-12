@@ -122,6 +122,18 @@ test('Report Centre: Steuerberater-Bericht bis zur Vorschau und Mail mit PDF-Anh
     expect(mitschrift.pdf.at(-1)?.searchParams.get('stundenart')).toBe('SOLL');
     await designPruefung(page, info, 'report-centre-steuerberater-mail');
 
+    // Link-Dialog liegt über der Stundenübermittlung; Escape schließt nur ihn.
+    const nachricht = mail.getByRole('textbox', { name: 'Nachricht' });
+    await nachricht.click();
+    await page.keyboard.press('Control+k');
+    const linkDialog = page.getByRole('dialog', { name: 'Link einfügen' });
+    await expect(linkDialog.getByRole('textbox', { name: 'Angezeigter Text' })).toBeFocused();
+    await designPruefung(page, info, 'report-centre-steuerberater-link-dialog');
+    await page.keyboard.press('Escape');
+    await expect(linkDialog).toHaveCount(0);
+    await expect(mail).toBeVisible();
+    await expect(nachricht).toBeFocused();
+
     // Escape schließt nur den Mail-Dialog, der Assistent bleibt offen.
     await page.keyboard.press('Escape');
     await expect(mail).toHaveCount(0);
