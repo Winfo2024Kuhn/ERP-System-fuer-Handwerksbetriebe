@@ -1,6 +1,6 @@
 import { VerschiebenDialog } from '../../components/ordner/VerschiebenDialog';
 import type { Baum } from '../../lib/ordnerBaum';
-import { benenneOrdnerUm, legeOrdnerAn, verschiebeOrdner } from './api';
+import { benenneOrdnerUm, legeOrdnerAn } from './api';
 import { zieleFuerOrdner } from './firmendokumenteLogik';
 import { OrdnerVerschiebenInfo } from './InfoTexte';
 import { OrdnerNameDialog } from './OrdnerNameDialog';
@@ -20,12 +20,14 @@ export interface OrdnerDialogeProps {
     /** Admins dürfen auch aus eingeschränkten Zweigen in andere Hauptordner verschieben. */
     istAdmin: boolean;
     onSchliessen: () => void;
+    /** Verschieben mit Rückfrage und „Rückgängig“ (wie beim Ziehen); `false` = Rückfrage abgebrochen, Fehler werden geworfen. */
+    onVerschieben: (ordner: FirmenOrdner, zielId: number | null) => Promise<boolean>;
     /** Nach Erfolg: Ordnerliste neu laden, ggf. den neuen Ordner wählen. */
     onFertig: (ordner: FirmenOrdner, meldung: string) => void;
 }
 
 /** Anlegen, Umbenennen, Verschieben und Rechte (nur Admins) von Ordnern – je ein kleiner Dialog. */
-export function OrdnerDialoge({ dialog, baum, istAdmin, onSchliessen, onFertig }: OrdnerDialogeProps) {
+export function OrdnerDialoge({ dialog, baum, istAdmin, onSchliessen, onVerschieben, onFertig }: OrdnerDialogeProps) {
     if (!dialog) return null;
 
     if (dialog.art === 'anlegen') {
@@ -76,7 +78,10 @@ export function OrdnerDialoge({ dialog, baum, istAdmin, onSchliessen, onFertig }
             beschreibung="Der Ordner wandert samt Unterordnern und Dokumenten an die neue Stelle."
             ziele={zieleFuerOrdner(baum, ordner.id, istAdmin)}
             onAbbrechen={onSchliessen}
-            onBestaetigen={(zielId) => verschiebeOrdner(ordner.id, zielId).then((neu) => onFertig(neu, `Ordner „${neu.name}“ verschoben.`))}
+            onBestaetigen={(zielId) => onVerschieben(ordner, zielId).then((ok) => {
+                if (ok) onSchliessen();
+                return ok;
+            })}
         />
     );
 }

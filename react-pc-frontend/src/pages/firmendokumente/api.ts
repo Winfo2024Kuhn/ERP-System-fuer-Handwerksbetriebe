@@ -100,3 +100,8 @@ export async function loescheDokument(dokumentId: number): Promise<void> {
 export function dateiUrl(dokumentId: number, download = false): string {
     return `${BASIS}/${id(dokumentId)}/datei${download ? '?download=true' : ''}`;
 }
+
+/** Kleines Vorschaubild (JPEG, längste Kante höchstens 512 px) – nur für PDFs und Bilder. 404, wenn es keins gibt. */
+export function vorschaubildUrl(dokumentId: number): string {
+    return `${BASIS}/${id(dokumentId)}/vorschaubild`;
+}

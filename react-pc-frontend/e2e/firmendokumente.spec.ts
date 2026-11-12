@@ -116,7 +116,7 @@ test('Dokument bearbeiten: umbenennen und Fällig am setzen, per Ziehen verschie
 
     const dialog = page.getByRole('dialog', { name: 'Dokument bearbeiten' });
     await expect(dialog.getByText('Datei: scan_0040.pdf')).toBeVisible();
-    await expect(dialog.getByText('Liegt in: Prüfungen › Tore. Zum Verschieben die Zeile in der Liste auf einen Ordner links ziehen.')).toBeVisible();
+    await expect(dialog.getByText('Liegt in: Prüfungen › Tore. Zum Verschieben die Zeile oder Kachel auf einen Ordner ziehen.')).toBeVisible();
     await expect(dialog.getByRole('combobox')).toHaveCount(0);
     await dialog.getByLabel('Name *').fill('Torprüfung Halle 1 – 2026');
     await dialog.getByRole('button', { name: 'Fällig am', exact: true }).click();
@@ -211,7 +211,7 @@ test('Ordner anlegen, Unterordner anlegen, umbenennen, verschieben und löschen'
     await verschieben.getByRole('radio', { name: /^Prüfungen/ }).check();
     await designPruefung(page, testInfo, 'firmendokumente-ordner-verschieben', { primaerAktion: verschieben.getByRole('button', { name: 'Hierhin verschieben' }) });
     await verschieben.getByRole('button', { name: 'Hierhin verschieben' }).click();
-    await expect(page.getByText('Ordner „Zertifikate“ verschoben.')).toBeVisible();
+    await expect(page.getByText('„Zertifikate“ nach „Prüfungen“ verschoben.')).toBeVisible();
     await expect(page.getByRole('navigation', { name: 'Ordnerpfad' })).toContainText('Prüfungen');
 
     await menue('Prüfungen', 'Löschen');

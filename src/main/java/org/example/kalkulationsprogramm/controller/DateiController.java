@@ -19,6 +19,7 @@ import org.example.kalkulationsprogramm.exception.NotFoundException;
 import org.example.kalkulationsprogramm.service.BildVorschauService;
 import org.example.kalkulationsprogramm.service.DateiSpeicherService;
 import org.example.kalkulationsprogramm.service.MobileObjectAccessService;
+import org.example.kalkulationsprogramm.service.vorschau.UmrechnungAusgelastetException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.Resource;
@@ -276,7 +277,7 @@ public class DateiController {
             byte[] jpegBytes;
             try {
                 jpegBytes = verkleinerung.erzeuge(cacheKey, resource);
-            } catch (BildVorschauService.UmrechnungAusgelastetException ausgelastet) {
+            } catch (UmrechnungAusgelastetException ausgelastet) {
                 // Vorübergehend: nichts speichern lassen, die App lädt dann das Original
                 // und versucht es beim nächsten Öffnen wieder mit der kleinen Fassung.
                 return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)

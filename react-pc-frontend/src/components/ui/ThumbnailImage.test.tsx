@@ -1,5 +1,6 @@
 import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect } from 'vitest';
+import { act } from 'react';
+import { describe, it, expect, vi } from 'vitest';
 import { ThumbnailImage } from './ThumbnailImage';
 
 describe('ThumbnailImage', () => {
@@ -100,5 +101,38 @@ describe('ThumbnailImage', () => {
     it('übernimmt zusätzliche CSS-Klassen', () => {
         render(<ThumbnailImage src="/thumb.jpg" alt="Foto" className="object-cover" />);
         expect(screen.getByAltText('Foto').className).toContain('object-cover');
+    });
+
+    it('zeigt bei Fehler das mitgegebene Ersatz-Symbol – ohne auf das Original zurückzufallen', () => {
+        const { container } = render(
+            <ThumbnailImage src="/api/firmendokumente/7/vorschaubild" alt="" ersatz={<span data-testid="ersatz">PDF</span>} />,
+        );
+        const img = container.querySelector('img') as HTMLImageElement;
+        fireEvent.error(img);
+        expect(screen.getByTestId('ersatz')).toBeInTheDocument();
+        expect(container.querySelector('img')).toBeNull();
+        expect(container.querySelector('[role="img"]')).toBeNull();
+    });
+
+    it('versucht es nach einem Fehler einmal später erneut, erst danach kommt der Ersatz', () => {
+        vi.useFakeTimers();
+        try {
+            const { container } = render(
+                <ThumbnailImage src="/api/firmendokumente/7/vorschaubild" alt="" ersatz={<span data-testid="ersatz">PDF</span>}
+                    wiederholen={{ anzahl: 1, nachMs: 5000 }} />,
+            );
+            fireEvent.error(container.querySelector('img') as HTMLImageElement);
+            expect(screen.queryByTestId('ersatz')).toBeNull();
+            expect(container.querySelector('[class*="animate-pulse"]')).not.toBeNull();
+            act(() => { vi.advanceTimersByTime(4999); });
+            expect(container.querySelector('img')).toHaveAttribute('src', '/api/firmendokumente/7/vorschaubild');
+            act(() => { vi.advanceTimersByTime(1); });
+            const neu = container.querySelector('img') as HTMLImageElement;
+            expect(neu).toHaveAttribute('src', '/api/firmendokumente/7/vorschaubild?v=1');
+            fireEvent.error(neu);
+            expect(screen.getByTestId('ersatz')).toBeInTheDocument();
+        } finally {
+            vi.useRealTimers();
+        }
     });
 });

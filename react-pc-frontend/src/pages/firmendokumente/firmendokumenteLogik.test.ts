@@ -248,7 +248,8 @@ describe('Dokument per Ziehen verschieben', () => {
     it('schreibt und liest das gezogene Dokument', () => {
         const daten = new Map<string, string>();
         schreibeGezogenesDokument({ setData: (typ, wert) => { daten.set(typ, wert); } }, dok);
-        expect([...daten.keys()]).toEqual([DOKUMENT_DATENTYP, 'text/plain']);
+        // Zweiter Typ mit dem Quellordner im Namen: beim Ziehen lesbar, damit der eigene Ordner nicht aufleuchtet.
+        expect([...daten.keys()]).toEqual([DOKUMENT_DATENTYP, 'application/x-firmendokument-aus-ordner-2', 'text/plain']);
         expect(daten.get('text/plain')).toBe('Torprüfung');
         expect(liesGezogenesDokument(daten.get(DOKUMENT_DATENTYP) ?? '')).toEqual({ id: 7, ordnerId: 2, name: 'Torprüfung', faelligAm: '2027-01-31' });
     });

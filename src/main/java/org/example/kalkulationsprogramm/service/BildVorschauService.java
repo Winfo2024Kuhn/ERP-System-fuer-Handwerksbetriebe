@@ -2,9 +2,7 @@ package org.example.kalkulationsprogramm.service;
 
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
-import java.awt.geom.AffineTransform;
 import java.awt.image.BufferedImage;
-import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -12,14 +10,16 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.TimeUnit;
 
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReadParam;
 import javax.imageio.ImageReader;
 import javax.imageio.stream.ImageInputStream;
 
+import org.example.kalkulationsprogramm.service.vorschau.BildDrehung;
+import org.example.kalkulationsprogramm.service.vorschau.ExifOrientierung;
+import org.example.kalkulationsprogramm.service.vorschau.UmrechnungAusgelastetException;
+import org.example.kalkulationsprogramm.service.vorschau.Umrechnungsplaetze;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,6 +33,9 @@ import org.springframework.stereotype.Service;
  * anzeigen — Dokumente ({@code DateiController}) genauso wie Reklamationsbilder
  * von Lieferanten. Ein gemeinsamer Cache heißt: Ein Bild wird höchstens einmal
  * verkleinert, egal von welcher Seite aus es zuerst angefordert wird.</p>
+ *
+ * <p>Die Bausteine liegen in {@code service/vorschau}: EXIF-Lage lesen ({@link ExifOrientierung}),
+ * drehen ({@link BildDrehung}) und gleichzeitige Umrechnungen begrenzen ({@link Umrechnungsplaetze}).</p>
  */
 @Service
 public class BildVorschauService {
@@ -71,8 +74,7 @@ public class BildVorschauService {
      */
     private static final long ANZEIGE_WARTEZEIT_MS = 5_000;
 
-    private final Semaphore anzeigeUmrechnungen;
-    private final long anzeigeWartezeitMs;
+    private final Umrechnungsplaetze anzeigeUmrechnungen;
 
     @Autowired
     public BildVorschauService() {
@@ -81,8 +83,7 @@ public class BildVorschauService {
 
     /** Anzahl paralleler Umrechnungen und Wartezeit frei wählbar, z. B. für Überlast-Tests. */
     public BildVorschauService(int parallel, long wartezeitMs) {
-        this.anzeigeUmrechnungen = new Semaphore(parallel, true);
-        this.anzeigeWartezeitMs = wartezeitMs;
+        this.anzeigeUmrechnungen = new Umrechnungsplaetze(parallel, wartezeitMs);
     }
 
     /**
@@ -173,37 +174,21 @@ public class BildVorschauService {
      */
     public byte[] erzeugeAnzeigeUndCache(String cacheKey, Resource resource) throws IOException {
         try {
-            if (!anzeigeUmrechnungen.tryAcquire(anzeigeWartezeitMs, TimeUnit.MILLISECONDS)) {
-                log.info("Anzeigegröße für {} übersprungen: Server ausgelastet", cacheKey);
-                throw new UmrechnungAusgelastetException();
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new UmrechnungAusgelastetException();
-        }
-        try {
-            // Ein paralleler Aufruf kann das Bild erzeugt haben, während dieser gewartet hat
-            byte[] vorhanden = anzeigeCache.get(cacheKey);
-            if (vorhanden != null) {
-                return vorhanden;
-            }
-            byte[] jpegBytes = erzeugeVerkleinert(resource, ANZEIGE_MAX_SIZE);
-            if (jpegBytes != null) {
-                anzeigeCache.put(cacheKey, jpegBytes);
-            }
-            return jpegBytes;
-        } finally {
-            anzeigeUmrechnungen.release();
-        }
-    }
-
-    /**
-     * Alle Umrechnungsplätze sind belegt. Die Antwort darf dann nirgends gespeichert
-     * werden, sonst bliebe ein Gerät dauerhaft auf der Ausweich-Antwort sitzen.
-     */
-    public static class UmrechnungAusgelastetException extends RuntimeException {
-        public UmrechnungAusgelastetException() {
-            super("Bildumrechnung ausgelastet");
+            return anzeigeUmrechnungen.belege(() -> {
+                // Ein paralleler Aufruf kann das Bild erzeugt haben, während dieser gewartet hat
+                byte[] vorhanden = anzeigeCache.get(cacheKey);
+                if (vorhanden != null) {
+                    return vorhanden;
+                }
+                byte[] jpegBytes = erzeugeVerkleinert(resource, ANZEIGE_MAX_SIZE);
+                if (jpegBytes != null) {
+                    anzeigeCache.put(cacheKey, jpegBytes);
+                }
+                return jpegBytes;
+            });
+        } catch (UmrechnungAusgelastetException ausgelastet) {
+            log.info("Anzeigegröße für {} übersprungen: Server ausgelastet", cacheKey);
+            throw ausgelastet;
         }
     }
 
@@ -227,10 +212,13 @@ public class BildVorschauService {
      * berechnete Vorschau-JPEG hat ihn aber nicht mehr. Ohne diesen Schritt läge die
      * Vorschau also quer, während dasselbe Bild in der Großansicht richtig steht.</p>
      *
+     * <p>Kleinere Bilder werden nie vergrößert. Auch von außen nutzbar (z. B. Vorschaubilder der
+     * Firmendokumente mit 512 px); Cache und Umrechnungsgrenze sind dann Sache des Aufrufers.</p>
+     *
      * @param maxKante maximale Kantenlänge des Ergebnisses in Pixeln
      * @return das JPEG oder {@code null}, wenn kein Reader das Format lesen kann
      */
-    byte[] erzeugeVerkleinert(Resource resource, int maxKante) throws IOException {
+    public byte[] erzeugeVerkleinert(Resource resource, int maxKante) throws IOException {
         int orientierung = leseExifOrientierung(resource);
 
         try (InputStream is = resource.getInputStream();
@@ -274,7 +262,7 @@ public class BildVorschauService {
 
                 // Erst am Ende drehen: auf dem kleinen Bild kostet das praktisch nichts,
                 // und beide Kanten bleiben dabei unter der Maximalgröße.
-                bild = wendeOrientierungAn(bild, orientierung);
+                bild = BildDrehung.wendeAn(bild, orientierung);
 
                 return convertToJpeg(bild);
             } catch (javax.imageio.IIOException e) {
@@ -323,183 +311,13 @@ public class BildVorschauService {
         return ((long) wert + teiler - 1) / teiler;
     }
 
-    /**
-     * Dreht bzw. spiegelt das Bild so, wie es die EXIF-Angabe der Kamera vorsieht.
-     *
-     * @param orientierung EXIF-Wert 1–8; alles andere lässt das Bild unverändert
-     */
-    private BufferedImage wendeOrientierungAn(BufferedImage bild, int orientierung) {
-        if (orientierung <= 1 || orientierung > 8) {
-            return bild;
-        }
-
-        int breite = bild.getWidth();
-        int hoehe = bild.getHeight();
-        // Die Werte 5–8 kippen das Bild um 90°, dadurch tauschen Breite und Höhe die Plätze
-        boolean gekippt = orientierung >= 5;
-        int zielBreite = gekippt ? hoehe : breite;
-        int zielHoehe = gekippt ? breite : hoehe;
-
-        AffineTransform transform = new AffineTransform();
-        switch (orientierung) {
-            case 2 -> { // horizontal gespiegelt
-                transform.scale(-1.0, 1.0);
-                transform.translate(-breite, 0);
-            }
-            case 3 -> { // um 180° gedreht
-                transform.translate(breite, hoehe);
-                transform.rotate(Math.PI);
-            }
-            case 4 -> { // vertikal gespiegelt
-                transform.scale(1.0, -1.0);
-                transform.translate(0, -hoehe);
-            }
-            case 5 -> { // um 90° gegen den Uhrzeigersinn und gespiegelt
-                transform.rotate(-Math.PI / 2);
-                transform.scale(-1.0, 1.0);
-            }
-            case 6 -> { // um 90° im Uhrzeigersinn
-                transform.translate(hoehe, 0);
-                transform.rotate(Math.PI / 2);
-            }
-            case 7 -> { // um 90° im Uhrzeigersinn und gespiegelt
-                transform.scale(-1.0, 1.0);
-                transform.translate(-hoehe, 0);
-                transform.translate(0, breite);
-                transform.rotate(3 * Math.PI / 2);
-            }
-            case 8 -> { // um 90° gegen den Uhrzeigersinn
-                transform.translate(0, breite);
-                transform.rotate(3 * Math.PI / 2);
-            }
-            default -> {
-                return bild;
-            }
-        }
-
-        BufferedImage gedreht = new BufferedImage(zielBreite, zielHoehe, BufferedImage.TYPE_INT_RGB);
-        Graphics2D g2d = gedreht.createGraphics();
-        g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-        g2d.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
-        g2d.drawImage(bild, transform, null);
-        g2d.dispose();
-        return gedreht;
-    }
-
-    /**
-     * Liest den EXIF-Wert "Orientation" (Tag 0x0112) aus einem JPEG.
-     *
-     * <p>Bewusst von Hand geparst statt über eine zusätzliche Bibliothek: Gebraucht wird
-     * genau ein Zahlenwert aus dem ersten IFD. Bei allem, was nicht passt — kein JPEG,
-     * kein EXIF-Block, abgeschnittene Datei — liefert die Methode 1 ("normale Lage"),
-     * das Bild bleibt dann unverändert.</p>
-     *
-     * @return EXIF-Orientierung 1–8, im Zweifel 1
-     */
-    private int leseExifOrientierung(Resource resource) {
-        final int normaleLage = 1;
-        try (InputStream is = new BufferedInputStream(resource.getInputStream())) {
-            if (lese16(is) != 0xFFD8) {
-                return normaleLage; // kein JPEG – nur JPEGs tragen die Drehung im Header
-            }
-            while (true) {
-                int marker = lese16(is);
-                // Jeder Abschnitt beginnt mit 0xFF; sonst sind wir aus dem Tritt geraten
-                if ((marker & 0xFF00) != 0xFF00) {
-                    return normaleLage;
-                }
-                // Ab hier folgen die Bilddaten, EXIF kann nicht mehr kommen
-                if (marker == 0xFFDA || marker == 0xFFD9) {
-                    return normaleLage;
-                }
-                int laenge = lese16(is);
-                if (laenge < 2) {
-                    return normaleLage;
-                }
-                if (marker == 0xFFE1) {
-                    byte[] segment = is.readNBytes(laenge - 2);
-                    Integer gefunden = leseOrientierungAusExifSegment(segment);
-                    if (gefunden != null) {
-                        return gefunden;
-                    }
-                } else {
-                    is.skipNBytes(laenge - 2);
-                }
-            }
+    /** EXIF-Lage des Bildes ({@link ExifOrientierung}); nicht lesbar → 1 („normale Lage“). */
+    private static int leseExifOrientierung(Resource resource) {
+        try (InputStream is = resource.getInputStream()) {
+            return ExifOrientierung.aus(is);
         } catch (IOException | RuntimeException e) {
-            return normaleLage;
+            return 1;
         }
-    }
-
-    /** @return die Orientierung aus dem APP1-Segment oder {@code null}, wenn dort keine steht */
-    private Integer leseOrientierungAusExifSegment(byte[] segment) {
-        // "Exif\0\0" + TIFF-Header (8 Bytes) + mindestens ein IFD-Eintrag
-        if (segment.length < 6 + 8 + 2
-                || segment[0] != 'E' || segment[1] != 'x' || segment[2] != 'i' || segment[3] != 'f'
-                || segment[4] != 0) {
-            return null;
-        }
-
-        // Alle Offsets im EXIF-Block zählen ab dem Beginn des TIFF-Headers
-        int tiff = 6;
-        boolean bigEndian;
-        if (segment[tiff] == 0x49 && segment[tiff + 1] == 0x49) {
-            bigEndian = false; // "II" – Intel
-        } else if (segment[tiff] == 0x4D && segment[tiff + 1] == 0x4D) {
-            bigEndian = true;  // "MM" – Motorola
-        } else {
-            return null;
-        }
-        if (lese16(segment, tiff + 2, bigEndian) != 42) {
-            return null; // TIFF-Kennung fehlt
-        }
-
-        int ifdOffset = lese32(segment, tiff + 4, bigEndian);
-        // Ohne Addition vergleichen: Bei einem manipulierten Offset nahe Integer.MAX_VALUE
-        // liefe "tiff + ifdOffset" ins Negative und rutschte an der Prüfung vorbei.
-        if (ifdOffset < 8 || ifdOffset > segment.length - tiff - 2) {
-            return null;
-        }
-        int ifdStart = tiff + ifdOffset;
-
-        int anzahlEintraege = lese16(segment, ifdStart, bigEndian);
-        for (int i = 0; i < anzahlEintraege; i++) {
-            int eintrag = ifdStart + 2 + i * 12;
-            if (eintrag + 12 > segment.length) {
-                return null; // Datei abgeschnitten
-            }
-            if (lese16(segment, eintrag, bigEndian) == 0x0112) {
-                int wert = lese16(segment, eintrag + 8, bigEndian);
-                return (wert >= 1 && wert <= 8) ? wert : null;
-            }
-        }
-        return null;
-    }
-
-    /** Liest zwei Bytes aus dem Stream als vorzeichenlose Zahl; -1 am Dateiende. */
-    private int lese16(InputStream is) throws IOException {
-        int hoch = is.read();
-        int niedrig = is.read();
-        if (hoch < 0 || niedrig < 0) {
-            return -1;
-        }
-        return (hoch << 8) | niedrig;
-    }
-
-    private int lese16(byte[] daten, int offset, boolean bigEndian) {
-        int a = daten[offset] & 0xFF;
-        int b = daten[offset + 1] & 0xFF;
-        return bigEndian ? (a << 8) | b : (b << 8) | a;
-    }
-
-    private int lese32(byte[] daten, int offset, boolean bigEndian) {
-        int a = daten[offset] & 0xFF;
-        int b = daten[offset + 1] & 0xFF;
-        int c = daten[offset + 2] & 0xFF;
-        int d = daten[offset + 3] & 0xFF;
-        return bigEndian
-                ? (a << 24) | (b << 16) | (c << 8) | d
-                : (d << 24) | (c << 16) | (b << 8) | a;
     }
 
     /** Skaliert auf max. {@code maxKante} px Kantenlänge, Seitenverhältnis bleibt erhalten. */

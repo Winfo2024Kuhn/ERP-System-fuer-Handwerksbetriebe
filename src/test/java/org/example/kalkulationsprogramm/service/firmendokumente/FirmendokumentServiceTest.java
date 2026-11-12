@@ -71,6 +71,7 @@ class FirmendokumentServiceTest {
 
     private final Authentication max = mock(Authentication.class);
     private FirmendokumentDateiablage ablage;
+    private FirmendokumentVorschaubildCache vorschaubilder;
     private FirmendokumentService service;
     private FirmendokumentOrdner pruefungen;
     private FirmendokumentOrdner versicherungen;
@@ -80,7 +81,8 @@ class FirmendokumentServiceTest {
         Clock clock = Clock.fixed(Instant.parse("2026-11-02T08:00:00Z"), ZoneId.of("Europe/Berlin"));
         ablage = new FirmendokumentDateiablage(tmp.toString());
         FirmendokumentZugriff zugriff = new FirmendokumentZugriff(rechtPruefung, ordnerRepository, rechtRepository);
-        service = new FirmendokumentService(dokumentRepository, ordnerRepository, ablage, zugriff, clock);
+        vorschaubilder = new FirmendokumentVorschaubildCache();
+        service = new FirmendokumentService(dokumentRepository, ordnerRepository, ablage, zugriff, vorschaubilder, clock);
         pruefungen = new FirmendokumentOrdner();
         pruefungen.setId(1L);
         pruefungen.setName("Prüfungen");
@@ -483,6 +485,8 @@ class FirmendokumentServiceTest {
         Firmendokument d = dokument(7, gespeichert);
         given(dokumentRepository.findById(7L)).willReturn(Optional.of(d));
 
+        vorschaubilder.lege(7L, new byte[] { 1, 2, 3 });
+
         TransactionSynchronizationManager.initSynchronization();
         try {
             service.loeschen(7L, max);
@@ -490,11 +494,13 @@ class FirmendokumentServiceTest {
             List<TransactionSynchronization> nachher = TransactionSynchronizationManager.getSynchronizations();
             nachher.forEach(sync -> sync.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK));
             assertThat(ablage.pfad(gespeichert)).exists();
+            assertThat(vorschaubilder.hole(7L)).as("Vorschaubild bleibt bis zum Commit").isNotNull();
             nachher.forEach(TransactionSynchronization::afterCommit);
         } finally {
             TransactionSynchronizationManager.clearSynchronization();
         }
         assertThat(ablage.pfad(gespeichert)).doesNotExist();
+        assertThat(vorschaubilder.hole(7L)).as("Vorschaubild nach dem Commit vergessen").isNull();
     }
 
     @Test
@@ -504,6 +510,7 @@ class FirmendokumentServiceTest {
         Path verzeichnis = Files.createDirectories(tmp.resolve("firmendokumente").resolve(gespeichert));
         Files.writeString(verzeichnis.resolve("drin.txt"), "x");
         given(dokumentRepository.findById(7L)).willReturn(Optional.of(dokument(7, gespeichert)));
+        vorschaubilder.lege(7L, new byte[] { 1 });
 
         TransactionSynchronizationManager.initSynchronization();
         try {
@@ -514,6 +521,7 @@ class FirmendokumentServiceTest {
         }
         verify(dokumentRepository).delete(any());
         assertThat(verzeichnis).exists();
+        assertThat(vorschaubilder.hole(7L)).as("Vorschaubild ist trotzdem vergessen").isNull();
     }
 
     @Test
@@ -544,6 +552,7 @@ class FirmendokumentServiceTest {
         assertThat(datei.dateiname()).isEqualTo("Torprüfung Halle 2.pdf");
         assertThat(datei.mediaType()).isEqualTo(MediaType.APPLICATION_PDF);
         assertThat(datei.immerAlsAnhang()).isFalse();
+        assertThat(datei.dateiart()).isEqualTo(FirmendokumentDateiart.PDF);
         assertThat(altDatei.mediaType()).isEqualTo(MediaType.APPLICATION_PDF);
         assertThat(altDatei.dateiname()).isEqualTo("Torprüfung Halle 2.pdf");
         assertThatThrownBy(() -> service.datei(8L, max)).hasMessageContaining("Datei zu diesem Dokument wurde nicht gefunden");
@@ -563,8 +572,10 @@ class FirmendokumentServiceTest {
         assertThat(w.dateiname()).isEqualTo("Torprüfung Halle 2.docx");
         assertThat(w.mediaType()).isEqualTo(MediaType.APPLICATION_OCTET_STREAM);
         assertThat(w.immerAlsAnhang()).isTrue();
+        assertThat(w.dateiart()).isEqualTo(FirmendokumentDateiart.SONSTIGE);
         assertThat(b.mediaType()).isEqualTo(MediaType.IMAGE_PNG);
         assertThat(b.immerAlsAnhang()).isFalse();
+        assertThat(b.dateiart()).isEqualTo(FirmendokumentDateiart.BILD);
     }
 
     @Test
@@ -579,5 +590,16 @@ class FirmendokumentServiceTest {
         werkstattSiehtVersicherungenNicht();
         assertThatThrownBy(() -> service.datei(8L, max)).satisfies(t -> assertThat(status(t)).isEqualTo(404))
                 .hasMessageContaining("Das Dokument gibt es nicht mehr.");
+    }
+
+    @Test
+    @DisplayName("Datei: manipulierter gespeicherter Name (../) wird nie aufgelöst – Vorschaubild und Datei lesen nur aus der Ablage")
+    void dateiNurAusDerAblage() {
+        given(dokumentRepository.findById(7L)).willReturn(Optional.of(dokument(7, "../../etc/passwd")));
+        given(dokumentRepository.findById(8L))
+                .willReturn(Optional.of(dokument(8, "../0a4f113b-0000-0000-0000-00000000000a.bin")));
+
+        assertThatThrownBy(() -> service.datei(7L, max)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service.datei(8L, max)).isInstanceOf(IllegalArgumentException.class);
     }
 }

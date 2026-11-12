@@ -1,14 +1,24 @@
-import { useState, type DragEvent, type KeyboardEvent, type ReactNode } from 'react';
+import type { DragEvent, KeyboardEvent, ReactNode } from 'react';
 import { ChevronRight, Folder, FolderInput, FolderOpen, FolderPlus, Lock, MoreHorizontal, Pencil, ShieldCheck, Trash2 } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '../../components/ui/dropdown-menu';
 import { cn } from '../../lib/utils';
 import type { BaumZeile } from '../../lib/ordnerBaum';
-import { DOKUMENT_DATENTYP, liesGezogenesDokument, ziehtDateien, ziehtDokument, type GezogenesDokument } from './firmendokumenteLogik';
+import { schreibeGezogenenOrdner } from './ordnerZiehen';
 import type { FirmenOrdner } from './typen';
+import { useAblageZiel, type AblageRegeln } from './useAblageZiel';
+import { useAufklappenBeimZiehen } from './useAufklappenBeimZiehen';
 
 export type OrdnerAktion = 'unterordner' | 'umbenennen' | 'verschieben' | 'loeschen' | 'rechte';
 
 export const EINGESCHRAENKT_TEXT = 'Nur für bestimmte Abteilungen sichtbar';
+
+/** Ablage-Ereignisse einer Zeile; `aktiv` = gerade wird etwas Passendes darübergezogen. */
+export interface ZiehenProps {
+    aktiv: boolean;
+    onDragOver: (event: DragEvent<HTMLDivElement>) => void;
+    onDragLeave: (event: DragEvent<HTMLDivElement>) => void;
+    onDrop: (event: DragEvent<HTMLDivElement>) => void;
+}
 
 interface ZeilenRahmenProps {
     ebene: number;
@@ -20,35 +30,15 @@ interface ZeilenRahmenProps {
     onFokus: () => void;
     onKlick: () => void;
     onTaste: (event: KeyboardEvent<HTMLDivElement>) => void;
-    /** Nur gesetzt, wenn hier Dateien abgelegt werden dürfen. */
-    onDateien?: (dateien: FileList) => void;
-    /** Nur gesetzt, wenn hier Dokumente aus der Liste abgelegt werden dürfen. */
-    onDokument?: (dok: GezogenesDokument) => void;
+    /** Nur gesetzt, wenn hier etwas abgelegt werden kann. */
+    ziehen?: ZiehenProps;
+    /** Nur gesetzt, wenn sich die Zeile selbst ziehen lässt. */
+    onZiehStart?: (event: DragEvent<HTMLDivElement>) => void;
     children: ReactNode;
 }
 
-/**
- * Gemeinsamer Rahmen einer Baumzeile (Übersicht und Ordner): Auswahl, Fokus,
- * Tastatur und Ablage – Dateien aus Explorer/Finder und Dokumente aus der Liste.
- */
-export function ZeilenRahmen({ ebene, gewaehlt, aktiv, label, ausgeklappt, refSetzen, onFokus, onKlick, onTaste, onDateien, onDokument, children }: ZeilenRahmenProps) {
-    const [ablage, setAblage] = useState(false);
-    const ablegbar = (event: DragEvent) => {
-        const passt = (onDateien && ziehtDateien(event)) || (onDokument && ziehtDokument(event));
-        if (!passt) return false;
-        event.preventDefault();
-        return true;
-    };
-    const ablegen = (event: DragEvent) => {
-        if (!ablegbar(event)) return;
-        setAblage(false);
-        if (ziehtDateien(event)) {
-            onDateien?.(event.dataTransfer.files);
-            return;
-        }
-        const dok = liesGezogenesDokument(event.dataTransfer.getData(DOKUMENT_DATENTYP));
-        if (dok) onDokument?.(dok);
-    };
+/** Gemeinsamer Rahmen einer Baumzeile (Übersicht und Ordner): Auswahl, Fokus, Tastatur, Ziehen und Ablegen. */
+export function ZeilenRahmen({ ebene, gewaehlt, aktiv, label, ausgeklappt, refSetzen, onFokus, onKlick, onTaste, ziehen, onZiehStart, children }: ZeilenRahmenProps) {
     return (
         <div
             ref={refSetzen}
@@ -58,16 +48,18 @@ export function ZeilenRahmen({ ebene, gewaehlt, aktiv, label, ausgeklappt, refSe
             aria-expanded={ausgeklappt}
             aria-label={label}
             tabIndex={aktiv ? 0 : -1}
+            draggable={onZiehStart ? true : undefined}
+            onDragStart={onZiehStart}
             onFocus={(e) => { if (e.target === e.currentTarget) onFokus(); }}
             onClick={onKlick}
             onKeyDown={onTaste}
-            onDragOver={(e) => { if (ablegbar(e)) { e.dataTransfer.dropEffect = ziehtDateien(e) ? 'copy' : 'move'; setAblage(true); } }}
-            onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setAblage(false); }}
-            onDrop={ablegen}
+            onDragOver={ziehen?.onDragOver}
+            onDragLeave={ziehen?.onDragLeave}
+            onDrop={ziehen?.onDrop}
             className={cn(
                 'group flex min-h-9 cursor-pointer items-center gap-1.5 rounded-lg py-1 pr-1 text-sm outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-rose-500',
                 gewaehlt ? 'bg-rose-50 font-medium text-rose-800' : 'text-slate-700 hover:bg-slate-100',
-                ablage && 'bg-rose-100 ring-2 ring-inset ring-rose-400',
+                ziehen?.aktiv && 'bg-rose-100 ring-2 ring-inset ring-rose-400',
             )}
             style={{ paddingLeft: 8 + ebene * 16 }}
         >
@@ -89,17 +81,20 @@ interface OrdnerZeileProps {
     onTaste: (event: KeyboardEvent<HTMLDivElement>) => void;
     onAufklappen: (offen: boolean) => void;
     onAktion: (aktion: OrdnerAktion) => void;
-    onDateien: (dateien: FileList) => void;
-    onDokument: (dok: GezogenesDokument) => void;
+    /** Was beim Ablegen von Dateien, Dokumenten und Ordnern passiert. */
+    ablage: AblageRegeln;
 }
 
 /**
  * Eine Ordnerzeile: Pfeil, Ordnersymbol, Name, Schloss bei eingeschränkten
- * Ordnern, roter Punkt bei Überfälligem, Anzahl und „…“-Menü. Ablegen geht
- * nur mit Recht „Ändern“.
+ * Ordnern, roter Punkt bei Überfälligem, Anzahl und „…“-Menü. Mit Recht
+ * „Ändern“ lässt sie sich auf einen anderen Ordner ziehen und nimmt Dateien,
+ * Dokumente und Ordner an. Beim Ziehen klappt sie nach kurzem Verharren auf.
  */
-export function OrdnerZeile({ zeile, istAdmin, gewaehlt, aktiv, ueberfaellig, refSetzen, onFokus, onWaehlen, onTaste, onAufklappen, onAktion, onDateien, onDokument }: OrdnerZeileProps) {
+export function OrdnerZeile({ zeile, istAdmin, gewaehlt, aktiv, ueberfaellig, refSetzen, onFokus, onWaehlen, onTaste, onAufklappen, onAktion, ablage }: OrdnerZeileProps) {
     const { ordner, ebene, hatKinder, aufgeklappt } = zeile;
+    const ziel = useAblageZiel(ablage, ordner.id);
+    const feder = useAufklappenBeimZiehen(hatKinder && !aufgeklappt, () => onAufklappen(true));
     const rechteEinstellbar = istAdmin && ordner.parentId === null;
     const Symbol = gewaehlt ? FolderOpen : Folder;
     const label = [
@@ -108,12 +103,20 @@ export function OrdnerZeile({ zeile, istAdmin, gewaehlt, aktiv, ueberfaellig, re
         ordner.eingeschraenkt ? 'nur für bestimmte Abteilungen sichtbar' : null,
         ueberfaellig ? 'enthält überfällige Dokumente' : null,
     ].filter(Boolean).join(', ');
+    const ziehen: ZiehenProps = {
+        aktiv: ziel.aktiv,
+        onDragOver: (e) => { feder.drueber(); ziel.onDragOver(e); },
+        onDragLeave: (e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) feder.weg();
+            ziel.onDragLeave(e);
+        },
+        onDrop: (e) => { feder.weg(); ziel.onDrop(e); },
+    };
 
     return (
         <ZeilenRahmen ebene={ebene} gewaehlt={gewaehlt} aktiv={aktiv} label={label} ausgeklappt={hatKinder ? aufgeklappt : undefined}
-            refSetzen={refSetzen} onFokus={onFokus} onKlick={onWaehlen} onTaste={onTaste}
-            onDateien={ordner.darfAendern ? onDateien : undefined}
-            onDokument={ordner.darfAendern ? onDokument : undefined}>
+            refSetzen={refSetzen} onFokus={onFokus} onKlick={onWaehlen} onTaste={onTaste} ziehen={ziehen}
+            onZiehStart={ordner.darfAendern ? (e) => schreibeGezogenenOrdner(e.dataTransfer, ordner) : undefined}>
             {hatKinder ? (
                 <button type="button" tabIndex={-1} aria-hidden="true"
                     onClick={(e) => { e.stopPropagation(); onAufklappen(!aufgeklappt); }}
@@ -122,7 +125,7 @@ export function OrdnerZeile({ zeile, istAdmin, gewaehlt, aktiv, ueberfaellig, re
                 </button>
             ) : <span className="w-4 shrink-0" aria-hidden="true" />}
             <Symbol className={cn('h-4 w-4 shrink-0', gewaehlt ? 'text-rose-600' : 'text-slate-400')} aria-hidden="true" />
-            <span className="min-w-0 flex-1 truncate" title={ordner.name}>{ordner.name}</span>
+            <span className="min-w-0 flex-1 truncate" title={ordner.name} data-kuerzung-erlaubt>{ordner.name}</span>
             {ordner.eingeschraenkt && (
                 <span className="shrink-0 text-slate-400" title={EINGESCHRAENKT_TEXT} aria-hidden="true"><Lock className="h-3.5 w-3.5" /></span>
             )}

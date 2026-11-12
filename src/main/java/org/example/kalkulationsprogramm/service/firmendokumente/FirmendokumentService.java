@@ -60,13 +60,19 @@ public class FirmendokumentService {
     private final FirmendokumentOrdnerRepository ordnerRepository;
     private final FirmendokumentDateiablage ablage;
     private final FirmendokumentZugriff zugriff;
+    private final FirmendokumentVorschaubildCache vorschaubilder;
     private final Clock clock;
 
     /**
-     * Datei zum Ausliefern: Pfad auf dem Server, Dateiname für den Browser, Content-Type und ob sie nie im Browser
-     * geöffnet werden darf (alles außer PDF und Bild).
+     * Datei zum Ausliefern: Pfad auf dem Server (immer aus der Ablage), Dateiname für den Browser, Content-Type und
+     * Dateiart (entscheidet über Anzeige im Browser und Vorschaubild).
      */
-    public record Datei(Path pfad, String dateiname, MediaType mediaType, boolean immerAlsAnhang) {
+    public record Datei(Path pfad, String dateiname, MediaType mediaType, FirmendokumentDateiart dateiart) {
+
+        /** Darf nie im Browser geöffnet werden (alles außer PDF und Bild). */
+        public boolean immerAlsAnhang() {
+            return dateiart.immerAlsAnhang();
+        }
     }
 
     /** Dokumente direkt in einem Ordner; unsichtbarer Ordner → 404 wie „gibt es nicht“. */
@@ -151,15 +157,18 @@ public class FirmendokumentService {
     }
 
     /**
-     * Löscht Eintrag und Datei endgültig (braucht „Ändern“). Die Datei verschwindet erst nach dem Commit: Scheitert
-     * die Transaktion, bleiben Eintrag und Datei zusammen erhalten.
+     * Löscht Eintrag und Datei endgültig (braucht „Ändern“). Datei und Vorschaubild im Speicher verschwinden erst nach
+     * dem Commit: Scheitert die Transaktion, bleiben Eintrag und Datei zusammen erhalten.
      */
     @Transactional
     public void loeschen(Long id, Authentication authentication) {
         Firmendokument dokument = aenderbaresDokument(id, authentication);
         dokumentRepository.delete(dokument);
         String gespeichert = dokument.getGespeicherterDateiname();
-        nachCommit(() -> ablage.loesche(gespeichert));
+        nachCommit(() -> {
+            vorschaubilder.vergiss(id);
+            ablage.loesche(gespeichert);
+        });
     }
 
     /** Datei zum Anzeigen/Herunterladen; „Ansehen“ reicht, unsichtbar → 404. */
@@ -173,7 +182,7 @@ public class FirmendokumentService {
         }
         String endung = FirmendokumentDateinamen.endungDesDokuments(dokument);
         return new Datei(pfad, FirmendokumentDateinamen.downloadName(dokument.getName(), endung),
-                FirmendokumentDateiart.mediaType(endung), FirmendokumentDateiart.aus(endung).immerAlsAnhang());
+                FirmendokumentDateiart.mediaType(endung), FirmendokumentDateiart.aus(endung));
     }
 
     /**

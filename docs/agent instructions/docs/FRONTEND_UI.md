@@ -102,6 +102,9 @@ PC-Frontend (`react-pc-frontend/src`):
 - `<DecimalInput>` -> `src/components/ui/decimal-input.tsx` (Mengen/Beträge mit Dezimalkomma)
 - `<TimeInput>` -> `src/components/ui/time-input.tsx` (Uhrzeit `HH:mm`)
 - `<ColorInput>` -> `src/components/ui/color-input.tsx` (statt nativem Farbpicker)
+- `<Slider beschriftung="…">` -> `src/components/ui/slider.tsx` (Schieberegler, shadcn/Radix auf Rose/Slate; nie ein ungestaltetes `<input type="range">`). `beschriftung` wird zum Namen des Griffs. `onValueChange` meldet jede Bewegung (nur Anzeige), `onValueCommit` das Loslassen bzw. jeden Tastendruck – Speichern gehört dorthin. Vorbild: Größe der Vorschaubilder in `pages/firmendokumente/AnsichtLeiste.tsx`.
+- `<SegmentAuswahl>` -> `src/components/ui/segment-auswahl.tsx` (zwei bis vier Werte nebeneinander, z. B. „Liste | Vorschau“); `symbol` setzt ein Lucide-Symbol vor den Text.
+- `<ThumbnailImage>` -> `src/components/ui/ThumbnailImage.tsx` (Vorschaubild mit Skeleton, `loading="lazy"`). `ersatz` zeigt bei Fehler z. B. das Dateiart-Symbol statt `ImageOff`; `wiederholen={{ anzahl, nachMs }}` versucht es begrenzt erneut (ausgelasteter Server, 503). `fallbackSrc` nur für Bilder setzen, bei PDFs nie auf das Original zurückfallen.
 - `Dialog`, `DialogContent`, `DialogHeader`, `DialogFooter`, `DialogTitle`, `DialogDescription` -> `src/components/ui/dialog.tsx`. Der Dialog bekommt seinen Namen über `aria-labelledby` am `Dialog` und dieselbe `id` (per `useId`) am `DialogTitle`, damit Tests und Screenreader ihn mit `getByRole('dialog', { name })` finden (Vorbild `features/firma/SteuerberaterDialog.tsx`). Während des Speicherns sind Speichern und Abbrechen gesperrt und X/Escape schließen nicht.
 - `useConfirm()` -> `src/components/ui/confirm-dialog.tsx` (Bestätigungsdialog statt `window.confirm`)
 - `useToast()` -> `src/components/ui/toast.tsx` (siehe Toast-Pflicht)

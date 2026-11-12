@@ -13,8 +13,11 @@ export interface VerschiebenDialogProps {
     info?: ReactNode;
     ziele: ZielEintrag[];
     onAbbrechen: () => void;
-    /** Wirft bei einem Fehler – die Meldung erscheint im Dialog. */
-    onBestaetigen: (zielId: number | null) => Promise<void>;
+    /**
+     * Wirft bei einem Fehler – die Meldung erscheint im Dialog. Liefert `false`, wenn nicht verschoben
+     * wurde (z. B. eine Rückfrage abgebrochen); dann bleibt der Dialog offen und bedienbar.
+     */
+    onBestaetigen: (zielId: number | null) => Promise<void | boolean>;
 }
 
 /**
@@ -33,7 +36,7 @@ export function VerschiebenDialog({ titel, beschreibung, info, ziele, onAbbreche
         setSendet(true);
         setFehler(null);
         try {
-            await onBestaetigen(wahl);
+            if (await onBestaetigen(wahl) === false) setSendet(false);
         } catch (err) {
             const meldung = err instanceof Error ? err.message : 'Das Verschieben hat nicht geklappt.';
             setFehler(meldung);

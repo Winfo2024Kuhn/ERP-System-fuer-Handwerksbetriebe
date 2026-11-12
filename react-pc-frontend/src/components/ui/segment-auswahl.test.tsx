@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { describe, expect, it } from 'vitest';
+import { LayoutGrid, List } from 'lucide-react';
 import { SegmentAuswahl } from './segment-auswahl';
 import type { SegmentOption } from './segment-auswahl';
 
@@ -58,5 +59,14 @@ describe('SegmentAuswahl', () => {
     it('ohne gültige Wahl ist der erste nicht gesperrte Wert erreichbar', () => {
         render(<SegmentAuswahl beschriftung="X" optionen={[OPTIONEN[1], OPTIONEN[2]]} wert="Z" onChange={() => {}} />);
         expect(screen.getByRole('radio', { name: 'Anbieter B' })).toHaveAttribute('tabindex', '0');
+    });
+
+    it('zeigt ein Symbol vor dem Text, ohne den Namen zu ändern', () => {
+        render(<SegmentAuswahl beschriftung="Ansicht" wert="liste" onChange={() => {}}
+            optionen={[{ wert: 'liste', text: 'Liste', symbol: List }, { wert: 'vorschau', text: 'Vorschau', symbol: LayoutGrid }]} />);
+        const liste = screen.getByRole('radio', { name: 'Liste' });
+        const symbol = liste.querySelector('svg');
+        expect(symbol?.getAttribute('class')).toContain('lucide-list');
+        expect(symbol).toHaveAttribute('aria-hidden', 'true');
     });
 });

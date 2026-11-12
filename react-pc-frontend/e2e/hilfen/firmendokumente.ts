@@ -41,6 +41,8 @@ export interface FirmendokumenteStand {
     dateiAbrufe: string[];
     /** Gespeicherte Abteilungs-Rechte je oberstem Ordner. */
     rechte: Record<number, Record<number, RechteStufe>>;
+    /** Jeder Abruf eines Vorschaubilds (Pfad). */
+    vorschaubildAbrufe: string[];
 }
 
 /** Ein winziges, gültiges PNG (1×1 Pixel, rose) für die Bildvorschau. */
@@ -54,6 +56,11 @@ export function dateiartVon(dateiname: string): 'PDF' | 'BILD' | 'SONSTIGE' {
     if (endung === 'pdf') return 'PDF';
     return BILD_ENDUNGEN.includes(endung) ? 'BILD' : 'SONSTIGE';
 }
+
+/** Vorschaubild eines Fotos (48 × 36, Himmel, Geländer, Boden) – statt eines echten JPEGs. */
+const VORSCHAU_FOTO = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAADAAAAAkCAIAAABAJy5dAAAASUlEQVR42u3OQREAEAAAQe0kEEILITTQQg4hxBDAywszO3Ove23oYz5VAAICAgICAgICAvoMFFN+KqAvQa2WvVsfCAgICAjo8C/yRKi0qI1thgAAAABJRU5ErkJggg==', 'base64');
+/** Vorschaubild einer PDF-Seite (48 × 64, weiß mit Zeilen). */
+const VORSCHAU_SEITE = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAADAAAABACAIAAADTQmMRAAAAXUlEQVR42u3SQQkAIBBFQZN4N4M1bWAJ2+nVALoIzrIBBv5L87FLQEAfgHKpRx4oDCRqIKDboNZH2JsMSNQmAxK1hoBEDSRqUQOJWtRAojYZkKg1BCRqDYla1ED7LYOtr6i+rnp+AAAAAElFTkSuQmCC', 'base64');
 
 /** Ein winziges, gültiges PDF für Vorschau und Druck. */
 const MINI_PDF = Buffer.from(
@@ -93,7 +100,7 @@ const nachName = (a: { name: string }, b: { name: string }) => a.name.localeComp
 
 export async function stubbeFirmendokumenteApi(page: Page, bestand = grundbestand(), optionen: FirmendokumenteOptionen = {}): Promise<FirmendokumenteStand> {
     const stand: FirmendokumenteStand = {
-        ordner: bestand.ordner.map((o) => ({ ...o })), dokumente: bestand.dokumente.map((d) => ({ ...d })), hochgeladen: [], aenderungen: [], dateiAbrufe: [], rechte: {},
+        ordner: bestand.ordner.map((o) => ({ ...o })), dokumente: bestand.dokumente.map((d) => ({ ...d })), hochgeladen: [], aenderungen: [], dateiAbrufe: [], rechte: {}, vorschaubildAbrufe: [],
     };
     const abteilungen = optionen.abteilungen ?? [];
     let naechsteId = 100;
@@ -243,6 +250,14 @@ export async function stubbeFirmendokumenteApi(page: Page, bestand = grundbestan
             };
             stand.dokumente.push(neu);
             return json(route, dto(neu), 201);
+        }
+        if (/^\/\d+\/vorschaubild$/.test(pfad)) {
+            // Wie der Server: nur für PDF und Bild, sonst 404 mit Meldung.
+            stand.vorschaubildAbrufe.push(url.pathname);
+            const dok = stand.dokumente.find((d) => d.id === Number(/\d+/.exec(pfad)?.[0]));
+            const art = dok ? dateiartVon(dok.originalDateiname) : 'SONSTIGE';
+            if (art === 'SONSTIGE') return json(route, { status: 404, message: 'Für diese Datei gibt es kein Vorschaubild.', fields: {} }, 404);
+            return route.fulfill({ status: 200, contentType: 'image/png', body: art === 'BILD' ? VORSCHAU_FOTO : VORSCHAU_SEITE, headers: { 'Cache-Control': 'private, max-age=86400' } });
         }
         if (/^\/\d+\/datei$/.test(pfad)) {
             stand.dateiAbrufe.push(`${url.pathname}${url.search}`);
