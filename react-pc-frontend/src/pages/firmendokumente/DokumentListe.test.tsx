@@ -1,12 +1,12 @@
-import { act, fireEvent, render, renderHook, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConfirmProvider } from '../../components/ui/confirm-dialog';
 import { ToastProvider } from '../../components/ui/toast';
+import { baueBaum } from '../../lib/ordnerBaum';
 import { DokumentListe, type DokumentListeProps } from './DokumentListe';
 import { useDokumentAktionen } from './useDokumentAktionen';
-import { useHochladen } from './useHochladen';
-import type { FirmenDokument } from './typen';
+import type { FirmenDokument, FirmenOrdner } from './typen';
 
 vi.mock('./api', async (original) => ({ ...(await original<typeof import('./api')>()), loescheDokument: vi.fn() }));
 vi.mock('../../lib/pdfDrucken', () => ({ druckePdfAusUrl: vi.fn() }));
@@ -208,40 +208,54 @@ describe('DokumentListe', () => {
     });
 });
 
-describe('useHochladen', () => {
-    const datei = (name: string, type = '') => new File(['inhalt'], name, { type });
-
-    it('nimmt jede erlaubte Datei, lehnt Programmdateien mit Meldung ab und reiht die übrigen mit ihrem Ordner nacheinander', () => {
-        const melde = vi.fn();
-        const { result } = renderHook(() => useHochladen(melde));
-        act(() => result.current.annehmen([datei('setup.EXE')], 2));
-        expect(melde).toHaveBeenCalledWith('„setup.EXE“: Programmdateien (z. B. .exe oder .bat) können aus Sicherheitsgründen nicht abgelegt werden.');
-        expect(result.current.aktuelle).toBeNull();
-
-        act(() => result.current.annehmen([datei('a.pdf', 'application/pdf'), datei('virus.bat'), datei('foto.jpg', 'image/jpeg')], 2));
-        expect(melde).toHaveBeenCalledTimes(2);
-        expect(result.current.aktuelle).toMatchObject({ ordnerId: 2, nummer: 1, anzahl: 2 });
-        expect(result.current.aktuelle?.datei.name).toBe('a.pdf');
-        act(() => result.current.annehmen([datei('angebot.docx')], 9));
-        expect(result.current.aktuelle).toMatchObject({ ordnerId: 2, nummer: 1, anzahl: 3 });
-
-        // Jede Datei bleibt beim Ordner, auf dem sie abgelegt wurde.
-        act(() => result.current.weiter());
-        expect(result.current.aktuelle).toMatchObject({ ordnerId: 2, nummer: 2, anzahl: 3 });
-        expect(result.current.aktuelle?.datei.name).toBe('foto.jpg');
-        act(() => result.current.weiter());
-        expect(result.current.aktuelle).toMatchObject({ ordnerId: 9, nummer: 3, anzahl: 3 });
-        expect(result.current.aktuelle?.datei.name).toBe('angebot.docx');
-        act(() => result.current.abbrechen());
-        expect(result.current.aktuelle).toBeNull();
-        act(() => result.current.weiter());
-        expect(result.current.aktuelle).toBeNull();
+describe('DokumentListe – Unterordner und Vorschau', () => {
+    const ordner = (id: number, name: string, anzahlDokumente: number): FirmenOrdner => ({
+        id, name, parentId: 1, anzahlDokumente, anzahlUeberfaellig: 0, anzahlBaldFaellig: 0, darfAendern: true, eingeschraenkt: false,
+    });
+    const MONTAG = ordner(2, 'Montag', 5);
+    const DIENSTAG = ordner(3, 'Dienstag', 1);
+    const baum = baueBaum([MONTAG, DIENSTAG]);
+    const ordnerAktionen = (onOeffnen = vi.fn()) => ({
+        onOeffnen, ablage: { baum, istAdmin: false, onDateien: vi.fn(), onDokument: vi.fn(), onOrdner: vi.fn(), onAbgelehnt: vi.fn() },
     });
 
-    it('ist nach der letzten Datei fertig', () => {
-        const { result } = renderHook(() => useHochladen(vi.fn()));
-        act(() => result.current.annehmen([datei('a.pdf')], 2));
-        act(() => result.current.weiter());
-        expect(result.current.aktuelle).toBeNull();
+    it('zeigt Unterordner als Zeilen vor den Dokumenten – Klick auf den Namen öffnet', async () => {
+        const user = userEvent.setup();
+        const onOeffnen = vi.fn();
+        zeige({ dokumente: [dok(7, 'Torprüfung')], gesamt: 1, unterordner: [MONTAG, DIENSTAG], ordnerAktionen: ordnerAktionen(onOeffnen) });
+        const zeilen = screen.getAllByRole('row').slice(1);
+        expect(zeilen.map((z) => within(z).getAllByRole('button')[0].textContent)).toEqual(['Montag', 'Dienstag', 'Torprüfung']);
+        const zellen = within(zeilen[0]).getAllByRole('cell');
+        expect(zellen[1]).toHaveTextContent(/^Ordner$/);
+        // Die Anzahl steht klein unter dem Namen, nicht in der Spalte „Größe“ (dort „–“ wie bei Ordnern im Explorer).
+        expect(zellen[0].textContent).toBe('Montag5\u00a0Dokumente');
+        expect(zellen.at(-2)?.textContent).toBe('–');
+        expect(within(zeilen[1]).getAllByRole('cell')[0].textContent).toBe('Dienstag1\u00a0Dokument');
+        expect(zeilen[0]).toHaveAttribute('draggable', 'true');
+        await user.click(screen.getByRole('button', { name: 'Montag' }));
+        expect(onOeffnen).toHaveBeenCalledWith(2);
+        expect(screen.getByText('1 von 1 angezeigt')).toBeInTheDocument();
+    });
+
+    it('wirkt bei einem Ordner nur mit Unterordnern nicht leer', () => {
+        zeige({ unterordner: [MONTAG], ordnerAktionen: ordnerAktionen() });
+        expect(screen.getByRole('row', { name: /Montag/ })).toBeInTheDocument();
+        expect(screen.queryByText('In diesem Ordner liegt noch kein Dokument.')).toBeNull();
+        expect(screen.queryByText(/angezeigt/)).toBeNull();
+    });
+
+    it('zeigt die Unterordner schon, während die Dokumente noch laden', () => {
+        zeige({ laedt: true, unterordner: [MONTAG], ordnerAktionen: ordnerAktionen() });
+        expect(screen.getByRole('row', { name: /Montag/ })).toBeInTheDocument();
+        expect(screen.getByRole('status')).toHaveTextContent('Dokumente werden geladen …');
+    });
+
+    it('zeigt in der Vorschau Kacheln statt der Tabelle, die Größe als CSS-Variable', () => {
+        const { container } = zeige({ dokumente: [dok(7, 'Torprüfung')], gesamt: 1, darstellung: { art: 'vorschau', groesse: 240 }, unterordner: [MONTAG], ordnerAktionen: ordnerAktionen() });
+        expect(screen.queryByRole('table')).toBeNull();
+        const liste = screen.getByRole('list', { name: 'Dokumente in Tore' });
+        expect(within(liste).getAllByRole('listitem')).toHaveLength(2);
+        expect((container.querySelector('[data-kacheln]') as HTMLElement).style.getPropertyValue('--kachel-groesse')).toBe('240px');
+        expect(screen.getByText('1 von 1 angezeigt')).toBeInTheDocument();
     });
 });

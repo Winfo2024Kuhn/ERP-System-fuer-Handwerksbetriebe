@@ -44,9 +44,12 @@ import org.example.kalkulationsprogramm.dto.Firmendokumente.FirmendokumentOrdner
 import org.example.kalkulationsprogramm.dto.Firmendokumente.FirmendokumentOrdnerRechteSpeichernDto;
 import org.example.kalkulationsprogramm.dto.Firmendokumente.FirmendokumentSeiteDto;
 import org.example.kalkulationsprogramm.repository.FrontendUserProfileRepository;
+import org.example.kalkulationsprogramm.service.firmendokumente.FirmendokumentDateiart;
 import org.example.kalkulationsprogramm.service.firmendokumente.FirmendokumentOrdnerRechteService;
 import org.example.kalkulationsprogramm.service.firmendokumente.FirmendokumentOrdnerService;
 import org.example.kalkulationsprogramm.service.firmendokumente.FirmendokumentService;
+import org.example.kalkulationsprogramm.service.firmendokumente.FirmendokumentVorschaubildService;
+import org.example.kalkulationsprogramm.service.vorschau.UmrechnungAusgelastetException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -88,6 +91,7 @@ class FirmendokumentControllerSecurityTest {
     @Autowired private MockMvc mockMvc;
 
     @MockitoBean private FirmendokumentService service;
+    @MockitoBean private FirmendokumentVorschaubildService vorschaubildService;
     @MockitoBean private FirmendokumentOrdnerService ordnerService;
     @MockitoBean private FirmendokumentOrdnerRechteService rechteService;
     @MockitoBean private FrontendUserDetailsService frontendUserDetailsService;
@@ -117,17 +121,18 @@ class FirmendokumentControllerSecurityTest {
     }
 
     @Test
-    @DisplayName("Ohne Anmeldung: 401 auf Ordner, Liste, Datei, Hochladen und Ordnerrechte")
+    @DisplayName("Ohne Anmeldung: 401 auf Ordner, Liste, Datei, Vorschaubild, Hochladen und Ordnerrechte")
     void ohneAnmeldung() throws Exception {
         mockMvc.perform(get("/api/firmendokumente/ordner")).andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/firmendokumente").param("ordnerId", "1")).andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/firmendokumente/7/datei")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/firmendokumente/7/vorschaubild")).andExpect(status().isUnauthorized());
         mockMvc.perform(multipart("/api/firmendokumente").file(new MockMultipartFile("datei", "a.pdf", "application/pdf",
                 "%PDF-".getBytes(StandardCharsets.US_ASCII))).with(csrf())).andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/firmendokumente/ordner/3/rechte")).andExpect(status().isUnauthorized());
         mockMvc.perform(put("/api/firmendokumente/ordner/3/rechte").with(csrf()).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"eingeschraenkt\":false,\"abteilungen\":[]}")).andExpect(status().isUnauthorized());
-        verifyNoInteractions(service, ordnerService, rechteService);
+        verifyNoInteractions(service, ordnerService, rechteService, vorschaubildService);
     }
 
     @Test
@@ -291,7 +296,8 @@ class FirmendokumentControllerSecurityTest {
         Path pdf = Files.write(tmp.resolve("x.bin"), "%PDF-1.7".getBytes(StandardCharsets.US_ASCII));
         given(service.datei(anyLong(), any())).willAnswer(i -> {
             if (i.<Long>getArgument(0) == 7L) {
-                return new FirmendokumentService.Datei(pdf, "Torprüfung.pdf", MediaType.APPLICATION_PDF, false);
+                return new FirmendokumentService.Datei(pdf, "Torprüfung.pdf", MediaType.APPLICATION_PDF,
+                        FirmendokumentDateiart.PDF);
             }
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Das Dokument gibt es nicht mehr.");
         });
@@ -318,9 +324,11 @@ class FirmendokumentControllerSecurityTest {
         Path bild = Files.write(tmp.resolve("b.bin"), new byte[] { (byte) 0x89, 'P', 'N', 'G' });
         Path html = Files.write(tmp.resolve("h.bin"), XSS.getBytes(StandardCharsets.UTF_8));
         given(service.datei(eq(9L), any()))
-                .willReturn(new FirmendokumentService.Datei(bild, "Foto Tor.png", MediaType.IMAGE_PNG, false));
+                .willReturn(new FirmendokumentService.Datei(bild, "Foto Tor.png", MediaType.IMAGE_PNG,
+                        FirmendokumentDateiart.BILD));
         given(service.datei(eq(10L), any())).willReturn(
-                new FirmendokumentService.Datei(html, "Seite.html", MediaType.APPLICATION_OCTET_STREAM, true));
+                new FirmendokumentService.Datei(html, "Seite.html", MediaType.APPLICATION_OCTET_STREAM,
+                        FirmendokumentDateiart.SONSTIGE));
 
         mockMvc.perform(get("/api/firmendokumente/9/datei").with(user(max))).andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.IMAGE_PNG))
@@ -331,6 +339,78 @@ class FirmendokumentControllerSecurityTest {
                 .andExpect(header().string("Content-Security-Policy", "sandbox; default-src 'none'"))
                 .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.startsWith("attachment")))
                 .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.containsString("Seite.html")));
+    }
+
+    @Test
+    @DisplayName("Vorschaubild: JPEG inline mit nosniff, ETag und no-cache (Browser fragt jedes Mal, Rechte gelten sofort)")
+    void vorschaubild() throws Exception {
+        byte[] jpeg = { (byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xD9 };
+        String etag = "\"firmendokument-vorschau-v1-7\"";
+        given(vorschaubildService.vorschaubild(eq(7L), isNull(), any()))
+                .willReturn(new FirmendokumentVorschaubildService.Vorschaubild(etag, jpeg));
+
+        mockMvc.perform(get("/api/firmendokumente/7/vorschaubild").with(user(max))).andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.IMAGE_JPEG))
+                .andExpect(content().bytes(jpeg))
+                .andExpect(header().string("ETag", etag))
+                .andExpect(header().string("Cache-Control", "no-cache, private"))
+                .andExpect(header().string("X-Content-Type-Options", "nosniff"))
+                .andExpect(header().string("Content-Disposition", "inline; filename=\"7-vorschau.jpg\""));
+    }
+
+    @Test
+    @DisplayName("Vorschaubild mit If-None-Match: der Dienst entscheidet (Rechte zuerst); unverändert → 304 ohne Inhalt")
+    void vorschaubildUnveraendert() throws Exception {
+        String etag = "\"firmendokument-vorschau-v1-7\"";
+        given(vorschaubildService.vorschaubild(eq(7L), eq(etag), any()))
+                .willReturn(new FirmendokumentVorschaubildService.Vorschaubild(etag, null));
+        given(vorschaubildService.vorschaubild(eq(8L), eq(etag), any()))
+                .willThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Das Dokument gibt es nicht mehr."));
+
+        mockMvc.perform(get("/api/firmendokumente/7/vorschaubild").header("If-None-Match", etag).with(user(max)))
+                .andExpect(status().isNotModified())
+                .andExpect(header().string("ETag", etag))
+                .andExpect(header().string("Cache-Control", "no-cache, private"))
+                .andExpect(content().bytes(new byte[0]));
+        mockMvc.perform(get("/api/firmendokumente/8/vorschaubild").header("If-None-Match", etag).with(user(max)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("Das Dokument gibt es nicht mehr."));
+        mockMvc.perform(get("/api/firmendokumente/7/vorschaubild").header("If-None-Match", etag))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("Vorschaubild: kein Vorschaubild bzw. unsichtbares Dokument → 404 mit Meldung; kaputte IDs 400")
+    void vorschaubildFehler() throws Exception {
+        String kein = "Für diese Datei gibt es kein Vorschaubild.";
+        String fehlt = "Das Dokument gibt es nicht mehr.";
+        given(vorschaubildService.vorschaubild(anyLong(), any(), any())).willAnswer(i -> {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, i.<Long>getArgument(0) == 11L ? kein : fehlt);
+        });
+        for (long id : new long[] { 0L, -1L, Long.MAX_VALUE, 12L }) {
+            mockMvc.perform(get("/api/firmendokumente/" + id + "/vorschaubild").with(user(max)))
+                    .andExpect(status().isNotFound()).andExpect(jsonPath("$.message").value(fehlt));
+        }
+
+        mockMvc.perform(get("/api/firmendokumente/11/vorschaubild").with(user(max)))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.message").value(kein));
+        mockMvc.perform(get("/api/firmendokumente/abc/vorschaubild").with(user(max))).andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/firmendokumente/{id}/vorschaubild", SQL).with(user(max)))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/firmendokumente/{id}/vorschaubild", XSS).with(user(max)))
+                .andExpect(status().is4xxClientError());
+    }
+
+    @Test
+    @DisplayName("Vorschaubild bei Andrang: 503 ohne Inhalt, no-store und Retry-After 5")
+    void vorschaubildAusgelastet() throws Exception {
+        given(vorschaubildService.vorschaubild(eq(7L), any(), any())).willThrow(new UmrechnungAusgelastetException());
+
+        mockMvc.perform(get("/api/firmendokumente/7/vorschaubild").with(user(max)))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(header().string("Retry-After", "5"))
+                .andExpect(content().bytes(new byte[0]));
     }
 
     @Test

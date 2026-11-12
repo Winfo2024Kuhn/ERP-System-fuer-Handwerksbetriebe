@@ -32,6 +32,7 @@ import org.example.kalkulationsprogramm.service.firmendokumente.FirmendokumentOr
 import org.example.kalkulationsprogramm.service.firmendokumente.FirmendokumentOrdnerService;
 import org.example.kalkulationsprogramm.service.firmendokumente.FirmendokumentZugriff;
 import org.example.kalkulationsprogramm.service.firmendokumente.FirmendokumentService;
+import org.example.kalkulationsprogramm.service.firmendokumente.FirmendokumentVorschaubildCache;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -67,7 +68,7 @@ import org.springframework.transaction.annotation.Transactional;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({ FlywayStartSetupConfig.class, FirmendokumentService.class, FirmendokumentOrdnerService.class,
         FirmendokumentDateiablage.class, FirmendokumentZugriff.class, FirmendokumentOrdnerRechteService.class,
-        FirmendokumentPostgresTest.FesteUhr.class })
+        FirmendokumentVorschaubildCache.class, FirmendokumentPostgresTest.FesteUhr.class })
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @EnabledIfSystemProperty(named = "kompat.db.url", matches = "jdbc:postgresql:.*")
 class FirmendokumentPostgresTest {

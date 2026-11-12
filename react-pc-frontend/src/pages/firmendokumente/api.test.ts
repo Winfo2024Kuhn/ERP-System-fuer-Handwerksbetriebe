@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     benenneOrdnerUm, dateiUrl, ladeDokumente, ladeFaellige, ladeHoch, ladeOrdner, legeOrdnerAn, loescheDokument, loescheOrdner,
-    ladeOrdnerRechte, sucheDokumente, speichereDokument, speichereOrdnerRechte, verschiebeOrdner,
+    ladeOrdnerRechte, sucheDokumente, speichereDokument, speichereOrdnerRechte, verschiebeOrdner, vorschaubildUrl,
 } from './api';
 
 const ok = (body: unknown, status = 200) => new Response(body === undefined ? null : JSON.stringify(body), { status });
@@ -107,5 +107,9 @@ describe('Firmendokumente-API', () => {
     it('baut die Datei-Adresse aus der ID', () => {
         expect(dateiUrl(7)).toBe('/api/firmendokumente/7/datei');
         expect(dateiUrl(7, true)).toBe('/api/firmendokumente/7/datei?download=true');
+    });
+
+    it('baut die Adresse des Vorschaubilds aus der ID', () => {
+        expect(vorschaubildUrl(7)).toBe('/api/firmendokumente/7/vorschaubild');
     });
 });

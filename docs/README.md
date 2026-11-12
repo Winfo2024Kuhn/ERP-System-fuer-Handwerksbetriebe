@@ -15,6 +15,7 @@ Stand: Oktober 2026. Den vollständigen Bestand samt Lücken führt [DOKUMENTATI
 | [KASSE_ANLEITUNG.md](KASSE_ANLEITUNG.md) | So funktioniert die Kasse |
 | [benutzer/monatsabschluss.md](benutzer/monatsabschluss.md) | Monatsstunden prüfen und abschließen |
 | [benutzer/datev-lodas-export.md](benutzer/datev-lodas-export.md) | Monatsstunden für DATEV LODAS exportieren |
+| [benutzer/firmendokumente.md](benutzer/firmendokumente.md) | Firmendokumente: Ordner, Ziehen, Liste und Vorschau, mehrere Dateien hochladen |
 
 ## Geschäftsprozesse
 

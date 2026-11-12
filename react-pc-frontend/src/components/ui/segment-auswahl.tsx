@@ -1,4 +1,5 @@
 import { useRef, type KeyboardEvent } from 'react';
+import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 export interface SegmentOption {
@@ -8,6 +9,8 @@ export interface SegmentOption {
     zusatz?: string;
     /** Gesperrt mit Grund (Tooltip und Screenreader-Beschreibung). */
     gesperrt?: string | null;
+    /** Kleines Lucide-Symbol vor dem Text, z. B. `List` für „Liste“. */
+    symbol?: LucideIcon;
 }
 
 interface SegmentAuswahlProps {
@@ -70,7 +73,10 @@ export function SegmentAuswahl({ optionen, wert, onChange, beschriftung, classNa
                             o.gesperrt && 'cursor-not-allowed text-slate-400 hover:bg-transparent',
                         )}
                     >
-                        <span>{o.text}</span>
+                        <span className="inline-flex items-center gap-1.5">
+                            {o.symbol && <o.symbol className="h-4 w-4 shrink-0" aria-hidden="true" />}
+                            {o.text}
+                        </span>
                         {o.zusatz && <span className="text-xs font-normal text-slate-500">{o.zusatz}</span>}
                     </button>
                 );

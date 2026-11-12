@@ -114,7 +114,7 @@ describe('OrdnerRechteDialog', () => {
         vi.mocked(ladeOrdnerRechte).mockResolvedValue({ ...RECHTE, abteilungen: [] });
         zeige();
         await user.click(await within(dialog()).findByRole('radio', { name: 'Nur bestimmte Abteilungen' }));
-        expect(within(dialog()).getByText(/Es gibt noch keine Abteilungen/)).toBeInTheDocument();
+        expect(within(dialog()).getByText('Es gibt noch keine Abteilungen. Angelegt werden sie unter Einstellungen → Abteilungen & Rechte.')).toBeInTheDocument();
         expect(within(dialog()).getByText('Nur Admins sehen diesen Ordner.')).toBeInTheDocument();
     });
 

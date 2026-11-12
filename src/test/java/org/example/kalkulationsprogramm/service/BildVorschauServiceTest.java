@@ -216,7 +216,7 @@ class BildVorschauServiceTest {
         var resource = new ByteArrayResource(jpeg(2000, 1000, null));
 
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> ausgelastet.erzeugeAnzeigeUndCache("andrang.jpg", resource))
-                .isInstanceOf(BildVorschauService.UmrechnungAusgelastetException.class);
+                .isInstanceOf(org.example.kalkulationsprogramm.service.vorschau.UmrechnungAusgelastetException.class);
         assertThat(ausgelastet.anzeigeAusCache("andrang.jpg")).isNull();
     }
 

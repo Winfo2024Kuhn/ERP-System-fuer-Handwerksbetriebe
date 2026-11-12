@@ -197,10 +197,14 @@ export function ziehtDokument(event: ZiehEreignis): boolean {
     return Array.from(event.dataTransfer?.types ?? []).includes(DOKUMENT_DATENTYP);
 }
 
-/** Legt das Dokument beim Ziehstart in den `dataTransfer` (plus Name als Text für andere Programme). */
+/** Zweiter Datentyp mit dem Quellordner im Namen – beim Ziehen lesbar (siehe `gezogeneDokumentHerkunft`). */
+export const DOKUMENT_HERKUNFT_PRAEFIX = `${DOKUMENT_DATENTYP}-aus-ordner-`;
+
+/** Legt das Dokument beim Ziehstart in den `dataTransfer` (plus Quellordner im Typnamen und Name als Text). */
 export function schreibeGezogenesDokument(ziel: { setData: (typ: string, wert: string) => void }, dok: GezogenesDokument): void {
     const daten: GezogenesDokument = { id: dok.id, ordnerId: dok.ordnerId, name: dok.name, faelligAm: dok.faelligAm };
     ziel.setData(DOKUMENT_DATENTYP, JSON.stringify(daten));
+    ziel.setData(`${DOKUMENT_HERKUNFT_PRAEFIX}${dok.ordnerId}`, String(dok.ordnerId));
     ziel.setData('text/plain', dok.name);
 }
 

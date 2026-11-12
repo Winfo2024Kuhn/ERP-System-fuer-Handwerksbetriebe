@@ -14,13 +14,13 @@ const FARBE = {
  * sonst neutral. Ohne Datum ein Strich. Der Zustand steht zusätzlich als
  * Text daneben (nicht nur über die Farbe).
  */
-export function FaelligAmAnzeige({ faelligAm, heute = heuteIso() }: { faelligAm: string | null; heute?: string }) {
+export function FaelligAmAnzeige({ faelligAm, heute = heuteIso(), className }: { faelligAm: string | null; heute?: string; className?: string }) {
     const stand = faelligkeit(faelligAm, heute);
     if (!stand) return <span className="text-slate-400">–</span>;
     const Symbol = stand === 'ueberfaellig' ? AlertTriangle : Clock;
     return (
         <span
-            className={cn('inline-flex items-center gap-1 whitespace-nowrap rounded-md border px-2 py-0.5 text-sm tabular-nums', FARBE[stand])}
+            className={cn('inline-flex items-center gap-1 whitespace-nowrap rounded-md border px-2 py-0.5 text-sm tabular-nums', FARBE[stand], className)}
             title={faelligkeitText(stand)}
         >
             {stand !== 'spaeter' && <Symbol className="h-3.5 w-3.5" aria-hidden="true" />}

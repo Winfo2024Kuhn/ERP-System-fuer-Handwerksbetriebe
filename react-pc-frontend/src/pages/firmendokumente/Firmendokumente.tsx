@@ -21,6 +21,8 @@ import { useDokumentVerschieben } from './useDokumentVerschieben';
 import { useFirmenOrdner } from './useFirmenOrdner';
 import { useHochladen } from './useHochladen';
 import { useOrdnerLoeschen } from './useOrdnerLoeschen';
+import { useOrdnerVerschieben } from './useOrdnerVerschieben';
+import { useAblageRegeln } from './useAblageZiel';
 
 /**
  * Seite „Firmendokumente“: Firmen-Dateien (Prüfungen, Arbeitsschutz, Versicherungen,
@@ -36,7 +38,11 @@ export default function Firmendokumente() {
     const { ansicht, gewaehlt, liste, waehle } = ansichtStand;
     const [ordnerDialog, setOrdnerDialog] = useState<OrdnerDialog | null>(null);
     const dateiAuswahl = useRef<HTMLInputElement>(null);
-    const hochladen = useHochladen(toast.error);
+    const nachAenderung = () => {
+        ordnerStand.neuLaden();
+        liste.neuLaden();
+    };
+    const hochladen = useHochladen({ meldeFehler: toast.error, onStapelFertig: nachAenderung, ordnerName: (id) => baum.byId.get(id)?.name });
     const dokAktionen = useDokumentAktionen({
         // Neu laden statt nur lokal herausnehmen: sonst fehlt beim späteren „Mehr laden“ ein Dokument.
         onGeloescht: () => { liste.neuLaden(); ordnerStand.neuLaden(); },
@@ -47,12 +53,17 @@ export default function Firmendokumente() {
     const upload = hochladen.aktuelle;
     const bearbeitet = dokAktionen.bearbeiten;
     const vorschau = dokAktionen.vorschau;
-
-    const nachAenderung = () => {
-        ordnerStand.neuLaden();
-        liste.neuLaden();
-    };
     const dokumentVerschieben = useDokumentVerschieben(nachAenderung, liste.eintraege);
+    const ordnerVerschieben = useOrdnerVerschieben(baum, ordnerStand.neuLaden);
+    // Gleiche Regeln für den Baum und den rechten Bereich (Unterordner, Ordner-Inhalt) – stabil je Baum.
+    const ablage = useAblageRegeln({
+        baum,
+        istAdmin: isAdmin,
+        onDateien: (ordnerId, dateien) => hochladen.annehmen(dateien, ordnerId),
+        onDokument: (dok, ziel) => void dokumentVerschieben(dok, ziel),
+        onOrdner: (ordner, ziel) => void ordnerVerschieben.perZiehen(ordner, ziel),
+        onAbgelehnt: toast.error,
+    });
 
     return (
         <PageLayout
@@ -80,9 +91,7 @@ export default function Firmendokumente() {
                                 if (aktion === 'loeschen') ordnerLoeschen(ordner);
                                 else setOrdnerDialog(aktion === 'unterordner' ? { art: 'anlegen', eltern: ordner } : { art: aktion, ordner });
                             }}
-                            onDateienAbgelegt={(ordnerId, dateien) => hochladen.annehmen(dateien, ordnerId)}
-                            onDokumentAbgelegt={(dok, ziel) => void dokumentVerschieben(dok, ziel)}
-                            onAblageAbgelehnt={toast.error}
+                            ablage={ablage}
                         />
                     </div>
                     <div className="min-w-0 rounded-lg border border-slate-200 bg-white p-4 shadow-sm md:p-6">
@@ -95,8 +104,10 @@ export default function Firmendokumente() {
                                     liste={liste}
                                     aktionen={dokAktionen.aktionen}
                                     onHochladen={() => dateiAuswahl.current?.click()}
-                                    onDateienAbgelegt={(ordnerId, dateien) => hochladen.annehmen(dateien, ordnerId)}
                                     onOrdnerWaehlen={waehle}
+                                    ablage={ablage}
+                                    stapel={hochladen.stapel}
+                                    onStapelAbbrechen={hochladen.stapelAbbrechen}
                                 />
                             )}
                     </div>
@@ -138,7 +149,7 @@ export default function Firmendokumente() {
                     titel="Dokument bearbeiten"
                     beschreibung={`Datei: ${bearbeitet.originalDateiname}`}
                     start={{ name: bearbeitet.name, ordnerId: bearbeitet.ordnerId, faelligAm: bearbeitet.faelligAm }}
-                    ordnerText={`Liegt in: ${ordnerPfadOderStrich(baum, bearbeitet.ordnerId)}. Zum Verschieben die Zeile in der Liste auf einen Ordner links ziehen.`}
+                    ordnerText={`Liegt in: ${ordnerPfadOderStrich(baum, bearbeitet.ordnerId)}. Zum Verschieben die Zeile oder Kachel auf einen Ordner ziehen.`}
                     knopfText="Speichern"
                     knopfSymbol={<Check className="h-4 w-4" aria-hidden="true" />}
                     onAbbrechen={dokAktionen.schliesseBearbeiten}
@@ -164,6 +175,7 @@ export default function Firmendokumente() {
             <OrdnerDialoge
                 dialog={ordnerDialog}
                 baum={baum}
+                onVerschieben={(ordner, zielId) => ordnerVerschieben.verschieben(ordner, zielId === null ? null : baum.byId.get(zielId) ?? null)}
                 istAdmin={isAdmin}
                 onSchliessen={() => setOrdnerDialog(null)}
                 onFertig={(ordner, meldung) => {

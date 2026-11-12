@@ -62,4 +62,14 @@ describe('VerschiebenDialog', () => {
         expect(onAbbrechen).toHaveBeenCalled();
         expect(onBestaetigen).not.toHaveBeenCalled();
     });
+
+    it('bleibt offen und wieder bedienbar, wenn das Verschieben abgebrochen wird (Rückgabe false)', async () => {
+        const { onBestaetigen } = zeige(vi.fn().mockResolvedValue(false));
+        await userEvent.click(screen.getByRole('radio', { name: /Fliesen/ }));
+        await userEvent.click(screen.getByRole('button', { name: 'Hierhin verschieben' }));
+        expect(onBestaetigen).toHaveBeenCalledWith(5);
+        expect(screen.getByRole('dialog', { name: '„Tore“ verschieben' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Hierhin verschieben' })).toBeEnabled();
+        expect(screen.queryByRole('alert')).toBeNull();
+    });
 });

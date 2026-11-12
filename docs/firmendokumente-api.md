@@ -19,7 +19,7 @@ Rechte gibt es nur am **obersten Ordner**; Unterordner und Dokumente erben sie.
 - Die Abteilungen eines Benutzers kommen wie bei den übrigen Abteilungsrechten über sein aktives Profil →
   aktiver Mitarbeiter (Art Mensch) → dessen Abteilungen. Benutzer ohne verknüpften Mitarbeiter oder ohne
   Abteilung sehen nur die nicht eingeschränkten Zweige.
-- **Ansehen** = Ordner und Dokumente sehen, Dateien öffnen/herunterladen. **Ändern** = zusätzlich hochladen,
+- **Ansehen** = Ordner und Dokumente sehen, Dateien öffnen/herunterladen, Vorschaubilder laden. **Ändern** = zusätzlich hochladen,
   Dokumente bearbeiten/verschieben/löschen und Unterordner anlegen/umbenennen/verschieben/löschen.
 - Nicht sichtbare Ordner und Dokumente verhalten sich wie „gibt es nicht“ (404 bzw. bei Zielordnern 400
   „… gibt es nicht mehr“). Wer nur ansehen darf und etwas ändern will, bekommt
@@ -186,8 +186,8 @@ Fehler wie beim Hochladen (auch der Name mit Programmendung), 404 wenn Dokument 
 verschieben.“ beim Verschieben aus einem eingeschränkten Zweig unter einen anderen obersten Ordner.
 
 ### `DELETE /api/firmendokumente/{id}` → 204
-Löscht Eintrag und Datei endgültig (braucht `darfAendern`). 404 wenn Dokument fehlt oder nicht sichtbar,
-403 ohne Ändern-Recht.
+Löscht Eintrag und Datei endgültig (braucht `darfAendern`). Datei und Vorschaubild im Speicher verschwinden erst
+nach dem Commit. 404 wenn Dokument fehlt oder nicht sichtbar, 403 ohne Ändern-Recht.
 
 ### `GET /api/firmendokumente/{id}/datei[?download=true]`
 - `PDF` → `application/pdf`, `BILD` → passendes `image/*`; ohne `download` `Content-Disposition: inline`,
@@ -199,3 +199,40 @@ Löscht Eintrag und Datei endgültig (braucht `darfAendern`). 404 wenn Dokument 
   ohne Endung kein Anhängsel. Endet der Name selbst auf eine Programmendung (alte Daten), wird deren Punkt
   zu „_“ („Rechnung.exe“ → „Rechnung_exe.pdf“).
 - „Ansehen“ reicht. 404 wenn Dokument oder Datei fehlt oder das Dokument nicht sichtbar ist.
+
+### `GET /api/firmendokumente/{id}/vorschaubild`
+Kleines Vorschaubild für die Kachelansicht („Vorschau“). Das Frontend baut die Adresse selbst aus der ID und
+fragt nur bei `dateiart` `PDF` oder `BILD` an; das Dokument-JSON bleibt unverändert.
+- **200** `image/jpeg`, längste Kante **höchstens 512 px**, Seitenverhältnis bleibt.
+  - `BILD`: das verkleinerte Foto, die Drehung aus den Kameradaten (EXIF) ist eingerechnet. Kleinere Bilder
+    werden nicht vergrößert. Transparenz wird weiß.
+  - `PDF`: nur die **erste Seite** auf weißem Grund, direkt in 512 px längster Kante gerendert (auch kleine
+    Seiten wie eine Visitenkarte füllen die 512 px, das ist Vektorgrafik).
+  - Header: `ETag: "firmendokument-vorschau-v1-<id>"`, `Cache-Control: no-cache, private`,
+    `X-Content-Type-Options: nosniff`, `Content-Disposition: inline; filename="<id>-vorschau.jpg"` (Name nur aus
+    der ID, nie aus Nutzerdaten).
+- **304** ohne Inhalt (mit `ETag` und `Cache-Control: no-cache, private`), wenn `If-None-Match` passt
+  (schwacher Vergleich, auch Listen und `*`). Der Browser behält das Bild, fragt aber bei jeder Anzeige nach –
+  **die Rechte werden vorher geprüft**, wem ein Ordner entzogen wird, bekommt also sofort 404 statt des
+  gespeicherten Bildes. Der ETag hängt nur an der ID, weil die Datei eines Dokuments nie ersetzt wird; ändert
+  sich der Bildaufbau, steigt die Fassung (`v1` → `v2`).
+- **404** `{ message: "Für diese Datei gibt es kein Vorschaubild." }` bei `SONSTIGE` (Word, Excel …), nicht
+  lesbarem Bild (kaputt; **WebP** kann der Server nicht lesen, es bekommt also nie ein Vorschaubild; extrem
+  große Bilder ab 100 Megapixel), bei beschädigtem, passwortgeschütztem, leerem oder bösartig verschachteltem
+  PDF und bei **Dateien über 100 MB** (werden gar nicht erst geöffnet). Dieselbe Meldung kommt, wenn die Datei
+  gerade nicht lesbar ist (z. B. Laufwerk kurz weg) – das wird aber nicht gemerkt, der nächste Abruf versucht es
+  neu. Nie ein Serverfehler für kaputte Dateien.
+- **404** mit der Meldung des Datei-Abrufs („Das Dokument gibt es nicht mehr.“ bzw. „Die Datei zu diesem
+  Dokument wurde nicht gefunden.“), wenn das Dokument fehlt, nicht sichtbar ist oder die Datei fehlt – Rechte
+  genau wie `GET …/{id}/datei` („Ansehen“ reicht), geprüft bei **jedem** Abruf, auch vor einer 304-Antwort und
+  wenn das Bild schon im Speicher liegt. Ungültige IDs (`0`, negativ, `Long.MAX_VALUE`) → 404, Text als ID → 400.
+- **503** ohne Inhalt mit `Cache-Control: no-store` und `Retry-After: 5`, wenn gerade zu viele Umrechnungen
+  laufen (höchstens 2 gleichzeitig; wer länger als 10 Sekunden auf einen Platz wartet, bekommt 503). Das
+  Frontend versucht es dann später noch einmal.
+- **Im Hintergrund:** Erzeugt wird beim ersten Abruf, danach liegt das Ergebnis im Arbeitsspeicher
+  (höchstens 32 MB, je Bild meist 20–60 KB, also rund 600–1.500 Kacheln; am längsten nicht abgerufene fallen
+  zuerst heraus). Auch „kein Vorschaubild“ wird gemerkt (nur bei dauerhaften Gründen), damit ein kaputtes PDF
+  nicht bei jedem Scrollen neu geöffnet wird. Nach einem Neustart des Servers wird neu erzeugt. Die
+  Originaldatei wird nur gelesen und nie verändert; PDFBox legt beim Lesen großer PDFs kurz Temp-Dateien im
+  Temp-Ordner an und löscht sie danach. Beim Löschen des Dokuments wird der Eintrag nach dem Commit entfernt;
+  Umbenennen oder Verschieben ändern das Vorschaubild nicht.

@@ -85,7 +85,7 @@ function RechteFormular({ rechte, onEingeschraenkt, onStufe }: RechteFormularPro
             {rechte.eingeschraenkt && (
                 <>
                     {rechte.abteilungen.length === 0 ? (
-                        <p className="text-sm text-slate-500">Es gibt noch keine Abteilungen. Du legst sie unter Einstellungen → Abteilungen &amp; Rechte an.</p>
+                        <p className="text-sm text-slate-500">Es gibt noch keine Abteilungen. Angelegt werden sie unter Einstellungen → Abteilungen &amp; Rechte.</p>
                     ) : <AbteilungsTabelle rechte={rechte} onStufe={onStufe} />}
                     {keinerHatZugriff && (
                         <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">Nur Admins sehen diesen Ordner.</p>

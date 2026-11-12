@@ -75,7 +75,7 @@ test('Nur-Ansehen-Ordner: kein Hochladen, kein Ablegen – Bild und andere Datei
     await page.goto('/firmendokumente?ordner=6');
     const baum = page.getByRole('tree', { name: 'Ordner' });
     await expect(baum.getByRole('treeitem', { name: /^Geschäftsleitung, 1 Dokument, nur für bestimmte Abteilungen sichtbar/ })).toBeVisible();
-    await expect(page.getByText('Du kannst diesen Ordner nur ansehen.')).toBeVisible();
+    await expect(page.getByText('Dieser Ordner lässt sich nur ansehen.')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Datei hochladen' })).toHaveCount(0);
     await expect(baum.getByRole('button', { name: 'Weitere Aktionen für „Geschäftsleitung“' })).toHaveCount(0);
     const liste = page.getByRole('table', { name: 'Dokumente in Geschäftsleitung' });
