@@ -2,9 +2,8 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../components/ui/toast';
-import {
-    adressenVon, lohnAnsprechpartner, useSteuerberaterEmpfaenger, type SteuerberaterKontakt,
-} from './useSteuerberaterEmpfaenger';
+import type { SteuerberaterKontakt } from './steuerberaterKontakt';
+import { useSteuerberaterEmpfaenger } from './useSteuerberaterEmpfaenger';
 
 vi.mock('../email/mailEditorHtml', () => ({ ladeStandardSignatur: vi.fn(() => Promise.resolve('<p>Max Mustermann</p>')) }));
 
@@ -37,19 +36,6 @@ afterEach(() => vi.restoreAllMocks());
 
 const wrapper = ({ children }: { children: ReactNode }) => <ToastProvider>{children}</ToastProvider>;
 
-describe('Hilfsfunktionen', () => {
-    it('nimmt den Lohn-Ansprechpartner, sonst den ersten, sonst keinen', () => {
-        expect(lohnAnsprechpartner(KANZLEI_A)?.id).toBe(11);
-        expect(lohnAnsprechpartner({ ...KANZLEI_A, ansprechpartnerListe: [ap(10, 'Mustermann', 'max@example.com')] })?.id).toBe(10);
-        expect(lohnAnsprechpartner(KANZLEI_B)).toBeNull();
-        expect(lohnAnsprechpartner(null)).toBeNull();
-    });
-    it('sammelt Adressen ohne Doppelte und Leere', () => {
-        expect(adressenVon(KANZLEI_A)).toEqual(['kanzlei@example.com', 'info@example.com', 'max@example.com', 'lohn@example.com']);
-        expect(adressenVon(null)).toEqual([]);
-    });
-});
-
 describe('useSteuerberaterEmpfaenger', () => {
     it('lädt, wählt den Lohn-Ansprechpartner vor und baut den Betreff', async () => {
         const { result } = renderHook(() => useSteuerberaterEmpfaenger(true, 10, 2026), { wrapper });
@@ -76,6 +62,23 @@ describe('useSteuerberaterEmpfaenger', () => {
         expect(result.current.empfaenger).toBe('b@example.com');
         act(() => result.current.waehleAnsprechpartner(null));
         expect(result.current.empfaenger).toBe('b@example.com');
+    });
+
+    it('wählt beim Empfänger-Wechsel den passenden Ansprechpartner oder keinen', async () => {
+        const { result } = renderHook(() => useSteuerberaterEmpfaenger(true, 10, 2026), { wrapper });
+        await waitFor(() => expect(result.current.laedt).toBe(false));
+        act(() => result.current.waehleEmpfaenger('max@example.com'));
+        expect(result.current.empfaenger).toBe('max@example.com');
+        expect(result.current.ansprechpartner?.nachname).toBe('Mustermann');
+        act(() => result.current.waehleEmpfaenger('kanzlei@example.com'));
+        expect(result.current.ansprechpartnerId).toBeNull();
+        expect(result.current.ansprechpartner).toBeNull();
+        // Freies Feld: beim Tippen läuft die Zuordnung mit, Leerzeichen und Großschreibung egal.
+        act(() => result.current.waehleEmpfaenger(' LOHN@example.com'));
+        expect(result.current.empfaenger).toBe(' LOHN@example.com');
+        expect(result.current.ansprechpartnerId).toBe(11);
+        act(() => result.current.waehleEmpfaenger('fremd@example.com'));
+        expect(result.current.ansprechpartnerId).toBeNull();
     });
 
     it('kommt ohne Steuerberater und ohne Firmennamen aus', async () => {

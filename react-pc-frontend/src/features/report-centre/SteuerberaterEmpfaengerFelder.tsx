@@ -48,9 +48,9 @@ export function SteuerberaterEmpfaengerFelder({ empfaenger: e }: { empfaenger: S
                 <Label htmlFor="stundenuebermittlung-empfaenger">Empfänger</Label>
                 {e.optionen.empfaenger.length > 1 ? (
                     <Select id="stundenuebermittlung-empfaenger" aria-label="Empfänger" options={e.optionen.empfaenger} value={e.empfaenger}
-                        onChange={v => e.setEmpfaenger(v)} placeholder="E-Mail-Adresse wählen" />
+                        onChange={v => e.waehleEmpfaenger(v)} placeholder="E-Mail-Adresse wählen" />
                 ) : (
-                    <Input id="stundenuebermittlung-empfaenger" value={e.empfaenger} onChange={ev => e.setEmpfaenger(ev.target.value)}
+                    <Input id="stundenuebermittlung-empfaenger" value={e.empfaenger} onChange={ev => e.waehleEmpfaenger(ev.target.value)}
                         placeholder="E-Mail-Adresse..." />
                 )}
             </div>

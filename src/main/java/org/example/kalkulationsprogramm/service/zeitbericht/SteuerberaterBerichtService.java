@@ -9,7 +9,6 @@ import org.example.kalkulationsprogramm.dto.ZeitkontoStatusDto;
 import org.example.kalkulationsprogramm.dto.ZeitkontoVersionDto;
 import org.example.kalkulationsprogramm.dto.zeitbericht.SteuerberaterBerichtDto;
 import org.example.kalkulationsprogramm.dto.zeitbericht.SteuerberaterBerichtDto.Stundenart;
-import org.example.kalkulationsprogramm.dto.zeitbericht.SteuerberaterBerichtDto.Summe;
 import org.example.kalkulationsprogramm.dto.zeitbericht.SteuerberaterBerichtDto.Zeile;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.service.MonatsSaldoService;
@@ -68,7 +67,7 @@ public class SteuerberaterBerichtService {
                     abwesenheiten.getOrDefault(konto.mitarbeiterId(), Map.of()), stundenart));
         }
         boolean alleFest = zeilen.stream().allMatch(Zeile::festgeschrieben);
-        return new SteuerberaterBerichtDto(jahr, monat, stundenart, zeilen, summe(zeilen), alleFest);
+        return new SteuerberaterBerichtDto(jahr, monat, stundenart, zeilen, alleFest);
     }
 
     /**
@@ -109,8 +108,7 @@ public class SteuerberaterBerichtService {
         BigDecimal arbeit = stundenart == Stundenart.IST ? saldo.getIstStunden()
                 : SteuerberaterStunden.arbeitsstunden(soll, urlaub, feiertage, krankheit, fortbildung);
         return new Zeile(id, konto.mitarbeiterName(), SteuerberaterStunden.tagessoll(versionen(konto), ym),
-                r(soll), r(arbeit),
-                r(urlaub), r(feiertage), r(krankheit), r(fortbildung), r(stand), r(resturlaub),
+                r(arbeit), r(urlaub), r(feiertage), r(krankheit), r(fortbildung), r(stand), r(resturlaub),
                 Boolean.TRUE.equals(saldo.getFestgeschrieben()));
     }
 
@@ -121,17 +119,6 @@ public class SteuerberaterBerichtService {
         }
         alle.add(konto.aktuell());
         return alle;
-    }
-
-    private static Summe summe(List<Zeile> zeilen) {
-        return new Summe(
-                summe(zeilen, Zeile::sollStunden), summe(zeilen, Zeile::arbeitsstunden),
-                summe(zeilen, Zeile::urlaubStunden), summe(zeilen, Zeile::feiertagStunden),
-                summe(zeilen, Zeile::krankheitStunden), summe(zeilen, Zeile::fortbildungStunden));
-    }
-
-    private static BigDecimal summe(List<Zeile> zeilen, Function<Zeile, BigDecimal> feld) {
-        return r(zeilen.stream().map(feld).reduce(BigDecimal.ZERO, BigDecimal::add));
     }
 
     private static BigDecimal summe(BigDecimal... werte) {

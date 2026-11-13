@@ -83,10 +83,17 @@ Jede Gruppe zeigt Mitarbeiter, Tätigkeit, Datum, Zeit, Dauer und Bemerkung mit 
 
 ## Stunden ans Steuerbüro schicken
 
-Unter **Zeiterfassung → Steuerberater**:
+Unter **Zeiterfassung → Report Centre**:
 
-1. „Monat“ und „Jahr“ wählen, „Vorschau laden“.
-2. Die Mitarbeiter anhaken, die übermittelt werden sollen.
-3. „Per E-Mail senden“, Empfänger und Text prüfen, „Senden“.
+1. „Neuer Bericht“, dann „An Steuerberater schicken“ und „Weiter“.
+2. Monat wählen und die Mitarbeiter anhaken. Mit „Stundenkonto zeigen“ und „Resturlaub zeigen“ kommen diese Spalten dazu. „Weiter“.
+3. Die Vorschau prüfen: je Mitarbeiter eine Zeile mit Tagessoll, Arbeitsstunden, Urlaub, Feiertagen, Krankheit, Fortbildung, auf Wunsch Stundenkonto und Resturlaub (Tage) und ob der Monat abgeschlossen ist. Alle Werte in Stunden, der Resturlaub in Tagen.
+4. „PDF herunterladen“ oder „An Steuerberater senden“. Beim Senden Empfänger und Text prüfen und „Senden“; die Stundenaufstellung hängt als PDF an.
 
-Senden geht erst, wenn der Monat für alle gewählten Mitarbeiter abgeschlossen ist. Den Steuerberater mit Ansprechpartner legt ein Admin unter **Vorlagen & Stammdaten → Firma**, Reiter „Steuerberater“ an. Wer mit DATEV arbeitet, nutzt stattdessen den [DATEV-Export](datev-lodas-export.md).
+Gesamtstunden stehen absichtlich nicht drin: Es gibt keine Spalte mit den Sollstunden des Monats und keine Summenzeile, weder in der Vorschau noch im PDF. So rechnet das Steuerbüro mit den Stunden je Mitarbeiter und nicht mit einer Gesamtsumme. Vorschau und PDF zeigen dieselben Werte; das PDF hat zusätzlich eine laufende Nummer.
+
+Ob Soll- oder Iststunden übermittelt werden, legt ein Admin unter **Einstellungen → Zeiterfassung** fest. Ist der Monat für einen Mitarbeiter noch nicht abgeschlossen, steht ein gelber Hinweis über der Tabelle; seine Werte können sich dann noch ändern.
+
+**Anrede in der Mail:** Die Nachricht beginnt mit der Anrede des gewählten Ansprechpartners, z. B. „Sehr geehrte Frau Musterfrau,“. Wer unter „Empfänger“ eine andere Adresse wählt oder eintippt, bekommt die Anrede dazu: Gehört die Adresse einem Ansprechpartner des Steuerberaters, springt die Auswahl „Ansprechpartner“ auf ihn und die Anrede wird persönlich. Gehört sie keinem (z. B. die Haupt-E-Mail der Kanzlei), steht „Sehr geehrte Damen und Herren,“ da. Getauscht wird nur die Anredezeile; was im übrigen Text schon geändert wurde, bleibt stehen. Wurde die Anrede von Hand umgeschrieben oder gelöscht, ändert das Programm sie nicht mehr.
+
+Den Steuerberater mit Ansprechpartnern legt ein Admin unter **Vorlagen & Stammdaten → Firma**, Reiter „Steuerberater“ an. Wer mit DATEV arbeitet, nutzt stattdessen den [DATEV-Export](datev-lodas-export.md).

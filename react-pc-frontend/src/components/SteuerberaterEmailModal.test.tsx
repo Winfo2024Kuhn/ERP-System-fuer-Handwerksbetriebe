@@ -37,9 +37,18 @@ function modal(isOpen: boolean, onClose: () => void) {
     );
 }
 
-function starte(ansprechpartner = { anrede: 'HERR', nachname: 'Mustermann' }, pdfStatus = 200) {
+/** Kanzlei mit zwei Ansprechpartnern: Max (Löhne) und Erika. */
+const ZWEI_ANSPRECHPARTNER = [{
+    id: 1, name: 'Kanzlei Mustermann', email: 'kanzlei@example.com', telefon: '', weitereEmails: [],
+    ansprechpartnerListe: [
+        { id: 2, anrede: 'HERR', vorname: 'Max', nachname: 'Mustermann', email: 'max@example.com', telefon: '', istLohnAnsprechpartner: true },
+        { id: 3, anrede: 'FRAU', vorname: 'Erika', nachname: 'Musterfrau', email: 'erika@example.com', telefon: '', istLohnAnsprechpartner: false },
+    ],
+}];
+
+function starte(ansprechpartner = { anrede: 'HERR', nachname: 'Mustermann' }, pdfStatus = 200, steuerberater: unknown = steuerberaterMit(ansprechpartner)) {
     const fetchMock = vi.fn((url: string, init?: RequestInit) => {
-        if (url === '/api/firma/steuerberater') return antwort(200, steuerberaterMit(ansprechpartner));
+        if (url === '/api/firma/steuerberater') return antwort(200, steuerberater);
         if (url === '/api/firma') return antwort(200, { firmenname: 'Musterbetrieb' });
         if (url.startsWith('/api/zeitverwaltung/berichte/steuerberater/pdf')) {
             return pdfStatus === 200
@@ -86,6 +95,57 @@ describe('SteuerberaterEmailModal: Anrede', () => {
         const { editor } = starte({ anrede: 'FRAU', nachname: '<img src=x onerror=alert(1)>' });
         await waitFor(() => expect(editor()?.innerHTML).toContain('Sehr geehrte Frau &lt;img src=x onerror=alert(1)&gt;,'));
         expect(editor()?.querySelector('img')).toBeNull();
+    });
+});
+
+function waehle(feld: string, eintrag: string) {
+    fireEvent.click(screen.getByRole('combobox', { name: feld }));
+    fireEvent.click(screen.getByRole('option', { name: eintrag }));
+}
+
+/** Startet mit Max (Löhne) als Ansprechpartner und ergänzt einen eigenen Satz im Text. */
+async function starteMitEigenemSatz() {
+    const start = starte(undefined, 200, ZWEI_ANSPRECHPARTNER);
+    await waitFor(() => expect(start.editor()?.textContent).toContain('Sehr geehrter Herr Mustermann,'));
+    const absatz = Array.from(start.editor()!.querySelectorAll('p')).find(p => p.textContent?.startsWith('anbei'))!;
+    absatz.append(' Die Überstunden von Max Mustermann stehen extra drin.');
+    return start;
+}
+
+describe('SteuerberaterEmailModal: Anrede folgt dem Empfänger', () => {
+    it('nimmt bei der Kanzlei-Adresse „Sehr geehrte Damen und Herren“ und keinen Ansprechpartner', async () => {
+        const { editor } = await starteMitEigenemSatz();
+        waehle('Empfänger', 'kanzlei@example.com');
+        await waitFor(() => expect(editor()?.textContent).toContain('Sehr geehrte Damen und Herren,'));
+        expect(editor()?.textContent).not.toContain('Sehr geehrter Herr Mustermann');
+        expect(screen.getByRole('combobox', { name: 'Ansprechpartner' })).toHaveTextContent('Ansprechpartner wählen');
+        expect(editor()?.textContent).toContain('Die Überstunden von Max Mustermann stehen extra drin.');
+    });
+
+    it('wählt zur Adresse den Ansprechpartner und dessen Anrede', async () => {
+        const { editor } = await starteMitEigenemSatz();
+        waehle('Empfänger', 'erika@example.com');
+        await waitFor(() => expect(editor()?.textContent).toContain('Sehr geehrte Frau Musterfrau,'));
+        expect(screen.getByRole('combobox', { name: 'Ansprechpartner' })).toHaveTextContent('Erika Musterfrau');
+        expect(editor()?.textContent).toContain('Die Überstunden von Max Mustermann stehen extra drin.');
+    });
+
+    it('tauscht beim Ansprechpartner-Wechsel nur die Anrede und setzt seine Adresse', async () => {
+        const { editor } = await starteMitEigenemSatz();
+        waehle('Ansprechpartner', 'Erika Musterfrau');
+        await waitFor(() => expect(editor()?.textContent).toContain('Sehr geehrte Frau Musterfrau,'));
+        expect(screen.getByRole('combobox', { name: 'Empfänger' })).toHaveTextContent('erika@example.com');
+        expect(editor()?.textContent).toContain('Die Überstunden von Max Mustermann stehen extra drin.');
+        expect(editor()?.querySelectorAll('p')[0].textContent).toBe('Sehr geehrte Frau Musterfrau,');
+    });
+
+    it('lässt eine selbst geschriebene Anrede stehen', async () => {
+        const { editor } = await starteMitEigenemSatz();
+        editor()!.querySelector('p')!.textContent = 'Hallo Max,';
+        waehle('Empfänger', 'erika@example.com');
+        await waitFor(() => expect(screen.getByRole('combobox', { name: 'Ansprechpartner' })).toHaveTextContent('Erika Musterfrau'));
+        expect(editor()?.querySelector('p')?.textContent).toBe('Hallo Max,');
+        expect(editor()?.textContent).not.toContain('Sehr geehrte');
     });
 });
 

@@ -9,7 +9,6 @@ import org.example.kalkulationsprogramm.util.PdfWriterFabrik;
 import org.openpdf.text.Document;
 import org.openpdf.text.DocumentException;
 import org.openpdf.text.Element;
-import org.openpdf.text.Font;
 import org.openpdf.text.PageSize;
 import org.openpdf.text.pdf.PdfPTable;
 import org.openpdf.text.pdf.PdfWriter;
@@ -17,7 +16,6 @@ import org.springframework.stereotype.Service;
 
 import java.awt.Color;
 import java.io.ByteArrayOutputStream;
-import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.Month;
@@ -31,13 +29,15 @@ import static org.example.kalkulationsprogramm.service.pdf.PdfBerichtBausteine.f
 import static org.example.kalkulationsprogramm.service.pdf.PdfBerichtBausteine.hinweis;
 import static org.example.kalkulationsprogramm.service.pdf.PdfBerichtBausteine.kopf;
 import static org.example.kalkulationsprogramm.service.pdf.PdfBerichtBausteine.kopfZelle;
-import static org.example.kalkulationsprogramm.service.pdf.PdfBerichtBausteine.schrift;
 import static org.example.kalkulationsprogramm.service.pdf.PdfBerichtBausteine.zahl;
 import static org.example.kalkulationsprogramm.service.pdf.PdfBerichtBausteine.zelle;
 
 /**
  * Baut aus der Stundenaufstellung das PDF für den Steuerberater (Querformat, Firmenlogo,
- * Tabellenkopf in Firmenfarbe). Spalten Stundenkonto und Resturlaub sind wählbar.
+ * Tabellenkopf in Firmenfarbe). Spalten: Nr., Name, Tagessoll, Arbeitsstunden, Urlaub, Feiertage,
+ * Krankheit, Fortbildung, wählbar Stundenkonto und Resturlaub, dazu Monat (abgeschlossen/offen).
+ * Bewusst ohne Gesamtstunden – keine Spalte „Soll“ und keine Summenzeile –, damit der
+ * Steuerberater sie nicht mit den Arbeitsstunden verwechselt.
  */
 @Service
 @RequiredArgsConstructor
@@ -46,8 +46,7 @@ public class SteuerberaterBerichtPdfService {
     private final PdfFirmenDesign pdfFirmenDesign;
     private final Clock clock;
 
-    private record Spalte(String titel, float breite, int ausrichtung, Function<Zeile, String> wert,
-            Function<SteuerberaterBerichtDto.Summe, BigDecimal> summe) {
+    private record Spalte(String titel, float breite, int ausrichtung, Function<Zeile, String> wert) {
     }
 
     public byte[] erzeuge(SteuerberaterBerichtDto bericht, boolean mitResturlaub, boolean mitStundenkonto) {
@@ -80,27 +79,22 @@ public class SteuerberaterBerichtPdfService {
     private static List<Spalte> spalten(boolean mitResturlaub, boolean mitStundenkonto, boolean ist) {
         int rechts = Element.ALIGN_RIGHT;
         List<Spalte> spalten = new ArrayList<>(List.of(
-                new Spalte("Name", 2.8f, Element.ALIGN_LEFT, Zeile::name, null),
-                new Spalte("Tagessoll", 1.2f, rechts, z -> zahl(z.tagessoll()), null),
-                new Spalte("Soll", 1.1f, rechts, z -> zahl(z.sollStunden()), SteuerberaterBerichtDto.Summe::sollStunden),
-                new Spalte(ist ? "Arbeitsstunden (Ist)" : "Arbeitsstunden (Soll)", 2.3f, rechts, z -> zahl(z.arbeitsstunden()),
-                        SteuerberaterBerichtDto.Summe::arbeitsstunden),
-                new Spalte("Urlaub", 1.1f, rechts, z -> zahl(z.urlaubStunden()),
-                        SteuerberaterBerichtDto.Summe::urlaubStunden),
-                new Spalte("Feiertage", 1.3f, rechts, z -> zahl(z.feiertagStunden()),
-                        SteuerberaterBerichtDto.Summe::feiertagStunden),
-                new Spalte("Krankheit", 1.3f, rechts, z -> zahl(z.krankheitStunden()),
-                        SteuerberaterBerichtDto.Summe::krankheitStunden),
-                new Spalte("Fortbildung", 1.5f, rechts, z -> zahl(z.fortbildungStunden()),
-                        SteuerberaterBerichtDto.Summe::fortbildungStunden)));
+                new Spalte("Name", 3.2f, Element.ALIGN_LEFT, Zeile::name),
+                new Spalte("Tagessoll", 1.3f, rechts, z -> zahl(z.tagessoll())),
+                new Spalte(ist ? "Arbeitsstunden (Ist)" : "Arbeitsstunden (Soll)", 2.4f, rechts,
+                        z -> zahl(z.arbeitsstunden())),
+                new Spalte("Urlaub", 1.2f, rechts, z -> zahl(z.urlaubStunden())),
+                new Spalte("Feiertage", 1.3f, rechts, z -> zahl(z.feiertagStunden())),
+                new Spalte("Krankheit", 1.3f, rechts, z -> zahl(z.krankheitStunden())),
+                new Spalte("Fortbildung", 1.5f, rechts, z -> zahl(z.fortbildungStunden()))));
         if (mitStundenkonto) {
-            spalten.add(new Spalte("Stundenkonto", 1.8f, rechts, z -> zahl(z.stundenkontoStand()), null));
+            spalten.add(new Spalte("Stundenkonto", 1.8f, rechts, z -> zahl(z.stundenkontoStand())));
         }
         if (mitResturlaub) {
-            spalten.add(new Spalte("Resturlaub (Tage)", 2.1f, rechts, z -> zahl(z.resturlaubTage()), null));
+            spalten.add(new Spalte("Resturlaub (Tage)", 2.1f, rechts, z -> zahl(z.resturlaubTage())));
         }
         spalten.add(new Spalte("Monat", 1.7f, Element.ALIGN_CENTER,
-                z -> z.festgeschrieben() ? "abgeschlossen" : "offen", null));
+                z -> z.festgeschrieben() ? "abgeschlossen" : "offen"));
         return spalten;
     }
 
@@ -121,14 +115,6 @@ public class SteuerberaterBerichtPdfService {
             Color hintergrund = i % 2 == 1 ? design.akzentHell() : Color.WHITE;
             tabelle.addCell(zelle(String.valueOf(i + 1), hintergrund, Element.ALIGN_CENTER));
             spalten.forEach(s -> tabelle.addCell(zelle(s.wert().apply(zeile), hintergrund, s.ausrichtung())));
-        }
-
-        Font fett = schrift(8.5f, Font.BOLD, PdfDesign.TEXT_DUNKEL);
-        tabelle.addCell(zelle("", PdfDesign.SUMME_HINTERGRUND, Element.ALIGN_CENTER));
-        for (Spalte s : spalten) {
-            String text = s.summe() != null ? zahl(s.summe().apply(bericht.summe()))
-                    : "Name".equals(s.titel()) ? "Summe" : "";
-            tabelle.addCell(zelle(text, PdfDesign.SUMME_HINTERGRUND, s.ausrichtung(), fett));
         }
         return tabelle;
     }
