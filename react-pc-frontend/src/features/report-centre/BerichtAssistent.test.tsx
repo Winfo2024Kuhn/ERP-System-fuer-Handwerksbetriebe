@@ -14,7 +14,7 @@ const ZEITKONTEN = [
 ];
 
 const zeile = (id: number, name: string, teil: Record<string, unknown> = {}) => ({
-    mitarbeiterId: id, name, tagessoll: 8, sollStunden: 176, arbeitsstunden: 152, urlaubStunden: 16, feiertagStunden: 8,
+    mitarbeiterId: id, name, tagessoll: 8, arbeitsstunden: 152, urlaubStunden: 16, feiertagStunden: 8,
     krankheitStunden: 0, fortbildungStunden: 0, stundenkontoStand: 12.5, resturlaubTage: 7.5, festgeschrieben: true, ...teil,
 });
 
@@ -22,7 +22,6 @@ let stundenart: 'SOLL' | 'IST' = 'SOLL';
 const vorschau = () => ({
     jahr: 2026, monat: 10, stundenart,
     zeilen: [zeile(1, 'Max Mustermann'), zeile(2, 'Erika Musterfrau', { stundenkontoStand: -3.5, festgeschrieben: false })],
-    summe: { sollStunden: 352, arbeitsstunden: 304, urlaubStunden: 32, feiertagStunden: 16, krankheitStunden: 0, fortbildungStunden: 0 },
     alleFestgeschrieben: false,
 });
 
@@ -89,14 +88,19 @@ describe('BerichtAssistent', () => {
         const tabelle = await screen.findByRole('table');
         // Alle gewählt: keine IDs (der Server nimmt alle relevanten), keine Stundenart (Admin-Einstellung).
         expect(fetchMock).toHaveBeenCalledWith('/api/zeitverwaltung/berichte/steuerberater?jahr=2026&monat=10', expect.anything());
-        for (const spalte of ['Tagessoll', 'Soll', 'Urlaub', 'Feiertage', 'Krankheit', 'Fortbildung', 'Monat']) {
+        for (const spalte of ['Tagessoll', 'Urlaub', 'Feiertage', 'Krankheit', 'Fortbildung', 'Monat']) {
             expect(within(tabelle).getByRole('columnheader', { name: spalte })).toBeInTheDocument();
         }
-        expect(within(tabelle).getByRole('row', { name: /Summe/ })).toHaveTextContent('352,0');
+        // Keine Gesamtstunden: weder Sollstunden je Mitarbeiter noch eine Summenzeile.
+        expect(within(tabelle).queryByRole('columnheader', { name: 'Soll' })).not.toBeInTheDocument();
+        expect(within(tabelle).queryByRole('row', { name: /Summe/ })).not.toBeInTheDocument();
+        expect(tabelle.querySelector('tfoot')).toBeNull();
+        const max = within(tabelle).getByRole('row', { name: /Max Mustermann/ });
+        expect(max).toHaveTextContent('152,0');
+        expect(max).not.toHaveTextContent('176,0');
         const erika = within(tabelle).getByRole('row', { name: /Erika Musterfrau/ });
         expect(erika).toHaveTextContent('−3,5');
         expect(erika).toHaveTextContent('noch offen');
-        expect(within(tabelle).getByRole('row', { name: /Summe/ })).toHaveTextContent('304,0');
         expect(screen.getByText('Für 1 Mitarbeiter ist der Monat noch nicht abgeschlossen – Werte können sich noch ändern.')).toBeInTheDocument();
         expect(screen.getByText('Sollstunden')).toBeInTheDocument();
         expect(screen.getByText(/Übermittelt werden/)).toBeInTheDocument();

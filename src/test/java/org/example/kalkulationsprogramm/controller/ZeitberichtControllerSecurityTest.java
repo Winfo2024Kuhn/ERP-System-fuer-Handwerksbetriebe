@@ -93,12 +93,11 @@ class ZeitberichtControllerSecurityTest {
 
     @Test
     void steuerberaterVorschauAlsJson() throws Exception {
-        var zeile = new SteuerberaterBerichtDto.Zeile(1L, "Max Mustermann", d("8.0"), d("176.0"), d("148.0"),
+        var zeile = new SteuerberaterBerichtDto.Zeile(1L, "Max Mustermann", d("8.0"), d("148.0"),
                 d("16.0"), d("8.0"), d("4.0"), d("0.0"), d("-3.5"), d("7.5"), true);
-        var summe = new SteuerberaterBerichtDto.Summe(d("176.0"), d("148.0"), d("16.0"), d("8.0"), d("4.0"), d("0.0"));
         // Ohne Parameter geht null an den Service – er nimmt dann die Admin-Einstellung (hier: Ist).
         when(steuerberaterService.erstelle(2026, 10, List.of(1L, 2L), null))
-                .thenReturn(new SteuerberaterBerichtDto(2026, 10, SteuerberaterBerichtDto.Stundenart.IST, List.of(zeile), summe, true));
+                .thenReturn(new SteuerberaterBerichtDto(2026, 10, SteuerberaterBerichtDto.Stundenart.IST, List.of(zeile), true));
 
         mvc.perform(get(BASIS + "/steuerberater").with(user(principal))
                         .param("jahr", "2026").param("monat", "10").param("mitarbeiterIds", "1,2"))
@@ -107,14 +106,18 @@ class ZeitberichtControllerSecurityTest {
                 .andExpect(jsonPath("$.zeilen[0].arbeitsstunden").value(148.0))
                 .andExpect(jsonPath("$.zeilen[0].stundenkontoStand").value(-3.5))
                 .andExpect(jsonPath("$.zeilen[0].resturlaubTage").value(7.5))
-                .andExpect(jsonPath("$.summe.sollStunden").value(176.0))
+                .andExpect(jsonPath("$.zeilen[0].tagessoll").value(8.0))
+                .andExpect(jsonPath("$.zeilen[0].fortbildungStunden").value(0.0))
+                // Keine Gesamtstunden für den Steuerberater: weder Summenzeile noch Sollstunden je Mitarbeiter
+                .andExpect(jsonPath("$.summe").doesNotExist())
+                .andExpect(jsonPath("$.zeilen[0].sollStunden").doesNotExist())
                 .andExpect(jsonPath("$.stundenart").value("IST"))
                 .andExpect(jsonPath("$.alleFestgeschrieben").value(true));
     }
 
     @Test
     void steuerberaterPdfMitDateinameUndOhneZwischenspeicher() throws Exception {
-        var bericht = new SteuerberaterBerichtDto(2026, 3, SteuerberaterBerichtDto.Stundenart.IST, List.of(), null, true);
+        var bericht = new SteuerberaterBerichtDto(2026, 3, SteuerberaterBerichtDto.Stundenart.IST, List.of(), true);
         when(steuerberaterService.erstelle(eq(2026), eq(3), any(), eq(SteuerberaterBerichtDto.Stundenart.IST))).thenReturn(bericht);
         when(steuerberaterPdf.erzeuge(bericht, false, true)).thenReturn("%PDF".getBytes());
 

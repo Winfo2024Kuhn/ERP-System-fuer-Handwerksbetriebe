@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { cn } from '../../lib/utils';
-import type { SteuerberaterStunden, SteuerberaterVorschau, SteuerberaterZeile } from './api';
+import type { SteuerberaterVorschau, SteuerberaterZeile } from './api';
 import { BerichtInfo } from './BerichtInfo';
 import { formatZahl } from './berichtFormat';
 import { INFO_RESTURLAUB, INFO_STUNDENKONTO } from './infoTexte';
@@ -16,8 +16,6 @@ interface Spalte {
     titel: string;
     info?: ReactNode;
     zelle: (zeile: SteuerberaterZeile) => ReactNode;
-    /** Wert in der Summenzeile; ohne Angabe bleibt sie leer. */
-    summe?: (summe: SteuerberaterStunden) => ReactNode;
 }
 
 const ZAHL = 'px-1.5 py-2 text-right tabular-nums whitespace-nowrap';
@@ -35,12 +33,11 @@ function Status({ festgeschrieben }: { festgeschrieben: boolean }) {
 function spalten(art: Stundenart, mitStundenkonto: boolean, mitResturlaub: boolean): Spalte[] {
     return [
         { titel: 'Tagessoll', zelle: z => formatZahl(z.tagessoll) },
-        { titel: 'Soll', zelle: z => formatZahl(z.sollStunden), summe: s => formatZahl(s.sollStunden) },
-        { titel: arbeitsstundenTitel(art), info: <BerichtInfo info={arbeitsstundenInfo(art)} />, zelle: z => formatZahl(z.arbeitsstunden), summe: s => formatZahl(s.arbeitsstunden) },
-        { titel: 'Urlaub', zelle: z => formatZahl(z.urlaubStunden), summe: s => formatZahl(s.urlaubStunden) },
-        { titel: 'Feiertage', zelle: z => formatZahl(z.feiertagStunden), summe: s => formatZahl(s.feiertagStunden) },
-        { titel: 'Krankheit', zelle: z => formatZahl(z.krankheitStunden), summe: s => formatZahl(s.krankheitStunden) },
-        { titel: 'Fortbildung', zelle: z => formatZahl(z.fortbildungStunden), summe: s => formatZahl(s.fortbildungStunden) },
+        { titel: arbeitsstundenTitel(art), info: <BerichtInfo info={arbeitsstundenInfo(art)} />, zelle: z => formatZahl(z.arbeitsstunden) },
+        { titel: 'Urlaub', zelle: z => formatZahl(z.urlaubStunden) },
+        { titel: 'Feiertage', zelle: z => formatZahl(z.feiertagStunden) },
+        { titel: 'Krankheit', zelle: z => formatZahl(z.krankheitStunden) },
+        { titel: 'Fortbildung', zelle: z => formatZahl(z.fortbildungStunden) },
         ...(mitStundenkonto ? [{ titel: 'Stundenkonto', info: <BerichtInfo info={INFO_STUNDENKONTO} />, zelle: (z: SteuerberaterZeile) => <Stundenkonto stand={z.stundenkontoStand} /> }] : []),
         ...(mitResturlaub ? [{ titel: 'Resturlaub (Tage)', info: <BerichtInfo info={INFO_RESTURLAUB} />, zelle: (z: SteuerberaterZeile) => formatZahl(z.resturlaubTage) }] : []),
     ];
@@ -48,7 +45,8 @@ function spalten(art: Stundenart, mitStundenkonto: boolean, mitResturlaub: boole
 
 /**
  * Vorschau der Stundenaufstellung mit denselben Spalten wie das PDF: eine Zeile
- * je Mitarbeiter plus Summe. Alle Werte in Stunden, Resturlaub in Tagen.
+ * je Mitarbeiter. Bewusst ohne Sollstunden und ohne Summenzeile, damit der
+ * Steuerberater keine Gesamtstunden abrechnet. Alle Werte in Stunden, Resturlaub in Tagen.
  */
 export function SteuerberaterTabelle({ vorschau, mitStundenkonto, mitResturlaub }: SteuerberaterTabelleProps) {
     const liste = spalten(vorschau.stundenart, mitStundenkonto, mitResturlaub);
@@ -77,13 +75,6 @@ export function SteuerberaterTabelle({ vorschau, mitStundenkonto, mitResturlaub 
                         </tr>
                     ))}
                 </tbody>
-                <tfoot>
-                    <tr className="border-t-2 border-slate-300 font-semibold text-slate-900">
-                        <th scope="row" className="px-1.5 py-2 text-left">Summe</th>
-                        {liste.map(s => <td key={s.titel} className={ZAHL}>{s.summe?.(vorschau.summe) ?? ''}</td>)}
-                        <td />
-                    </tr>
-                </tfoot>
             </table>
         </div>
     );

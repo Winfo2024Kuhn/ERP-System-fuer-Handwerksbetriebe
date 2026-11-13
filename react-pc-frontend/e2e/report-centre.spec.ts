@@ -17,7 +17,7 @@ const konto = (mitarbeiterId: number, mitarbeiterName: string, istGeschaeftsfueh
 });
 
 const zeile = (mitarbeiterId: number, name: string, teil: Record<string, unknown> = {}) => ({
-    mitarbeiterId, name, tagessoll: 8, sollStunden: 176, arbeitsstunden: 152, urlaubStunden: 16, feiertagStunden: 8,
+    mitarbeiterId, name, tagessoll: 8, arbeitsstunden: 152, urlaubStunden: 16, feiertagStunden: 8,
     krankheitStunden: 0, fortbildungStunden: 0, stundenkontoStand: 12.5, resturlaubTage: 7.5, festgeschrieben: true, ...teil,
 });
 
@@ -47,7 +47,6 @@ async function stubbeApi(page: Page, stundenart: 'SOLL' | 'IST' = 'SOLL'): Promi
                 json: {
                     jahr: 2026, monat: 10, stundenart,
                     zeilen: [zeile(10, 'Max Mustermann'), zeile(11, 'Erika Musterfrau', { stundenkontoStand: -3.5, festgeschrieben: false })],
-                    summe: { sollStunden: 352, arbeitsstunden: 304, urlaubStunden: 32, feiertagStunden: 16, krankheitStunden: 0, fortbildungStunden: 0 },
                     alleFestgeschrieben: false,
                 },
             });
@@ -102,6 +101,9 @@ test('Report Centre: Steuerberater-Bericht bis zur Vorschau und Mail mit PDF-Anh
     expect(mitschrift.vorschau.at(-1)?.searchParams.has('mitarbeiterIds')).toBe(false);
     expect(mitschrift.vorschau.at(-1)?.searchParams.has('stundenart')).toBe(false);
     await expect(assistent.getByRole('columnheader', { name: 'Fortbildung' })).toBeVisible();
+    // Keine Gesamtstunden an den Steuerberater: keine Spalte „Soll“, keine Summenzeile.
+    await expect(assistent.getByRole('columnheader', { name: 'Soll', exact: true })).toHaveCount(0);
+    await expect(assistent.getByRole('row', { name: /Summe/ })).toHaveCount(0);
     await expect(assistent.getByText('Übermittelt werden: Sollstunden')).toBeVisible();
     await expect(assistent.getByRole('link', { name: 'Einstellungen → Zeiterfassung' })).toBeVisible();
     await assistent.getByRole('button', { name: 'Mehr zu: Arbeitsstunden (Soll)' }).click();
@@ -121,6 +123,25 @@ test('Report Centre: Steuerberater-Bericht bis zur Vorschau und Mail mit PDF-Anh
     expect(mitschrift.pdf.at(-1)?.searchParams.get('mitStundenkonto')).toBe('true');
     expect(mitschrift.pdf.at(-1)?.searchParams.get('stundenart')).toBe('SOLL');
     await designPruefung(page, info, 'report-centre-steuerberater-mail');
+
+    // Anrede folgt dem Empfänger; eigener Text bleibt dabei stehen.
+    const nachrichtFeld = mail.getByRole('textbox', { name: 'Nachricht' });
+    await expect(nachrichtFeld).toContainText('Sehr geehrte Frau Musterfrau,');
+    await nachrichtFeld.getByText(/anbei sende ich/).click();
+    await page.keyboard.press('End');
+    await page.keyboard.type(' Eigener Zusatz.');
+    await mail.getByRole('combobox', { name: 'Empfänger' }).click();
+    await page.getByRole('option', { name: 'kanzlei@example.com' }).click();
+    await expect(nachrichtFeld).toContainText('Sehr geehrte Damen und Herren,');
+    await expect(nachrichtFeld).not.toContainText('Frau Musterfrau');
+    await expect(nachrichtFeld).toContainText('Eigener Zusatz.');
+    await expect(mail.getByRole('combobox', { name: 'Ansprechpartner' })).toContainText('Ansprechpartner wählen');
+    await designPruefung(page, info, 'report-centre-steuerberater-mail-kanzlei');
+    await mail.getByRole('combobox', { name: 'Empfänger' }).click();
+    await page.getByRole('option', { name: 'lohn@example.com' }).click();
+    await expect(nachrichtFeld).toContainText('Sehr geehrte Frau Musterfrau,');
+    await expect(mail.getByRole('combobox', { name: 'Ansprechpartner' })).toContainText('Erika Musterfrau');
+    await expect(nachrichtFeld).toContainText('Eigener Zusatz.');
 
     // Link-Dialog liegt über der Stundenübermittlung; Escape schließt nur ihn.
     const nachricht = mail.getByRole('textbox', { name: 'Nachricht' });

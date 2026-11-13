@@ -1229,6 +1229,22 @@ Teilt sich die Basis-URL mit dem `MonatsabschlussController`.
 |---|---|---|
 | `GET` | `/` | DATEV-Einstellungen lesen (ändern über `/api/settings/datev`) |
 
+### ZeitberichtController
+
+**Basis-URL:** `/api/zeitverwaltung/berichte`
+
+Berichte im Report Centre. Nur mit dem Recht „Zeiterfassung sehen“ (sonst 403). Ungültiges Jahr oder ungültiger Monat ergibt 400. Ohne `stundenart` (`SOLL` oder `IST`) gilt die Admin-Einstellung unter Einstellungen → Zeiterfassung. `mitarbeiterIds` ist optional (höchstens 50); ohne Auswahl kommen alle Mitarbeiter mit Zeitkonto außer Geschäftsführern.
+
+| Methode | Pfad | Beschreibung |
+|---|---|---|
+| `GET` | `/steuerberater?jahr=&monat=&mitarbeiterIds=&stundenart=` | Stundenaufstellung des Monats für den Steuerberater (Vorschau, JSON) |
+| `GET` | `/steuerberater/pdf?jahr=&monat=&mitarbeiterIds=&mitResturlaub=true&mitStundenkonto=true&stundenart=` | Dieselbe Stundenaufstellung als PDF (`Stundenaufstellung_JJJJ-MM.pdf`, `Cache-Control: no-store`) |
+| `GET` | `/mitarbeiter/pdf?mitarbeiterIds=&von=&bis=&mitTagesliste=true&mitUnterschrift=true` | Zeitbericht je Mitarbeiter als PDF |
+
+Antwort von `/steuerberater`: `{ jahr, monat, stundenart, zeilen[], alleFestgeschrieben }`, je Zeile `mitarbeiterId`, `name`, `tagessoll`, `arbeitsstunden`, `urlaubStunden`, `feiertagStunden`, `krankheitStunden`, `fortbildungStunden`, `stundenkontoStand`, `resturlaubTage`, `festgeschrieben`. Stunden mit einer Nachkommastelle, Resturlaub in Tagen. `arbeitsstunden` ist bei `SOLL` Sollstunden minus Urlaub, Feiertage, Krankheit und Fortbildung, bei `IST` die gebuchte Arbeitszeit ohne Pausen.
+
+**Bewusst ohne Gesamtstunden:** Die Antwort enthält weder die Sollstunden je Mitarbeiter noch eine Summe über alle Mitarbeiter (die Felder `sollStunden` und `summe` sind seit November 2026 entfallen), weil der Steuerberater sie mit den Arbeitsstunden verwechselt hat. Das PDF hat dieselben Spalten: Nr., Name, Tagessoll, Arbeitsstunden, Urlaub, Feiertage, Krankheit, Fortbildung, wählbar Stundenkonto und Resturlaub (Tage), dazu Monat (abgeschlossen/offen). Eine Summenzeile gibt es nicht.
+
 ---
 
 ## 12. Mitarbeiter, Abwesenheiten und Lohn

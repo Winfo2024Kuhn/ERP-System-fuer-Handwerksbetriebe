@@ -6,8 +6,11 @@ import java.util.List;
 /**
  * Stundenaufstellung aller Mitarbeiter eines Monats für den Steuerberater (Report Centre).
  * Alle Stundenwerte mit einer Nachkommastelle, Resturlaub in Tagen.
+ * <p>
+ * Bewusst ohne Gesamtstunden: keine Sollstunden je Mitarbeiter und keine Summe über alle
+ * Mitarbeiter. Der Steuerberater hat sie mit den Arbeitsstunden verwechselt und falsch abgerechnet.
  */
-public record SteuerberaterBerichtDto(int jahr, int monat, Stundenart stundenart, List<Zeile> zeilen, Summe summe,
+public record SteuerberaterBerichtDto(int jahr, int monat, Stundenart stundenart, List<Zeile> zeilen,
         boolean alleFestgeschrieben) {
 
     /**
@@ -25,13 +28,9 @@ public record SteuerberaterBerichtDto(int jahr, int monat, Stundenart stundenart
      * @param stundenkontoStand Plus-/Minusstunden seit Eintritt bis Monatsende
      * @param resturlaubTage noch freie Urlaubstage zum heutigen Stand
      */
-    public record Zeile(Long mitarbeiterId, String name, BigDecimal tagessoll, BigDecimal sollStunden,
+    public record Zeile(Long mitarbeiterId, String name, BigDecimal tagessoll,
             BigDecimal arbeitsstunden, BigDecimal urlaubStunden, BigDecimal feiertagStunden,
             BigDecimal krankheitStunden, BigDecimal fortbildungStunden, BigDecimal stundenkontoStand,
             BigDecimal resturlaubTage, boolean festgeschrieben) {
-    }
-
-    public record Summe(BigDecimal sollStunden, BigDecimal arbeitsstunden, BigDecimal urlaubStunden,
-            BigDecimal feiertagStunden, BigDecimal krankheitStunden, BigDecimal fortbildungStunden) {
     }
 }

@@ -89,8 +89,6 @@ class SteuerberaterBerichtServiceTest {
         assertThat(erika1.fortbildungStunden()).isEqualByComparingTo("2");
         assertThat(erika1.arbeitsstunden()).isEqualByComparingTo("76.0");
         assertThat(erika1.stundenkontoStand()).isEqualByComparingTo("-3.5");
-        assertThat(bericht.summe().sollStunden()).isEqualByComparingTo("264.0");
-        assertThat(bericht.summe().arbeitsstunden()).isEqualByComparingTo("224.0");
         assertThat(max1.urlaubStunden()).isEqualByComparingTo("16");
         assertThat(bericht.alleFestgeschrieben()).isFalse();
         verify(monatsSaldoService, never()).getOrBerechne(any(), anyInt(), anyInt());
@@ -176,7 +174,6 @@ class SteuerberaterBerichtServiceTest {
         var bericht = service.erstelle(2026, 10, null, Stundenart.IST);
 
         assertThat(bericht.zeilen()).isEmpty();
-        assertThat(bericht.summe().sollStunden()).isEqualByComparingTo("0");
         verifyNoInteractions(abwesenheitRepository);
     }
 

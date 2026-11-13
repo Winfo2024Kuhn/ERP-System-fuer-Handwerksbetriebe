@@ -15,19 +15,16 @@ export interface BerichtMitarbeiter {
     name: string;
 }
 
-export interface SteuerberaterStunden {
-    sollStunden: number;
+/** Eine Zeile je Mitarbeiter; bewusst ohne Sollstunden des Monats (keine Gesamtstunden an den Steuerberater). */
+export interface SteuerberaterZeile {
+    mitarbeiterId: number;
+    name: string;
+    tagessoll: number;
     arbeitsstunden: number;
     urlaubStunden: number;
     feiertagStunden: number;
     krankheitStunden: number;
     fortbildungStunden: number;
-}
-
-export interface SteuerberaterZeile extends SteuerberaterStunden {
-    mitarbeiterId: number;
-    name: string;
-    tagessoll: number;
     stundenkontoStand: number;
     resturlaubTage: number;
     festgeschrieben: boolean;
@@ -40,7 +37,6 @@ export interface SteuerberaterVorschau {
     /** Welche Stunden übermittelt werden (Admin-Einstellung, vom Server gewählt). */
     stundenart: Stundenart;
     zeilen: SteuerberaterZeile[];
-    summe: SteuerberaterStunden;
     alleFestgeschrieben: boolean;
 }
 

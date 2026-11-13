@@ -2,50 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useToast } from '../../components/ui/toast';
 import { ladeStandardSignatur } from '../email/mailEditorHtml';
 import { aktuellesFrontendProfil } from '../../lib/frontendProfil';
+import {
+    adressenVon, ansprechpartnerFuerAdresse, ansprechpartnerOption, lohnAnsprechpartner, type Option, type SteuerberaterKontakt,
+} from './steuerberaterKontakt';
 import { monatsname } from './zeitraum';
-
-export interface SteuerberaterAnsprechpartner {
-    id: number;
-    anrede: string | null;
-    vorname: string;
-    nachname: string;
-    email: string;
-    telefon: string;
-    istLohnAnsprechpartner: boolean;
-}
-
-export interface SteuerberaterKontakt {
-    id: number;
-    name: string;
-    email: string;
-    telefon: string;
-    weitereEmails: string[];
-    ansprechpartnerListe: SteuerberaterAnsprechpartner[];
-}
-
-export interface Option {
-    value: string;
-    label: string;
-}
-
-/** Lohn-Ansprechpartner eines Steuerberaters, sonst der erste, sonst `null`. */
-export function lohnAnsprechpartner(sb: SteuerberaterKontakt | null): SteuerberaterAnsprechpartner | null {
-    if (!sb) return null;
-    const liste = sb.ansprechpartnerListe || [];
-    return liste.find(ap => ap.istLohnAnsprechpartner) || liste[0] || null;
-}
-
-/** Alle Adressen eines Steuerberaters ohne Doppelte (Kanzlei, weitere, Ansprechpartner). */
-export function adressenVon(sb: SteuerberaterKontakt | null): string[] {
-    if (!sb) return [];
-    const alle = [sb.email, ...(sb.weitereEmails || []), ...(sb.ansprechpartnerListe || []).map(ap => ap.email)];
-    return Array.from(new Set(alle.filter(Boolean)));
-}
-
-function ansprechpartnerOption(ap: SteuerberaterAnsprechpartner): Option {
-    const name = [ap.vorname, ap.nachname].filter(Boolean).join(' ') || '(ohne Namen)';
-    return { value: String(ap.id), label: ap.istLohnAnsprechpartner ? `${name} · Löhne` : name };
-}
 
 interface Geladen {
     liste: SteuerberaterKontakt[];
@@ -56,6 +16,9 @@ interface Geladen {
  * Empfänger der Stundenübermittlung: lädt beim Öffnen Steuerberater,
  * Firmenname (für den Betreff) und Signatur, wählt den ersten Steuerberater
  * mit seinem Lohn-Ansprechpartner vor und leitet Empfänger und Auswahllisten ab.
+ * Ansprechpartner und Empfänger hängen in beide Richtungen zusammen: Wer einen
+ * Ansprechpartner wählt, bekommt seine Adresse; wer die Adresse ändert, bekommt
+ * den Ansprechpartner dazu (oder keinen, dann „Sehr geehrte Damen und Herren“).
  * Geschlossen wird alles geleert.
  */
 export function useSteuerberaterEmpfaenger(offen: boolean, monat: number, jahr: number) {
@@ -122,7 +85,10 @@ export function useSteuerberaterEmpfaenger(offen: boolean, monat: number, jahr: 
         ansprechpartnerId,
         ansprechpartner,
         empfaenger,
-        setEmpfaenger,
+        waehleEmpfaenger: (adresse: string) => {
+            setEmpfaenger(adresse);
+            setAnsprechpartnerId(ansprechpartnerFuerAdresse(steuerberater, adresse)?.id ?? null);
+        },
         betreff,
         setBetreff,
         waehleSteuerberater: (id: number | null) => waehleSteuerberater(id, liste),

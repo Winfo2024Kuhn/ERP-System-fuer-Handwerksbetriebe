@@ -1,24 +1,22 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import { Mail, Loader2, Paperclip } from 'lucide-react';
 import { Button } from './ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { useToast } from './ui/toast';
-import { htmlFuerVersand, setzeEditorHtml } from '../features/email/mailEditorHtml';
+import { htmlFuerVersand } from '../features/email/mailEditorHtml';
 import { MailNachrichtFeld } from '../features/email/editor/MailNachrichtFeld';
 import { steuerberaterPdfUrl } from '../features/report-centre/api';
 import { PdfAnhangChip } from '../features/report-centre/PdfAnhangChip';
 import { SteuerberaterEmpfaengerFelder } from '../features/report-centre/SteuerberaterEmpfaengerFelder';
 import { usePdfAnhang } from '../features/report-centre/usePdfAnhang';
 import { useSteuerberaterEmpfaenger } from '../features/report-centre/useSteuerberaterEmpfaenger';
+import { useStundenMailText } from '../features/report-centre/useStundenMailText';
 import { aktuellesFrontendProfil } from '../lib/frontendProfil';
-import { stundenMailText } from '../features/report-centre/stundenMail';
 import type { Stundenart } from '../features/report-centre/stundenart';
 import { StundenartHinweis } from '../features/report-centre/StundenartHinweis';
 import { monatsname } from '../features/report-centre/zeitraum';
-import { escapeHtml } from '../lib/emailAddress';
-import { briefanrede } from '../lib/briefanrede';
 
 export interface SteuerberaterEmailModalProps {
     isOpen: boolean;
@@ -43,7 +41,6 @@ export function SteuerberaterEmailModal({
     const [sending, setSending] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const editorRef = useRef<HTMLDivElement>(null);
-    const lastRenderedKeyRef = useRef<string>('');
     const e = useSteuerberaterEmpfaenger(isOpen, monat, jahr);
 
     // Das PDF wird beim Öffnen erstellt und als Anhang gezeigt; zu = nichts laden.
@@ -60,19 +57,10 @@ export function SteuerberaterEmailModal({
         if (!isOpen) setError(null);
     }
 
-    // Editor-Inhalt nur neu setzen, wenn sich Anrede/Ansprechpartner/Monat ändert –
-    // sonst würde jedes Tippen im contentEditable überschrieben.
-    const { laedt, steuerberaterId, ansprechpartnerId, ansprechpartner, signatur } = e;
-    useEffect(() => {
-        if (!isOpen) { lastRenderedKeyRef.current = ''; return; }
-        if (laedt) return;
-        const key = `${steuerberaterId}|${ansprechpartnerId}|${monat}|${jahr}|${stundenart}`;
-        if (lastRenderedKeyRef.current === key) return;
-        // Kein Ansprechpartner: briefanrede liefert „Sehr geehrte Damen und Herren“.
-        const anredeZeile = `${escapeHtml(briefanrede(ansprechpartner?.anrede, ansprechpartner?.nachname))},`;
-        setzeEditorHtml(editorRef.current, stundenMailText(anredeZeile, monat, jahr, stundenart, signatur));
-        lastRenderedKeyRef.current = key;
-    }, [isOpen, laedt, steuerberaterId, ansprechpartnerId, ansprechpartner, monat, jahr, stundenart, signatur]);
+    // Ganzer Text beim Öffnen bzw. bei Monat/Jahr/Stundenart; danach tauscht ein Ansprechpartner-Wechsel nur die Anrede.
+    useStundenMailText(editorRef, {
+        offen: isOpen, laedt: e.laedt, ansprechpartner: e.ansprechpartner, monat, jahr, stundenart, signatur: e.signatur,
+    });
 
     const pruefe = (): string | null => {
         if (anhang.art !== 'fertig') return 'Das PDF ist noch nicht fertig – ohne Anhang wird nichts gesendet.';
