@@ -7,6 +7,7 @@ import { ToastProvider } from '../ui/toast';
 import { ConfirmProvider } from '../ui/confirm-dialog';
 import DocumentEditor from './index';
 import type { EmailComposeModal } from '../EmailComposeModal';
+import { heuteIso } from '../../lib/datum';
 
 /**
  * Dialogfolge vor PDF-Export und E-Mail-Versand (Issue #261 + Online-Annahme):
@@ -29,7 +30,7 @@ vi.mock('../EmailComposeModal', () => ({
     },
 }));
 
-const HEUTE_ISO = new Date().toISOString().split('T')[0];
+const HEUTE_ISO = heuteIso();
 
 const basisDokument = {
     id: 1,

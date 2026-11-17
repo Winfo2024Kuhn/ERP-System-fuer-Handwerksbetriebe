@@ -11,6 +11,7 @@ import { useDatensatzLock } from '../lock/useDatensatzLock';
 import DocumentEditor from './index';
 import { scrolleMittigInDenBlick } from '../../lib/scrollInDenBlick';
 import type { DocumentEditorHandle } from './types';
+import { heuteIso } from '../../lib/datum';
 
 // Die Scroll-Rechnung selbst ist in lib/scrollInDenBlick.test.ts geprüft.
 vi.mock('../../lib/scrollInDenBlick', () => ({ scrolleMittigInDenBlick: vi.fn() }));
@@ -19,12 +20,10 @@ vi.mock('../../lib/scrollInDenBlick', () => ({ scrolleMittigInDenBlick: vi.fn() 
 const ALTE_ADRESSE = 'Max Mustermann\nMusterweg 1\n12345 Musterstadt';
 const NEUE_ADRESSE = 'Max Mustermann\nNeue Gasse 7\n54321 Beispielstadt';
 
-// Bewusst "heute": Bei einem noch nicht versendeten Dokument laesst der Editor
-// das Datum mit heute mitlaufen. Ein fest verdrahtetes Datum waere ab dem
-// Folgetag Vergangenheit, der Editor wuerde es bumpen und das Dokument allein
-// deshalb als "Ungespeichert" melden — die Adress-Assertions unten haetten
-// nichts damit zu tun.
-const HEUTE_ISO = new Date().toISOString().split('T')[0];
+// Bewusst "heute": Beim endgueltigen Versand fragt der Editor nach dem Datum,
+// wenn das gespeicherte nicht heute ist (DokumentDatumWahl). Mit "heute" bleibt
+// die Frage weg und die Tests hier zielen nur auf ihr eigenes Thema.
+const HEUTE_ISO = heuteIso();
 
 const dokumentAntwort = {
     id: 1,

@@ -146,6 +146,14 @@ Handy-App (`react-zeiterfassung/src`):
 - Die Eingabe wird erst beim **Abschluss** übernommen (Enter oder Feld verlassen, Escape verwirft), sonst stünde die Rückfrage bei jedem Tastendruck im Weg. Beide Eingabestellen – Summenzeile und Chip-Popover – nutzen dafür `components/document-editor/ZahlungszielTageEingabe.tsx`.
 - Der Wert geht beim Speichern als `zahlungszielTage` mit ans Backend, damit Fälligkeit in Offenen Posten und Mahnwesen zur verschickten Rechnung passt.
 
+### Datum beim Versand im Dokumenteditor (Nutzervorgabe 17.11.2026)
+
+- Der Editor zeigt beim Laden das gespeicherte Datum und stellt es nie still auf heute um.
+- Beim endgültigen Drucken (Rechnungen), PDF-Herunterladen und E-Mail-Senden fragt der **erste** Dialog über `components/document-editor/DokumentDatumWahl.tsx` nach dem „Datum oben auf dem Dokument“: „Heute (…)“ vorausgewählt, „Bisheriges Datum behalten (…)“, „Anderes Datum …“ (gemeinsamer `DatePicker`). Rechnungen zeigen „Zahlbar bis …“ und sperren Daten in der Zukunft (Knopf gesperrt mit Grund). Regeln als reine Funktionen in `datumWahlRegeln.ts`.
+- Gefragt wird nur, wenn das Dokument nicht gesperrt ist, kein Entwurf mit Wasserzeichen läuft und das gespeicherte Datum nicht heute ist. Übernommen wird das Datum erst unmittelbar vor Speichern und PDF (`useVersandDatum().uebernehmen()`, `datumRef` synchron), Abbrechen ändert nichts.
+- Die drei Versandwege liegen in `components/document-editor/versand/`: `useDokumentVersand` setzt `useDruckVersand`, `useExportVersand`, `useEmailVersand` (Dialogfolge) und `useMailfenster` (PDF, Mailtext, Buchen beim Senden) zusammen, `VersandDialoge` rendert alle Dialoge, PDF-Schritte in `pdfAblage.ts`, reine Regeln in `versandRegeln.ts`. Dort erweitern, nicht in `index.tsx`.
+- „Heute“ immer über `heuteIso()` aus `lib/datum.ts` (lokale Zeit), nie `new Date().toISOString().split('T')[0]`.
+
 ### Gemeinsame Zahlenprüfung und Meldungsfläche
 
 - PC: `lib/numberDrafts.ts` prüft mehrere Zahlenentwürfe vollständig vor der ersten Aktion. Fachliche Geldregeln liegen in `features/finanzen/moneyDrafts.ts`; keine Kopien in Seiten anlegen. Zulässige Genauigkeit folgt dem API-/Datenbankvertrag. Fehlende gespeicherte Zahlen ergeben einen leeren Entwurf, keinen erfundenen Nullwert.
