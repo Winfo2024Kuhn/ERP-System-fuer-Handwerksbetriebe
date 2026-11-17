@@ -61,6 +61,10 @@ async function stubApi(page: Page, audit: Record<string, unknown>, mitAuftragsbe
             return json(route, mitAuftragsbestaetigung ? [angebot, auftragsbestaetigung] : [angebot]);
         }
         if (pfad === `/api/ausgangs-dokumente/${AB_ID}/historie`) return json(route, abVerlauf);
+        // Der Verlauf öffnet mit dem Reiter „Stände“; ohne eigenen Stub bekäme er ein Array statt einer Seite.
+        if (pfad === `/api/ausgangs-dokumente/${AB_ID}/staende`) {
+            return json(route, { staende: [], gesamt: 0, seite: 0, seitenGroesse: 25, hatMehr: false, offeneAenderungen: null, dokumentBearbeitbar: false });
+        }
         if (pfad === `/api/ausgangs-dokumente/${AB_ID}/freigabe-audit`) return json(route, audit);
         if (pfad === '/api/ausgangs-dokumente/freigabe-status') {
             return json(route, { [DOK_ID]: { status: 'ACCEPTED', akzeptiertAm: '2026-10-13T09:30:00', ablaufDatum: '2026-10-24T00:00:00' } });
@@ -171,6 +175,8 @@ test('Verlauf der Auftragsbestätigung zeigt den Nachweis des Angebots mit Check
     await page.getByText('AB-2026-0042').click();
     await page.getByRole('button', { name: 'Verlauf anzeigen' }).click();
     const dialog = page.getByRole('dialog');
+    // Der Annahme-Nachweis steht im GoBD-Protokoll, nicht bei den Ständen.
+    await dialog.getByRole('tab', { name: 'Protokoll' }).click();
     await expect(dialog.getByText('Annahme-Nachweis', { exact: true })).toBeVisible();
     await expect(dialog.getByText('Angebot AN-2026-0041', { exact: true })).toBeVisible();
     await expect(dialog.getByText('Kunde: Max Mustermann')).toBeVisible();
@@ -198,6 +204,8 @@ test('Info am Annahme-Hash im Verlauf erklärt den Vergleich mit der Kunden-Mail
     await page.getByText('AB-2026-0042').click();
     await page.getByRole('button', { name: 'Verlauf anzeigen' }).click();
     const dialog = page.getByRole('dialog');
+    // Der Annahme-Nachweis steht im GoBD-Protokoll, nicht bei den Ständen.
+    await dialog.getByRole('tab', { name: 'Protokoll' }).click();
     const infoKnopf = dialog.getByRole('button', { name: 'Mehr zu: Annahme-Hash' });
     await infoKnopf.scrollIntoViewIfNeeded();
     await infoKnopf.click();

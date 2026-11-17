@@ -277,7 +277,8 @@ export function DocumentEditorHeader({
                         onClick={onPrint}
                         aria-label="Drucken"
                         title="Drucken"
-                        className="h-7 px-1.5 text-[11px] gap-1 rounded-md text-slate-500 hover:text-slate-700"
+                        // Unter 1536 px nur Symbol mit schmalerem Rand: Platz für die Dokumentnummer (14 Zoll).
+                        className="h-7 px-1 2xl:px-1.5 text-[11px] gap-1 rounded-md text-slate-500 hover:text-slate-700"
                     >
                         <Printer className="w-3 h-3" />
                         {/* Unter 1536 px nur das Drucker-Symbol: schafft Platz, damit die

@@ -42,8 +42,8 @@ export function EditorVerlaufKnopf({ dokument, vorOeffnen }: Props) {
                 disabled={speichert}
                 aria-label="Verlauf"
                 title="Verlauf: Stände bei jedem Export und Protokoll"
-                // Gleicher Stil wie die übrigen Nebenaktionen der Kopfzeile (Drucken, Entwurf, E-Mail).
-                className="h-7 px-1.5 text-[11px] gap-1 rounded-md text-slate-500 hover:text-slate-700"
+                // Stil wie „Drucken“: unter 1536 px nur Symbol mit schmalem Rand, damit die Dokumentnummer bei 14 Zoll ganz passt.
+                className="h-7 px-1 2xl:px-1.5 text-[11px] gap-1 rounded-md text-slate-500 hover:text-slate-700"
             >
                 {speichert
                     ? <Loader2 className="w-3 h-3 motion-safe:animate-spin" aria-hidden="true" />
