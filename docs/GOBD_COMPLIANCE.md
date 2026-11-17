@@ -113,7 +113,7 @@ Der Server lehnt Änderungen an gesperrten Dokumenten ab („Dokument ist gesper
 
 Ein Rechnungsdokument wird gebucht (`gebucht = true`, `gebuchtAm = heute`) in folgenden Fällen:
 
-1. **Drucken** („Drucken & Buchen“) oder **PDF-Export** im Dokument-Editor – der Editor ruft `POST /api/ausgangs-dokumente/{id}/buchen` auf; das Dokumentdatum wird vorher auf heute gesetzt
+1. **Drucken** („Drucken & Buchen“) oder **PDF-Export** im Dokument-Editor – der Editor ruft `POST /api/ausgangs-dokumente/{id}/buchen` auf; vorher wird das im ersten Dialog gewählte Dokumentdatum gespeichert (Vorauswahl heute, bei Rechnungen nicht in der Zukunft)
 2. **E-Mail-Versand** – der Editor bucht vor dem Versand; danach setzt `POST /api/ausgangs-dokumente/{id}/email-versendet` zusätzlich `versandDatum`
 3. **Stornierung** – Das Storno-Gegendokument wird sofort als gebucht erstellt
 
