@@ -20,4 +20,10 @@ public class AusgangsGeschaeftsDokumentUpdateDto {
 
     // Rechnungsadresse-Override (nur für dieses Dokument, ändert nicht Kundenstamm)
     private String rechnungsadresseOverride;
+
+    /**
+     * Optional: der Wiederherstellungs-Zähler, den der Editor beim Laden bekam. Weicht er vom
+     * gespeicherten ab, wurde das Dokument inzwischen zurückgesetzt → 409. Ohne Wert keine Prüfung.
+     */
+    private Integer wiederherstellungsZaehler;
 }

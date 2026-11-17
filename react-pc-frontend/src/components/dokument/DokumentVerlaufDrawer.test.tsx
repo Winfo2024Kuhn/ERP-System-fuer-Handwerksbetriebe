@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../ui/toast';
+import { ConfirmProvider } from '../ui/confirm-dialog';
 import { DokumentVerlaufDrawer, type DokumentAuditEintrag } from './DokumentVerlaufDrawer';
 import type { FreigabeAuditDaten } from '../../features/freigabe/freigabeAudit';
 
@@ -45,6 +46,9 @@ function antwort(status: number, body: unknown) {
 function stubApi(historie: DokumentAuditEintrag[], audit: { status: number; body?: unknown } | 'netzfehler') {
     fetchMock.mockImplementation((url: string) => {
         if (url === `/api/ausgangs-dokumente/${DOK_ID}/historie`) return antwort(200, historie);
+        if (url.startsWith(`/api/ausgangs-dokumente/${DOK_ID}/staende?`)) {
+            return antwort(200, { staende: [], gesamt: 0, seite: 0, seitenGroesse: 25, hatMehr: false, offeneAenderungen: null });
+        }
         if (url === `/api/ausgangs-dokumente/${DOK_ID}/freigabe-audit`) {
             if (audit === 'netzfehler') return Promise.reject(new TypeError('Failed to fetch'));
             return antwort(audit.status, audit.body ?? null);
@@ -53,12 +57,25 @@ function stubApi(historie: DokumentAuditEintrag[], audit: { status: number; body
     });
 }
 
-function zeige(onOpenChange = vi.fn()) {
-    return render(
+function ansicht(open: boolean, onOpenChange = vi.fn()) {
+    return (
         <ToastProvider>
-            <DokumentVerlaufDrawer open onOpenChange={onOpenChange} dokumentId={DOK_ID} dokumentNummer="AB-2026/10/00028" />
-        </ToastProvider>,
+            <ConfirmProvider>
+                <DokumentVerlaufDrawer open={open} onOpenChange={onOpenChange} dokumentId={DOK_ID} dokumentNummer="AB-2026/10/00028" />
+            </ConfirmProvider>
+        </ToastProvider>
     );
+}
+
+/** Öffnet den Verlauf und wechselt zum Reiter „Protokoll“ (Standard ist „Stände“). */
+async function zeige(onOpenChange = vi.fn()) {
+    const ergebnis = render(ansicht(true, onOpenChange));
+    await zumProtokoll();
+    return ergebnis;
+}
+
+async function zumProtokoll() {
+    await userEvent.click(await screen.findByRole('tab', { name: 'Protokoll' }));
 }
 
 const auditAufrufe = () => fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/freigabe-audit')).length;
@@ -71,9 +88,22 @@ beforeEach(() => {
 });
 
 describe('DokumentVerlaufDrawer', () => {
+    it('öffnet mit dem Reiter „Stände“ und lädt das Protokoll erst, wenn man es wählt', async () => {
+        stubApi([eintrag({})], { status: 404 });
+        render(ansicht(true));
+
+        expect(await screen.findByRole('tab', { name: 'Stände' })).toHaveAttribute('aria-selected', 'true');
+        expect(await screen.findByText(/Noch kein Stand\./)).toBeInTheDocument();
+        expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/historie'))).toBe(false);
+
+        await zumProtokoll();
+        expect(await screen.findByText('Erika Musterfrau')).toBeInTheDocument();
+        expect(screen.getByText(/Lückenlose Protokollierung/)).toBeInTheDocument();
+    });
+
     it('zeigt beim „Digital angenommen“ den Nachweis mit Wartepflicht und den Kunden statt „System“', async () => {
         stubApi([ANNAHME, eintrag({})], { status: 200, body: AUDIT });
-        zeige();
+        await zeige();
 
         const nachweis = (await screen.findByText('Annahme-Nachweis')).closest('div.rounded-lg') as HTMLElement;
         expect(await within(nachweis).findByText('Angebot AG-2026/10/00021')).toBeInTheDocument();
@@ -101,7 +131,7 @@ describe('DokumentVerlaufDrawer', () => {
 
     it('zeigt grünen Sofortbeginn und erklärt den Nachweis per Info-Knopf', async () => {
         stubApi([ANNAHME], { status: 200, body: { ...AUDIT, vorzeitigerBeginn: true } });
-        zeige();
+        await zeige();
 
         expect(await screen.findByText(/Sofort beginnen erlaubt/)).toHaveClass('bg-emerald-50');
         await userEvent.click(screen.getByRole('button', { name: 'Mehr zu: Annahme-Nachweis' }));
@@ -112,7 +142,7 @@ describe('DokumentVerlaufDrawer', () => {
 
     it('nennt bei älteren Annahmen ohne Angabe ausdrücklich, dass nichts gespeichert ist', async () => {
         stubApi([ANNAHME], { status: 200, body: { ...AUDIT, vorzeitigerBeginn: null, unterzeichnerName: null } });
-        zeige();
+        await zeige();
 
         expect(await screen.findByText(/Keine Angabe gespeichert/)).toBeInTheDocument();
         expect(screen.getByText('Kunde (online)')).toBeInTheDocument();
@@ -120,7 +150,7 @@ describe('DokumentVerlaufDrawer', () => {
 
     it('zeigt bei 404 keinen Nachweis und „Kunde (online)“', async () => {
         stubApi([ANNAHME], { status: 404 });
-        zeige();
+        await zeige();
 
         expect(await screen.findByText('Kunde (online)')).toBeInTheDocument();
         await waitFor(() => expect(auditAufrufe()).toBe(1));
@@ -132,29 +162,28 @@ describe('DokumentVerlaufDrawer', () => {
         stubApi([ANNAHME], 'netzfehler');
         let offen = true;
         const onOpenChange = vi.fn((wert: boolean) => { offen = wert; });
-        const ansicht = (o: boolean) => (
-            <ToastProvider>
-                <DokumentVerlaufDrawer open={o} onOpenChange={onOpenChange} dokumentId={DOK_ID} />
-            </ToastProvider>
-        );
-        const { rerender } = render(ansicht(offen));
+        const { rerender } = render(ansicht(offen, onOpenChange));
+        await zumProtokoll();
 
         expect(await screen.findByText(/Annahme-Nachweis konnte nicht geladen werden/)).toBeInTheDocument();
         expect(screen.getByText('Digital angenommen')).toBeInTheDocument();
 
         await userEvent.keyboard('{Escape}');
         expect(onOpenChange).toHaveBeenCalledWith(false);
-        rerender(ansicht(offen));
+        rerender(ansicht(offen, onOpenChange));
 
         stubApi([ANNAHME], { status: 200, body: AUDIT });
-        rerender(ansicht(true));
+        rerender(ansicht(true, onOpenChange));
+        // Nach erneutem Öffnen steht wieder „Stände“ vorn.
+        expect(await screen.findByRole('tab', { name: 'Stände' })).toHaveAttribute('aria-selected', 'true');
+        await zumProtokoll();
         expect(await screen.findByText('Angebot AG-2026/10/00021')).toBeInTheDocument();
         expect(auditAufrufe()).toBe(2);
     });
 
     it('lädt keinen Nachweis ohne digitale Annahme und zeigt unbekannte Typen roh', async () => {
         stubApi([eintrag({ typ: 'SONDERBELEG', geaendertVon: null })], { status: 200, body: AUDIT });
-        zeige();
+        await zeige();
 
         expect(await screen.findByText('SONDERBELEG')).toBeInTheDocument();
         expect(screen.getByText('System')).toBeInTheDocument();
@@ -164,7 +193,7 @@ describe('DokumentVerlaufDrawer', () => {
     it('zeigt den Nachweis nur am neuesten „Digital angenommen“-Eintrag', async () => {
         const aelter = { ...ANNAHME, id: 1, geaendertAm: '2026-10-01T09:30:00' };
         stubApi([aelter, ANNAHME], { status: 200, body: AUDIT });
-        zeige();
+        await zeige();
 
         expect(await screen.findByText('Angebot AG-2026/10/00021')).toBeInTheDocument();
         expect(screen.getAllByText('Annahme-Nachweis')).toHaveLength(1);
@@ -177,7 +206,7 @@ describe('DokumentVerlaufDrawer', () => {
         const writeText = vi.fn().mockResolvedValue(undefined);
         vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
         stubApi([ANNAHME], { status: 404 });
-        zeige();
+        await zeige();
 
         const knopf = await screen.findByRole('button', { name: 'Fingerabdruck des Dokuments: cccccccccccc…' });
         expect(knopf).toHaveAccessibleDescription(/Fingerabdruck des Dokumentinhalts zu diesem Zeitpunkt – nicht der Annahme-Hash/);
@@ -191,7 +220,7 @@ describe('DokumentVerlaufDrawer', () => {
     it('meldet, wenn das Kopieren des Fingerabdrucks scheitert', async () => {
         vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText: vi.fn().mockRejectedValue(new Error('nein')) } });
         stubApi([ANNAHME], { status: 404 });
-        zeige();
+        await zeige();
 
         await userEvent.click(await screen.findByRole('button', { name: /Fingerabdruck des Dokuments/ }));
         expect(await screen.findByText('Kopieren fehlgeschlagen')).toBeInTheDocument();
@@ -200,7 +229,7 @@ describe('DokumentVerlaufDrawer', () => {
     it('zeigt eine lange Begründung mit Zeilenumbrüchen umbrechbar an', async () => {
         const grund = 'Digitale Annahme durch Max Mustermann\nAnnahme-Hash: ' + 'b'.repeat(64);
         stubApi([{ ...ANNAHME, aenderungsgrund: grund }], { status: 404 });
-        zeige();
+        await zeige();
 
         const begruendung = (await screen.findByText(/Begründung:/)).parentElement as HTMLElement;
         expect(begruendung).toHaveClass('whitespace-pre-line', 'break-words');

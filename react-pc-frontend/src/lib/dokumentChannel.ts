@@ -9,6 +9,20 @@ export interface DokumentChangedEvent {
     projektId?: number;
     anfrageId?: number;
     dokumentId?: number;
+    /**
+     * Gesetzt, wenn ein älterer Stand wiederhergestellt wurde: Der gespeicherte Inhalt
+     * ist jetzt ein anderer. Offene Editoren dieses Dokuments müssen neu laden, sonst
+     * überschreibt ihr automatisches Speichern den wiederhergestellten Inhalt.
+     */
+    inhaltZurueckgeholt?: { standNummer: number };
+}
+
+/** Meldung „Stand X wurde wiederhergestellt“ für ein Dokument. */
+export interface InhaltZurueckgeholtEreignis {
+    dokumentId: number;
+    projektId?: number;
+    anfrageId?: number;
+    standNummer: number;
 }
 
 const CHANNEL_NAME = 'dokument-changes';
@@ -41,4 +55,31 @@ export function onDokumentChanged(callback: (event: DokumentChangedEvent) => voi
     };
     ch.addEventListener('message', handler);
     return () => ch.removeEventListener('message', handler);
+}
+
+/** Empfänger im eigenen Tab: BroadcastChannel liefert nie an den Absender selbst. */
+const empfaengerImTab = new Set<(ereignis: InhaltZurueckgeholtEreignis) => void>();
+
+/**
+ * Meldet allen Tabs (auch dem eigenen), dass ein älterer Stand wiederhergestellt wurde.
+ * Andere Tabs sehen es zusätzlich als gewöhnliche Dokumentänderung (Listen laden neu).
+ */
+export function notifyInhaltZurueckgeholt(ereignis: InhaltZurueckgeholtEreignis) {
+    const { standNummer, ...bezug } = ereignis;
+    notifyDokumentChanged({ ...bezug, inhaltZurueckgeholt: { standNummer } });
+    [...empfaengerImTab].forEach((empfaenger) => empfaenger(ereignis));
+}
+
+/** Hört auf „Stand wiederhergestellt“ aus jedem Tab, auch dem eigenen. */
+export function onInhaltZurueckgeholt(callback: (ereignis: InhaltZurueckgeholtEreignis) => void): () => void {
+    empfaengerImTab.add(callback);
+    const abmeldenKanal = onDokumentChanged((e) => {
+        if (e.inhaltZurueckgeholt && e.dokumentId != null) {
+            callback({ dokumentId: e.dokumentId, projektId: e.projektId, anfrageId: e.anfrageId, standNummer: e.inhaltZurueckgeholt.standNummer });
+        }
+    });
+    return () => {
+        empfaengerImTab.delete(callback);
+        abmeldenKanal();
+    };
 }

@@ -240,6 +240,26 @@ class DatensatzLockServiceTest {
     }
 
     @Test
+    void istVonAnderemGesperrt_nurBeiFrischerSperreEinesAnderen() {
+        DatensatzLock fresh = lockHeldBy(USER_A, "Max Mustermann", LocalDateTime.now().minusSeconds(5));
+        when(repository.findByEntitaetTypAndEntitaetId(TYP, ENTITAET_ID)).thenReturn(Optional.of(fresh));
+
+        assertThat(service.istVonAnderemGesperrt(TYP, ENTITAET_ID, USER_B)).isTrue();
+        assertThat(service.istVonAnderemGesperrt(TYP, ENTITAET_ID, USER_A)).isFalse();
+    }
+
+    @Test
+    void istVonAnderemGesperrt_verwaisteOderKeineSperre_false() {
+        LocalDateTime longAgo = LocalDateTime.now().minus(DatensatzLockService.STALE_AFTER).minusSeconds(10);
+        when(repository.findByEntitaetTypAndEntitaetId(TYP, ENTITAET_ID))
+                .thenReturn(Optional.of(lockHeldBy(USER_A, "Max Mustermann", longAgo)))
+                .thenReturn(Optional.empty());
+
+        assertThat(service.istVonAnderemGesperrt(TYP, ENTITAET_ID, USER_B)).isFalse();
+        assertThat(service.istVonAnderemGesperrt(TYP, ENTITAET_ID, USER_B)).isFalse();
+    }
+
+    @Test
     void acquire_nullTyp_throwsIllegalArgumentException() {
         assertThatThrownBy(() -> service.acquire(null, ENTITAET_ID, USER_A, "Max Mustermann"))
                 .isInstanceOf(IllegalArgumentException.class);

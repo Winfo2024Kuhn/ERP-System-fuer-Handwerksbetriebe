@@ -11,15 +11,17 @@ import { useKonfliktMeldung } from './useKonfliktMeldung';
 function TestKomponente({
     response,
     bezeichnung,
+    serverMeldung,
 }: {
     response: Response;
     bezeichnung?: string;
+    serverMeldung?: boolean;
 }) {
     const { pruefeAntwort } = useKonfliktMeldung(bezeichnung);
     const [ergebnis, setErgebnis] = useState<'offen' | 'true' | 'false'>('offen');
 
     const handlePruefen = async () => {
-        const konflikt = await pruefeAntwort(response);
+        const konflikt = await pruefeAntwort(response, { serverMeldung });
         setErgebnis(konflikt ? 'true' : 'false');
     };
 
@@ -31,10 +33,10 @@ function TestKomponente({
     );
 }
 
-function renderMitProvider(response: Response, bezeichnung?: string) {
+function renderMitProvider(response: Response, bezeichnung?: string, serverMeldung?: boolean) {
     return render(
         <ConfirmProvider>
-            <TestKomponente response={response} bezeichnung={bezeichnung} />
+            <TestKomponente response={response} bezeichnung={bezeichnung} serverMeldung={serverMeldung} />
         </ConfirmProvider>
     );
 }
@@ -222,5 +224,27 @@ describe('useKonfliktMeldung', () => {
         await screen.findByText('Nicht gespeichert');
 
         expect(document.body.textContent).not.toMatch(/lock|conflict|version/i);
+    });
+
+    it('zeigt auf Wunsch die Meldung des Servers (z. B. älterer Stand wiederhergestellt)', async () => {
+        const user = userEvent.setup();
+        const text = 'Dieses Dokument wurde inzwischen auf einen älteren Stand zurückgesetzt. Bitte neu laden.';
+        const response = new Response(JSON.stringify({ status: 409, message: text }), { status: 409 });
+        renderMitProvider(response, 'Dokument', true);
+
+        await user.click(screen.getByText('Pruefen'));
+
+        expect(await screen.findByText(text)).toBeInTheDocument();
+        expect(screen.queryByText(/Jemand anders hat dieses Dokument/)).not.toBeInTheDocument();
+    });
+
+    it('fällt mit serverMeldung auf den eigenen Text zurück, wenn der Server keinen liefert', async () => {
+        const user = userEvent.setup();
+        const response = new Response('kein json', { status: 409 });
+        renderMitProvider(response, 'Dokument', true);
+
+        await user.click(screen.getByText('Pruefen'));
+
+        expect(await screen.findByText(/Jemand anders hat dieses Dokument gerade gespeichert/)).toBeInTheDocument();
     });
 });

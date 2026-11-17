@@ -125,6 +125,19 @@ public class DatensatzLockService {
                 .orElse(false);
     }
 
+    /**
+     * Haelt gerade ein ANDERER User das Lock (frischer Heartbeat)? Eigene, verwaiste oder
+     * fehlende Locks zaehlen nicht - fuer Aktionen, die auch ohne geoeffneten Editor erlaubt
+     * sind, aber niemandem unter den Haenden etwas aendern duerfen (Stand wiederherstellen).
+     */
+    @Transactional(readOnly = true)
+    public boolean istVonAnderemGesperrt(SperrbarerTyp entitaetTyp, Long entitaetId, Long userId) {
+        validateTyp(entitaetTyp);
+        return repository.findByEntitaetTypAndEntitaetId(entitaetTyp, entitaetId)
+                .map(lock -> !lock.getUserId().equals(userId) && !isStale(lock, LocalDateTime.now()))
+                .orElse(false);
+    }
+
     private boolean isStale(DatensatzLock lock, LocalDateTime now) {
         return Duration.between(lock.getLastHeartbeatAt(), now).compareTo(STALE_AFTER) > 0;
     }

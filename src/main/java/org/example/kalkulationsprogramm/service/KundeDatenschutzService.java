@@ -58,7 +58,9 @@ import lombok.extern.slf4j.Slf4j;
  *       anonymisieren – nie automatisch. Name wird „Gelöschter Kunde &lt;Kundennummer&gt;“, Anrede und
  *       Anschrift werden geleert, ebenso die Baustellen-Anschrift seiner Projekte und Anfragen und der
  *       Name in Freigabe-Links. Rechnungen, Angebote, PDFs und E-Mails bleiben unverändert (Dokumente
- *       werden unbegrenzt aufbewahrt). Die GoBD-Hash-Kette ({@code AusgangsGeschaeftsDokumentAudit})
+ *       werden unbegrenzt aufbewahrt). Dasselbe gilt für ihre festgehaltenen Stände
+ *       ({@code AusgangsDokumentStand}): Sie sind Teil des Dokuments und bleiben wie das Dokument selbst
+ *       stehen; wird das Dokument später doch anonymisiert, müssen die Stände im selben Zug mit. Die GoBD-Hash-Kette ({@code AusgangsGeschaeftsDokumentAudit})
  *       enthält vom Kunden die ID und – nur bei Online-Annahmen – den eingetragenen Namen und die
  *       Code-Adresse als Auftragsnachweis, genau wie die angenommene Freigabe selbst. Sie bricht
  *       dadurch nicht.</li>

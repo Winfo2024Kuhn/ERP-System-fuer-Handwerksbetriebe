@@ -3079,7 +3079,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                 }}
             />
 
-            {/* Audit-Verlauf für die Steuerprüfung */}
+            {/* Verlauf: Stände und Audit-Protokoll für die Steuerprüfung */}
             <DokumentVerlaufDrawer
                 open={showVerlaufDrawer}
                 onOpenChange={(open) => {
@@ -3088,6 +3088,8 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                 }}
                 dokumentId={verlaufDokument?.id}
                 dokumentNummer={verlaufDokument?.dokumentNummer}
+                dokument={verlaufDokument}
+                onWiederhergestellt={() => void loadAusgangsDokumente()}
             />
 
             {activeTab === 'dokumente' && (

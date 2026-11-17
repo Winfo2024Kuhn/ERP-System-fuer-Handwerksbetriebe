@@ -1,4 +1,4 @@
-import type { Page, Route } from '@playwright/test';
+import type { BrowserContext, Page, Route } from '@playwright/test';
 
 /**
  * Stubbt alle /api-Routen, die die Seite /dokument-editor beim Oeffnen und
@@ -82,7 +82,8 @@ export interface DokumentEditorStubOptionen {
 }
 
 export async function stubbeDokumentEditorApi(
-    page: Page,
+    // Kontext statt Seite, wenn auch neue Tabs (z. B. „Im Editor ansehen“) gestubbt sein muessen.
+    page: Page | BrowserContext,
     optionen: DokumentEditorStubOptionen = {},
 ): Promise<DokumentEditorMitschrift> {
     const start = Date.now();

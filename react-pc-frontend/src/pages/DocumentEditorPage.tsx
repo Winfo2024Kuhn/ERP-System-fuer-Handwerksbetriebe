@@ -12,6 +12,8 @@ import { BearbeitenLeiste } from '../components/lock/BearbeitenLeiste';
 import { useIdleTimer } from '../hooks/useIdleTimer';
 import { useToast } from '../components/ui/toast';
 import type { AusgangsGeschaeftsDokumentTyp } from '../types';
+import { StandAnsichtSeite } from '../components/dokument/staende/StandAnsichtSeite';
+import { useNeuLadenNachZurueckholen } from '../components/dokument/staende/useNeuLadenNachZurueckholen';
 
 // Wortlaut fuer Inline-Hinweis UND Toast identisch (siehe LieferantDokumentModal,
 // dieselbe Formulierung), damit der Nutzer nicht zwei verschiedene Texte fuer
@@ -33,6 +35,17 @@ const LOCK_FEHLER_TEXT = 'Sperre konnte nicht geholt werden — bitte neu laden.
  */
 export default function DocumentEditorPage() {
     const [searchParams] = useSearchParams();
+    const dokumentId = parseDokumentId(searchParams.get('dokumentId'));
+    const standId = parseDokumentId(searchParams.get('stand'));
+    // Ansicht eines festgehaltenen Stands: eigene Seite ohne Sperre (siehe StandAnsichtSeite).
+    if (dokumentId != null && standId != null) {
+        return <StandAnsichtSeite key={`${dokumentId}/${standId}`} dokumentId={dokumentId} standId={standId} />;
+    }
+    return <AktuellesDokumentSeite />;
+}
+
+function AktuellesDokumentSeite() {
+    const [searchParams] = useSearchParams();
     const navigate = useNavigate();
     const toast = useToast();
     const kiAktiv = useKiFunktionAktiv('PROGRAMM_HILFE');
@@ -46,6 +59,8 @@ export default function DocumentEditorPage() {
     const hatId = dokumentIdNum != null;
 
     const lock = useDatensatzLock('AUSGANG', dokumentIdNum);
+    // Stand zurückgeholt (hier oder in einem anderen Tab): Editor neu aufbauen und laden.
+    const editorSchluessel = useNeuLadenNachZurueckholen(dokumentIdNum, () => editorRef.current?.hatUngespeicherteAenderungen?.() ?? false);
 
     // --- Kein Flackern / kein Remount beim Anlegen eines neuen Dokuments ---
     //
@@ -299,6 +314,7 @@ export default function DocumentEditorPage() {
             */}
             <div data-testid="dokument-editor-flaeche">
                 <DocumentEditor
+                    key={editorSchluessel}
                     ref={editorRef}
                     projektId={parseDokumentId(projektId)}
                     anfrageId={parseDokumentId(anfrageId)}

@@ -1117,7 +1117,7 @@ export function DokumentHierarchie({
                 }}
             />
 
-            {/* Audit-Verlauf für Steuerprüfung */}
+            {/* Verlauf: Stände und Audit-Protokoll für Steuerprüfung */}
             <DokumentVerlaufDrawer
                 open={showVerlaufDrawer}
                 onOpenChange={(open) => {
@@ -1126,6 +1126,8 @@ export function DokumentHierarchie({
                 }}
                 dokumentId={verlaufDokument?.id}
                 dokumentNummer={verlaufDokument?.dokumentNummer}
+                dokument={verlaufDokument}
+                onWiederhergestellt={onRefresh}
             />
         </div>
     );

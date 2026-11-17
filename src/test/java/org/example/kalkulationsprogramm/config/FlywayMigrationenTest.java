@@ -88,7 +88,8 @@ class FlywayMigrationenTest {
             Map.entry("V444__ids_shop_anbindung.sql", -687615763),
             Map.entry("V445__firmendokumente.sql", -1953449084),
             Map.entry("V446__firmendokumente_ordnerrechte.sql", -2004351100),
-            Map.entry("V447__email_suchtext.sql", -607513997));
+            Map.entry("V447__email_suchtext.sql", -607513997),
+            Map.entry("V448__ausgangs_dokument_staende.sql", -922584075));
 
     private static final char BOM = 0xFEFF;
 

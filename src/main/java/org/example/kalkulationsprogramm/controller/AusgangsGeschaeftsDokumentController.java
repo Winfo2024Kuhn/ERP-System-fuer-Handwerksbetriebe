@@ -23,6 +23,8 @@ import org.example.kalkulationsprogramm.service.AutoMahnVersandService;
 import org.example.kalkulationsprogramm.service.DokumentFreigabeService;
 import org.example.kalkulationsprogramm.service.FreigabeAbloesungService;
 import org.example.kalkulationsprogramm.service.DatensatzLockService;
+import org.example.kalkulationsprogramm.service.dokumentstand.DokumentStandService;
+import org.example.kalkulationsprogramm.service.dokumentstand.WiederherstellungsZaehlerPruefung;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -67,6 +69,8 @@ public class AusgangsGeschaeftsDokumentController {
     private final AutoMahnVersandService autoMahnVersandService;
     private final DatensatzLockService dokumentLockService;
     private final ClientIpResolver clientIpResolver;
+    private final DokumentStandService standService;
+    private final WiederherstellungsZaehlerPruefung zaehlerPruefung;
 
     /**
      * Reine Vorschau: rendert die Mahn-PDF einer beliebigen Stufe ohne irgendetwas
@@ -247,8 +251,12 @@ public class AusgangsGeschaeftsDokumentController {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body("Dokument wird gerade von einem anderen Benutzer bearbeitet.");
         }
+        // Wurde das Dokument inzwischen auf einen älteren Stand zurückgesetzt, darf ein veralteter Editor
+        // es nicht überschreiben (409 als JSON über den RestExceptionHandler).
+        zaehlerPruefung.pruefe(id, dto.getWiederherstellungsZaehler());
         try {
             AusgangsGeschaeftsDokument updated = service.aktualisieren(id, dto);
+            bearbeitungVormerken(id, principal.getId());
             return ResponseEntity.ok(service.findById(updated.getId()));
         } catch (ObjectOptimisticLockingFailureException e) {
             // Versionskonflikt: NICHT hier abfangen, sondern an den globalen
@@ -317,14 +325,21 @@ public class AusgangsGeschaeftsDokumentController {
      * PDF für ein gebuchtes Dokument speichern.
      * Wird vom Frontend nach PDF-Generierung aufgerufen, damit der Offene-Posten-Eintrag
      * direkt auf die PDF-Datei verweist statt auf den Document-Editor.
+     *
+     * <p>Jeder Export (finaler Druck, PDF-Export, E-Mail) landet hier. Danach wird ein Stand
+     * festgehalten, wenn sich der Inhalt seit dem letzten Stand geändert hat
+     * ({@link DokumentStandService#festhaltenNachExport}). Scheitert das, bleibt der Export
+     * trotzdem gültig – der Fehler wird nur protokolliert.</p>
      */
     @PostMapping("/{id}/pdf-speichern")
-    public ResponseEntity<?> pdfSpeichern(@PathVariable Long id, @RequestBody byte[] pdfBytes) {
+    public ResponseEntity<?> pdfSpeichern(@PathVariable Long id, @RequestBody byte[] pdfBytes,
+                                          Authentication authentication) {
         try {
             if (pdfBytes == null || pdfBytes.length == 0) {
                 return ResponseEntity.badRequest().body("Keine PDF-Daten erhalten");
             }
             String dateiname = service.speicherePdfFuerDokument(id, pdfBytes);
+            standNachExportFesthalten(id, FrontendUserPrincipal.idAus(authentication), dateiname);
             return ResponseEntity.ok(java.util.Map.of("dateiname", dateiname));
         } catch (ObjectOptimisticLockingFailureException e) {
             // Versionskonflikt: NICHT hier abfangen, sondern an den globalen
@@ -337,6 +352,27 @@ public class AusgangsGeschaeftsDokumentController {
         } catch (RuntimeException e) {
             log.error("Fehler beim Speichern der PDF für Dokument {}: {}", id, e.getMessage(), e);
             return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
+    /**
+     * Kein Stand beim Speichern – nur vormerken, wer seit dem letzten Export bearbeitet hat. Das
+     * Speichern ist hier schon erfolgreich; ein Fehler beim Vormerken (z. B. doppelte Zeile bei zwei
+     * gleichzeitigen Speichervorgängen) darf es nie zu 400 machen.
+     */
+    private void bearbeitungVormerken(Long id, Long benutzerId) {
+        try {
+            standService.merkeBearbeitung(id, benutzerId);
+        } catch (RuntimeException e) {
+            log.warn("Bearbeiter für Dokument {} nicht vorgemerkt: {}", id, e.getClass().getSimpleName());
+        }
+    }
+
+    private void standNachExportFesthalten(Long id, Long benutzerId, String dateiname) {
+        try {
+            standService.festhaltenNachExport(id, benutzerId, dateiname);
+        } catch (RuntimeException e) {
+            log.error("Stand für Dokument {} konnte nach dem Export nicht festgehalten werden: {}", id, e.getMessage(), e);
         }
     }
 

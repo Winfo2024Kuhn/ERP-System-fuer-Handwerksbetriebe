@@ -1254,7 +1254,7 @@ describe('DocumentEditor – 409 beim Speichern: zwei verschiedene Ursachen', ()
         await user.click(screen.getByRole('button', { name: /Speichern/i }));
 
         expect(await screen.findByText('Nicht gespeichert')).toBeInTheDocument();
-        expect(screen.getByText(/Jemand anders hat dieses Dokument gerade gespeichert/)).toBeInTheDocument();
+        expect(screen.getByText(/Jemand anders hat diese Daten gerade gespeichert/)).toBeInTheDocument();
         expect(screen.queryByText(/"status":409/)).not.toBeInTheDocument();
     });
 

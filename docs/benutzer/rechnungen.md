@@ -77,6 +77,21 @@ Beim Buchen springt das Rechnungsdatum auf heute. Danach trägt die Rechnung das
 
 **Erst zur Ansicht schicken:** „Entwurf“ verschickt die Rechnung per E-Mail mit dem Aufdruck „ENTWURF“. Sie bleibt offen und änderbar.
 
+## Stände und Verlauf (wie eine Versionsgeschichte)
+
+Für jedes Angebot, jede Auftragsbestätigung und jede Rechnung hält das Programm bei jedem Export einen **Stand** fest: beim Drucken, beim Speichern als PDF und beim Verschicken per E-Mail. Festgehalten werden alle Positionen, Preise, Rabatte und Texte, dazu Uhrzeit und Name. Das automatische Speichern zwischendurch zählt nicht, der „Entwurf“ per E-Mail und das Herunterladen aus der „Vorschau“ auch nicht. Hat sich seit dem letzten Export nichts geändert, entsteht kein neuer Stand.
+
+**Verlauf öffnen:** im Dokument-Editor oben der Knopf „Verlauf“ (Uhr mit Pfeil; auf kleineren Bildschirmen nur das Symbol). Ungespeicherte Änderungen speichert das Programm vorher. Ebenso vor dem Drucken, damit der Stand dem Gedruckten entspricht. Im Projekt geht es auch über das Menü an der Dokumentkarte → „Verlauf anzeigen“. Der Verlauf hat zwei Reiter:
+
+- **„Stände“** (Standard): oben der Kasten „Seit dem letzten Export geändert“ mit dem, was noch nicht gedruckt oder verschickt ist. Darunter je Stand eine Karte, der neueste zuerst: „Stand 3“, Datum und Uhrzeit, „exportiert von …“, „bearbeitet von …“ (wer dazwischen geändert hat) und der Nettobetrag. Die Karte zeigt nur, was sich gegenüber dem vorigen Export geändert hat, z. B. „Pos. 3 „Geländer Edelstahl“ gelöscht“ oder „Rabatt 5 % gegeben“. Bei vielen Änderungen stehen erst fünf da, der Rest über „Alle … Änderungen anzeigen“. „aktueller Inhalt“ heißt: Das Dokument sieht gerade genau so aus. Weitere Stände kommen über „Mehr laden“.
+- **„Protokoll“**: das lückenlose Protokoll aller Aktionen für die Steuerprüfung (wie bisher).
+
+**Stand ansehen:** „Im Editor ansehen“ öffnet den Stand in einem neuen Tab, schreibgeschützt. Oben steht „Sie sehen Stand 3 vom …, exportiert von …. Dieser Stand ist eingefroren.“ Drucken, PDF und E-Mail gibt es dort nicht. „Zum aktuellen Stand“ wechselt zum bearbeitbaren Dokument. „PDF“ an der Karte zeigt das PDF, das damals rausgegangen ist (wenn eines gespeichert wurde).
+
+**Stand wiederherstellen:** „Wiederherstellen“ an der Karte oder „Diesen Stand wiederherstellen“ in der Ansicht. Nach der Rückfrage wird der Inhalt des Stands wieder der aktuelle Inhalt: Positionen, Preise, Rabatt, Betreff, Zahlungsziel und Rechnungsadresse. Das Datum des Dokuments bleibt. Gespeicherte, noch nicht exportierte Änderungen sichert das Programm vorher als eigenen Stand („Gesichert vor dem Wiederherstellen“). Ein offener Editor desselben Dokuments lädt danach von selbst neu („Stand 3 wurde wiederhergestellt. Das Dokument ist neu geladen.“). Hatte er noch nicht gespeicherte Eingaben, gehen diese verloren, und das Programm sagt das in einer Warnung. Ein anderes Fenster, das noch den alten Inhalt speichern will, bekommt den Hinweis, dass das Dokument inzwischen auf einen älteren Stand zurückgesetzt wurde, und muss neu laden. Bearbeitet gerade jemand anderes das Dokument, lehnt das Programm das Wiederherstellen ab und sagt das.
+
+Gebuchte, angenommene oder stornierte Dokumente lassen sich nicht mehr ändern; dort ist „Wiederherstellen“ gesperrt, ältere Stände lassen sich nur ansehen. Alte Stände bleiben erhalten, solange das Dokument besteht, und lassen sich nicht verändern. Wird ein Entwurf gelöscht, verschwinden seine Stände mit.
+
 ## Rechnungsnummer
 
 Die Nummer wird beim Anlegen vergeben, nicht erst beim Buchen. Über „Dokument erstellen“ angelegte Rechnungen bekommen sie beim ersten Speichern; bis dahin steht im Editor „Neues Dokument“. Die Nummer sieht so aus: `RE-2026/10/00042` (Kürzel, Jahr, Monat, laufende Nummer). Kürzel: RE Rechnung, AR Abschlagsrechnung, TR Teilrechnung, SR Schlussrechnung, ST Stornorechnung.
