@@ -96,8 +96,8 @@ Bei der digitalen Annahme wählt der Kunde die gewünschten Optionen; je Alterna
 
 | Knopf | Was passiert |
 |---|---|
-| **E-Mail** | Format wählen (**„Standard PDF“** oder **„ZUGFeRD PDF“**) → bei Angeboten zusätzlich die Gültigkeit des Annahme-Links wählen → E-Mail verfassen und senden. Danach wird das Versanddatum gesetzt. |
-| **Entwurf** | „Entwurf mit Wasserzeichen senden – Dokument bleibt offen und änderbar“. Das PDF trägt das Wasserzeichen „ENTWURF“, es entsteht **kein** Annahme-Link und kein Versanddatum. |
+| **E-Mail** | Bei älterem Dokumentdatum im selben Fenster „Datum oben auf dem Dokument“ wählen (Vorauswahl heute), Format wählen (**„Standard PDF“** oder **„ZUGFeRD PDF“**) → bei Angeboten zusätzlich die Gültigkeit des Annahme-Links wählen → E-Mail verfassen und senden. Danach wird das Versanddatum gesetzt. |
+| **Entwurf** | „Entwurf mit Wasserzeichen senden – Dokument bleibt offen und änderbar“. Das PDF trägt das Wasserzeichen „ENTWURF“, es entsteht **kein** Annahme-Link und kein Versanddatum, das Dokumentdatum bleibt. |
 | **Drucken** | Drucken, wahlweise „Mit Hintergrund drucken“ (Briefkopf und Hintergrundbild). Angebote werden dabei nicht gebucht. |
 | **PDF** | PDF herunterladen (Standard oder ZUGFeRD). |
 

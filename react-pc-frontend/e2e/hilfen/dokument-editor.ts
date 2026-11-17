@@ -1,4 +1,5 @@
 import type { BrowserContext, Page, Route } from '@playwright/test';
+import { isoDatum } from '../../src/lib/datum';
 
 /**
  * Stubbt alle /api-Routen, die die Seite /dokument-editor beim Oeffnen und
@@ -42,7 +43,8 @@ export interface AusgangsDokumentStand {
     kundeId?: number;
 }
 
-const HEUTE_ISO = new Date().toISOString().split('T')[0];
+// Lokale Zeit statt toISOString (UTC, vor 1 Uhr nachts wäre das gestern).
+const HEUTE_ISO = isoDatum(new Date());
 
 /** Dummy-Rechnung (DSGVO: nur Musterdaten). */
 export const BEISPIEL_DOKUMENT: AusgangsDokumentStand = {

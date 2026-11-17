@@ -53,7 +53,7 @@ Reiter:
 
 1. In der Anfrage (**Projektmanagement → Anfragen**) Reiter „Geschäftsdokumente“ → „Dokument erstellen“ → „Angebot“.
 2. Das Angebot öffnet sich im Dokument-Editor in einem neuen Tab. Positionen, Texte und Rabatte fügt man dort genauso ein wie bei Rechnungen (siehe [Rechnungen schreiben und stornieren](rechnungen.md), Abschnitt „Rechnung im Editor ausfüllen“).
-3. Zum Verschicken im Editor auf „E-Mail“ klicken und das PDF-Format wählen.
+3. Zum Verschicken im Editor auf „E-Mail“ klicken und das PDF-Format wählen. Trägt das Angebot ein älteres Datum, steht darüber „Datum oben auf dem Dokument“: „Heute“ ist vorausgewählt, „Bisheriges Datum behalten“ lässt das alte stehen, „Anderes Datum …“ öffnet den Kalender. Das Datum lässt sich später im Editor noch ändern.
 4. Bei „Wie lange soll der Annahme-Link gültig sein?“ 7, 14, 21 oder 30 Tage oder ein eigenes Datum wählen, dann „Weiter zum E-Mail-Versand“.
 5. Empfänger, Betreff und Text prüfen und „E-Mail senden“. Die E-Mail steht danach im Reiter „E-Mails“.
 

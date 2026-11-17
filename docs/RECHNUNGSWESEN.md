@@ -278,10 +278,12 @@ Gebucht wird automatisch aus dem Dokument-Editor:
 
 | Aktion im Editor | Wirkung bei Rechnungstypen |
 |---|---|
-| **Drucken** → „Drucken & Buchen“ | Buchen + sperren, Datum = heute |
-| **PDF** (Standard oder ZUGFeRD) | Buchen + sperren, Datum = heute |
-| **E-Mail** | Buchen + sperren vor dem Versand, danach Versanddatum setzen |
-| **Entwurf** | Kein Buchen – PDF mit Wasserzeichen „ENTWURF“ |
+| **Drucken** → „Drucken & Buchen“ | Gewähltes Datum speichern, buchen + sperren |
+| **PDF** (Standard oder ZUGFeRD) | Warnung, dann gewähltes Datum speichern, buchen + sperren |
+| **E-Mail** | Gewähltes Datum speichern; gebucht wird beim Klick auf „E-Mail senden“, danach Versanddatum setzen |
+| **Entwurf** | Kein Buchen, Datum bleibt – PDF mit Wasserzeichen „ENTWURF“ |
+
+**Datum oben auf dem Dokument:** Weicht das gespeicherte Datum von heute ab, fragt der erste Dialog (Druckoptionen, Formatwahl PDF bzw. E-Mail) danach: „Heute“ (Vorauswahl), „Bisheriges Datum behalten“ oder „Anderes Datum …“ (`DokumentDatumWahl`, Regeln in `datumWahlRegeln.ts`). Rechnungen dürfen nicht in der Zukunft datiert werden; ältere Daten sind erlaubt. Das Zahlungsziel zählt ab dem gewählten Datum. Beim Laden stellt der Editor nichts mehr still auf heute um. Gesperrte Dokumente und Entwürfe mit Wasserzeichen fragen nicht.
 
 Technisch (`buchen()` bzw. `buchenNachEmailVersand()`):
 

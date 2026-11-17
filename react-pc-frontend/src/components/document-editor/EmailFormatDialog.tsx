@@ -1,3 +1,4 @@
+import { useId, type ReactNode } from 'react';
 import { FileText, Shield, X, Loader2 } from 'lucide-react';
 import { Button } from '../ui/button';
 
@@ -13,33 +14,42 @@ interface EmailFormatDialogProps {
     pdfLabel?: string;
     zugferdLabel?: string;
     loadingText?: string;
+    /** Frage „Datum oben auf dem Dokument“ über der Formatwahl. */
+    datumWahl?: ReactNode;
+    /** Warum gerade kein Format gewählt werden kann (z. B. Datum fehlt). */
+    gesperrtGrund?: string | null;
 }
 
-export function EmailFormatDialog({ isOpen, onClose, onSelect, loading, title, description, pdfLabel, zugferdLabel, loadingText }: EmailFormatDialogProps) {
+export function EmailFormatDialog({ isOpen, onClose, onSelect, loading, title, description, pdfLabel, zugferdLabel, loadingText, datumWahl, gesperrtGrund }: EmailFormatDialogProps) {
+    const titelId = useId();
     if (!isOpen) return null;
+    const gesperrt = loading || !!gesperrtGrund;
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div role="dialog" aria-modal="true" aria-labelledby={titelId} className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
                 {/* Header */}
                 <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-                    <h3 className="text-base font-semibold text-slate-900">{title || 'Dokument per E-Mail senden'}</h3>
-                    <button onClick={onClose} disabled={loading} className="text-slate-400 hover:text-slate-600 transition-colors">
+                    <h3 id={titelId} className="text-base font-semibold text-slate-900">{title || 'Dokument per E-Mail senden'}</h3>
+                    <button onClick={onClose} disabled={loading} aria-label="Schließen" title="Schließen" className="text-slate-400 hover:text-slate-600 transition-colors">
                         <X className="w-4 h-4" />
                     </button>
                 </div>
 
                 {/* Content */}
                 <div className="p-5 space-y-3">
-                    <p className="text-sm text-slate-500 mb-4">
+                    {datumWahl}
+
+                    <p className="text-sm text-slate-500">
                         {description || 'Wählen Sie das Format für den PDF-Anhang:'}
                     </p>
 
                     {/* Normal PDF */}
                     <button
                         onClick={() => onSelect('pdf')}
-                        disabled={loading}
-                        className="w-full flex items-start gap-4 p-4 rounded-lg border border-slate-200 hover:border-rose-300 hover:bg-rose-50/50 transition-all text-left group disabled:opacity-50 disabled:pointer-events-none"
+                        disabled={gesperrt}
+                        title={gesperrtGrund ?? undefined}
+                        className="w-full flex items-start gap-4 p-4 rounded-lg border border-slate-200 hover:border-rose-300 hover:bg-rose-50/50 transition-colors text-left group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-slate-200 disabled:hover:bg-white"
                     >
                         <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-slate-100 group-hover:bg-rose-100 flex items-center justify-center transition-colors">
                             <FileText className="w-5 h-5 text-slate-500 group-hover:text-rose-600 transition-colors" />
@@ -55,8 +65,9 @@ export function EmailFormatDialog({ isOpen, onClose, onSelect, loading, title, d
                     {/* ZUGFeRD PDF */}
                     <button
                         onClick={() => onSelect('zugferd')}
-                        disabled={loading}
-                        className="w-full flex items-start gap-4 p-4 rounded-lg border border-slate-200 hover:border-rose-300 hover:bg-rose-50/50 transition-all text-left group disabled:opacity-50 disabled:pointer-events-none"
+                        disabled={gesperrt}
+                        title={gesperrtGrund ?? undefined}
+                        className="w-full flex items-start gap-4 p-4 rounded-lg border border-slate-200 hover:border-rose-300 hover:bg-rose-50/50 transition-colors text-left group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-slate-200 disabled:hover:bg-white"
                     >
                         <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-slate-100 group-hover:bg-rose-100 flex items-center justify-center transition-colors">
                             <Shield className="w-5 h-5 text-slate-500 group-hover:text-rose-600 transition-colors" />

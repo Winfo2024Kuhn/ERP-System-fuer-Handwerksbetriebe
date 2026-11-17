@@ -70,10 +70,12 @@ Meldet der Shop, dass der Warenkorb dort schon **bestellt** wurde, weist das Pro
 Eine Rechnung wird **gebucht** (festgeschrieben), sobald sie das Haus verlässt. Danach lässt sie sich nicht mehr ändern – so verlangt es das Finanzamt. Im Dokument-Editor passiert das bei:
 
 - **„Drucken“** → „Drucken & Buchen“. Das Fenster warnt vorher: „Das Dokument wird beim Drucken automatisch gebucht und gesperrt.“
-- **„PDF“** → „Standard PDF“ oder „ZUGFeRD PDF“. Die Rechnung wird **sofort ohne weitere Rückfrage** gebucht.
-- **„E-Mail“** → Format wählen. Die Rechnung wird schon gebucht, wenn sich das E-Mail-Fenster öffnet – auch wenn die E-Mail danach nicht abgeschickt wird.
+- **„PDF“** → „Standard PDF“ oder „ZUGFeRD PDF“. Das Fenster „Dokument exportieren?“ warnt vorher, „Exportieren & Buchen“ bucht.
+- **„E-Mail“** → Format wählen. Gebucht wird erst beim Klick auf „E-Mail senden“. Wer das E-Mail-Fenster ohne Senden schließt, hat nichts gebucht.
 
-Beim Buchen springt das Rechnungsdatum auf heute. Danach trägt die Rechnung das Zeichen „Gebucht“, die Bearbeiten-Knöpfe verschwinden, und sie erscheint unter **Finanzen & Controlling → Offene Posten**. Drucken, PDF und E-Mail gehen weiterhin.
+**Datum oben auf der Rechnung:** Trägt die Rechnung ein anderes Datum als heute, fragt das erste Fenster (Druckoptionen bzw. Formatwahl) unter „Datum oben auf dem Dokument“ nach. „Heute“ ist vorausgewählt, daneben gibt es „Bisheriges Datum behalten“ und „Anderes Datum …“. Darunter steht „Zahlbar bis …“. Ein Datum in der Zukunft geht bei Rechnungen nicht, ein älteres schon. Das gewählte Datum steht oben im PDF, und das Zahlungsziel zählt ab diesem Tag. Beim Öffnen im Editor bleibt das gespeicherte Datum stehen.
+
+Nach dem Buchen trägt die Rechnung das Zeichen „Gebucht“, die Bearbeiten-Knöpfe verschwinden, und sie erscheint unter **Finanzen & Controlling → Offene Posten**. Drucken, PDF und E-Mail gehen weiterhin.
 
 **Erst zur Ansicht schicken:** „Entwurf“ verschickt die Rechnung per E-Mail mit dem Aufdruck „ENTWURF“. Sie bleibt offen und änderbar.
 
