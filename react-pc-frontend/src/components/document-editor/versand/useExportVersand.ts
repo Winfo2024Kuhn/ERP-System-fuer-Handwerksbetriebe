@@ -4,6 +4,7 @@ import { brauchtBuchungsWarnung } from '../helpers';
 import { pruefeFirmendatenFuerERechnung } from '../eRechnungPruefung';
 import type { PdfFormat } from '../EmailFormatDialog';
 import { erzeugePdf, ladePdfHerunter, legePdfAb, pdfEndpunkt } from './pdfAblage';
+import { halteStandFest } from '../../dokument/staende/staendeApi';
 import { exportDateiname } from './versandRegeln';
 import type { VersandKontext } from './versandTypen';
 
@@ -38,8 +39,10 @@ export function useExportVersand(k: VersandKontext) {
             const anfrage = await k.createPdfRequest(false);
             if (!anfrage) throw new Error('Konnte PDF-Anfrage nicht erstellen');
             const pdf = await erzeugePdf(pdfEndpunkt(format), anfrage);
-            // PDF für die Offenen Posten ablegen.
+            // PDF für die Offenen Posten ablegen; ohne Ablage (Angebot, AB) den Stand
+            // für den Verlauf festhalten. Gespeichert wurde oben schon.
             if (buchen) await legePdfAb(k.dokument.id, pdf);
+            else if (!k.standAnsicht) await halteStandFest(k.dokument.id, toast.warning);
             ladePdfHerunter(pdf, exportDateiname(k.dokumentTyp, k.dokumentNummer, format));
             // Ein erfolgreicher Download startet den Verlauf neu, für jeden Dokumenttyp.
             k.verlaufLeeren();

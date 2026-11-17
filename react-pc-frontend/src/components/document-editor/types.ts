@@ -84,6 +84,12 @@ export interface DocumentEditorProps {
      * bisherige Verhalten von `onClose` unveraendert.
      */
     onLockFreigeben?: () => Promise<void>;
+    /**
+     * Ansicht eines festgehaltenen Stands (neuer Tab, schreibgeschuetzt): Der Editor
+     * laedt das Dokument wie sonst und legt den Inhalt des Stands darueber
+     * (siehe standAnsicht.ts). Kein Datum-auf-heute, keine Export-/Versandknoepfe.
+     */
+    standAnsicht?: import('../dokument/staende/staendeTypen').StandDetail;
 }
 
 /**
@@ -96,6 +102,8 @@ export interface DocumentEditorProps {
  * (Abweichung vom Plan: DocumentEditor war zuvor keine forwardRef-Komponente).
  */
 export interface DocumentEditorHandle {
+    /** Liegen gerade ungespeicherte Aenderungen vor? (Warnung, bevor die Seite den Editor neu aufbaut.) */
+    hatUngespeicherteAenderungen: () => boolean;
     /**
      * Speichert sofort, falls ungespeicherte Aenderungen vorliegen -- sonst
      * ein No-op (kein unnoetiger Request). Wartet auf den kompletten

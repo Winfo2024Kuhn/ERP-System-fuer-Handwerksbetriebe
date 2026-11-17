@@ -59,6 +59,14 @@ public interface AusgangsGeschaeftsDokumentRepository extends JpaRepository<Ausg
     Optional<AusgangsGeschaeftsDokument> sperreZumGutschreiben(@Param("id") Long id);
 
     /**
+     * Sperrt das Dokument, während ein Stand festgehalten wird: Zwei gleichzeitige Exporte dürfen
+     * nicht dieselbe Stand-Nummer vergeben.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT d FROM AusgangsGeschaeftsDokument d WHERE d.id = :id")
+    Optional<AusgangsGeschaeftsDokument> sperreZumFesthalten(@Param("id") Long id);
+
+    /**
      * Zählt Abschlagsrechnungen zu einem Vorgänger-Dokument (für Nummerierung)
      */
     @Query("SELECT COUNT(d) FROM AusgangsGeschaeftsDokument d WHERE d.vorgaenger.id = :vorgaengerId AND d.typ = :typ")

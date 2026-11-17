@@ -2232,6 +2232,7 @@ public class AusgangsGeschaeftsDokumentService {
         dto.setZahlungszielTage(dokument.getZahlungszielTage());
         dto.setVersandDatum(dokument.getVersandDatum());
         dto.setBearbeitbar(dokument.istBearbeitbar());
+        dto.setWiederherstellungsZaehler(dokument.getWiederherstellungsZaehler());
 
         // Verknüpfungen
         if (dokument.getProjekt() != null) {

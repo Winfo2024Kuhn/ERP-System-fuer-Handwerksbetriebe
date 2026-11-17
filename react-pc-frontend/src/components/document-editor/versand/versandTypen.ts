@@ -34,4 +34,6 @@ export interface VersandKontext {
     bucheDokument: () => Promise<AusgangsGeschaeftsDokument | null>;
     verlaufLeeren: () => void;
     versandDatum: VersandDatum;
+    /** Ansicht eines eingefrorenen Stands: Export hält keinen neuen Stand fest. */
+    standAnsicht?: boolean;
 }

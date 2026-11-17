@@ -190,6 +190,14 @@ public class AusgangsGeschaeftsDokument {
     @Column(length = 500)
     private String rechnungsadresseOverride;
 
+    /**
+     * Wie oft ein älterer Stand zurückgeholt wurde. Ein Editor schickt beim Speichern den Wert mit,
+     * den er kennt; weicht er ab, hätte er das Zurücksetzen überschrieben (409, siehe
+     * {@code WiederherstellungsZaehlerPruefung}). Nur das Wiederherstellen erhöht ihn.
+     */
+    @Column(name = "wiederherstellungs_zaehler", nullable = false)
+    private int wiederherstellungsZaehler = 0;
+
     // --- Ersteller ---
 
     /**

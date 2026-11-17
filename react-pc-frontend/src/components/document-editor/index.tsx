@@ -169,6 +169,8 @@ import { TabSchliessenHinweis } from '../lock/TabSchliessenHinweis';
 import { useKonfliktMeldung } from '../lock/useKonfliktMeldung';
 import { scrolleMittigInDenBlick } from '../../lib/scrollInDenBlick';
 import { useEinmalTimer } from '../../hooks/useEinmalTimer';
+import { ueberlagereDokumentMitStand } from './standAnsicht';
+import { EditorVerlaufKnopf } from './EditorVerlaufKnopf';
 
 interface ImportedGaebBlock {
     type: string;
@@ -305,7 +307,7 @@ function RechnungsadresseBlock({
 }
 
 const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(function DocumentEditor(
-    { projektId, anfrageId, dokumentId, initialDokumentTyp, onClose, readOnly = false, onLockFreigeben },
+    { projektId, anfrageId, dokumentId, initialDokumentTyp, onClose, readOnly = false, onLockFreigeben, standAnsicht },
     ref
 ) {
     const toast = useToast();
@@ -907,7 +909,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
             try {
                 const res = await fetch(`/api/ausgangs-dokumente/${dokumentId}`);
                 if (res.ok) {
-                    const data: AusgangsGeschaeftsDokument = await res.json();
+                    const data = ueberlagereDokumentMitStand(await res.json() as AusgangsGeschaeftsDokument, standAnsicht);
                     setDokument(data);
                     setDokumentNummer(data.dokumentNummer);
                     setDokumentTyp(data.typ);
@@ -1287,6 +1289,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
     // hier nichts reparieren, siehe handleSave unten.
 
     // --- Save ---
+    const speicherKonfliktRef = useRef(false);
     const handleSave = useCallback(async (): Promise<AusgangsGeschaeftsDokument | null> => {
         if (isLocked) return null;
         setSaving(true);
@@ -1348,6 +1351,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                     htmlInhalt,
                     positionenJson: positionenData,
                     zahlungszielTage: gesendetesZahlungsziel,
+                    wiederherstellungsZaehler: dokument.wiederherstellungsZaehler,
                     // Nur mitschicken wenn User die Adresse bewusst geändert hat.
                     // Ueber das Ref lesen, nicht ueber den State — siehe kontextDatenRef.
                     ...(adresseUserEditedRef.current
@@ -1378,7 +1382,9 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                 if (res.status === 409) {
                     const istJson = (res.headers.get('content-type') || '').includes('application/json');
                     if (istJson) {
-                        await konfliktMeldung.pruefeAntwort(res);
+                        // Meldung des Servers zeigen (z. B. inzwischen auf älteren Stand zurückgesetzt), danach kein Autosave mehr.
+                        speicherKonfliktRef.current = true;
+                        await konfliktMeldung.pruefeAntwort(res, { serverMeldung: true });
                     } else {
                         const konfliktText = await res.text().catch(() => '');
                         toast.warning(konfliktText || 'Dieses Dokument wird gerade von einem anderen Benutzer bearbeitet. Bitte kurz warten und es erneut versuchen.');
@@ -1499,6 +1505,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
     // weil `handleSave` selbst bei isLocked ohnehin `null` liefert (siehe
     // oben) -- der fruehe Ausstieg hier spart den Aufruf ganz.
     useImperativeHandle(ref, () => ({
+        hatUngespeicherteAenderungen: () => hasUnsavedChanges && !isLocked,
         speichernFuerFreigabe: async () => {
             if (isLocked || !hasUnsavedChanges) return;
             await handleSave();
@@ -1528,7 +1535,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
         const intervalId = setInterval(() => {
             const persistedBlocks = blocks.filter(b => b.id !== CLOSURE_BLOCK_ID);
             const currentState = baueDokumentSignatur({ blocks: persistedBlocks, datum, betreff, dokumentTyp, globalRabatt, balkenAnzeigen });
-            if ((currentState !== lastSavedStateRef.current || adresseGeaendert || zahlungszielGeaendert) && !saving) {
+            if ((currentState !== lastSavedStateRef.current || adresseGeaendert || zahlungszielGeaendert) && !saving && !speicherKonfliktRef.current) {
                 handleSave();
             }
         }, 10000);
@@ -3025,7 +3032,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
         datumRef, setDatum, isLocked, zahlungszielTage,
         dokument, setDokument, dokumentTyp, dokumentNummer, betreff, kontextDaten, nettosumme, projektId, anfrageId,
         hasUnsavedChanges, istRechnung: showFinalizationPrompt, handleSave, createPdfRequest, bucheDokument,
-        verlaufLeeren: verlauf.leeren,
+        verlaufLeeren: verlauf.leeren, standAnsicht: !!standAnsicht,
     });
 
     useVerlaufTastatur({
@@ -3162,6 +3169,10 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                 fileInputRef={fileInputRef}
                 onFileChange={handleFileChange}
                 verlauf={verlaufKnoepfeProps}
+                nurAnsehen={!!standAnsicht}
+                verlaufKnopf={dokument?.id && !standAnsicht ? (
+                    <EditorVerlaufKnopf dokument={dokument} vorOeffnen={async () => { if (!isLocked && hasUnsavedChanges) await handleSave(); }} />
+                ) : undefined}
             />
 
             {/* ===== Main Split Pane ===== */}

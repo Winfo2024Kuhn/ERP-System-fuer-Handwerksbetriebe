@@ -351,16 +351,30 @@ Angebote, Auftragsbestätigungen, Rechnungen, Mahnungen usw. als Ausgangsdokumen
 | `GET` | `/projekt/{projektId}/geerbte-rechnungsadresse` | Zuletzt bearbeitete Rechnungsanschrift im Projekt (zum Vorbelegen) |
 | `GET` | `/anfrage/{anfrageId}/geerbte-rechnungsadresse` | Dasselbe für eine Anfrage |
 | `POST` | `/` | Dokument anlegen; holt gleich die Bearbeitungssperre |
-| `PUT` | `/{id}` | Dokument ändern (nur ungebucht und mit Bearbeitungssperre, sonst `409`) |
+| `PUT` | `/{id}` | Dokument ändern (nur ungebucht und mit Bearbeitungssperre, sonst `409`). Erzeugt keinen Stand, merkt sich nur den Bearbeiter für den nächsten Stand. Optional `wiederherstellungsZaehler` (Wert aus `GET /{id}`): weicht er ab, wurde das Dokument inzwischen auf einen älteren Stand zurückgesetzt → `409` `{message}`, nichts gespeichert. Antwort und `GET /{id}` liefern `wiederherstellungsZaehler` |
 | `POST` | `/{id}/buchen` | Dokument buchen, danach ist es gesperrt |
 | `POST` | `/{id}/email-versendet` | Nach dem Mail-Versand buchen und Versanddatum setzen |
-| `POST` | `/{id}/pdf-speichern` | PDF zu einem gebuchten Dokument ablegen |
+| `POST` | `/{id}/pdf-speichern` | Exportiertes PDF ablegen (jeder Export eine eigene Datei). Hält danach einen Stand fest, wenn sich der Inhalt seit dem letzten Stand geändert hat (siehe `AusgangsDokumentStandController`) |
 | `GET` | `/{id}/pdf` | Gespeicherte PDF (`404`, wenn keine da ist) |
 | `POST` | `/{id}/storno` | Gebuchte Rechnung stornieren, legt ein Storno-Gegendokument an (nicht für Stornorechnungen und Entwürfe). Antwort: die Felder der Stornorechnung plus `hinweise` (Liste aus `{art, text}`, `art` = `MITSTORNIERT` oder `ENTWURF_PRUEFEN`) zu betroffenen Schlussrechnungen |
 | `DELETE` | `/{id}` | Entwurf mit Begründung (`begruendung`) löschen, Eintrag im Prüfprotokoll (nicht wenn gebucht, versandt, digital angenommen oder storniert) |
 | `GET` | `/{id}/historie` | Änderungsverlauf (Prüfprotokoll) eines Dokuments |
 | `GET` | `/historie/nummer/{dokumentNummer}` | Verlauf über die Dokumentnummer, auch für gelöschte Dokumente |
 | `GET` | `/{id}/abrechnungsverlauf` | Bisherige Rechnungen und Restbetrag zu einem Basisdokument |
+
+### AusgangsDokumentStandController
+
+**Basis-URL:** `/api/ausgangs-dokumente/{id}/staende`
+
+Versionsverlauf eines Ausgangsdokuments („Stände wie bei git“). Ein Stand entsteht nur beim Export (`POST /{id}/pdf-speichern` bei Rechnungstypen und E-Mail-Versand, `POST /{id}/staende/festhalten` bei Druck/PDF von Angebot, Nachtragsangebot, AB) und nur, wenn sich Betreff, Positionen, Netto, MwSt, Zahlungsziel oder Rechnungsadresse seit dem letzten Stand geändert haben (das Datum zählt nicht). Automatisches Speichern erzeugt keinen Stand. Stände werden nie geändert oder gelöscht – einzige Ausnahme: Hat der neueste Stand noch kein PDF und wird derselbe Inhalt mit PDF exportiert, bekommt er dieses PDF nachgetragen. Der Hard-Delete eines Entwurfs nimmt sie mit. GoBD-Quelle bleibt das Prüfprotokoll. Rechte wie `GET /api/ausgangs-dokumente/{id}`.
+
+| Methode | Pfad | Beschreibung |
+|---|---|---|
+| `GET` | `/?page=0&size=25` | Seite der Stände, neueste zuerst (`size` 1–50, `page` ≥ 0). Antwort `{staende, gesamt, seite, seitenGroesse, hatMehr, offeneAenderungen, dokumentBearbeitbar}`; `offeneAenderungen` = Änderungen des aktuellen Inhalts gegenüber dem neuesten Stand (`[]` gleich, `null` noch kein Stand). Eintrag: `{id, nummer, art (EXPORT \| VOR_WIEDERHERSTELLEN), festgehaltenAm, festgehaltenVon, bearbeitetVon[], betragNetto, aenderungen[], wiederhergestelltAusNummer, aktuell, pdfVorhanden}` |
+| `POST` | `/festhalten` | Stand ohne PDF festhalten (Drucken und PDF-Knopf bei Angebot, Nachtragsangebot, AB – diese Wege rufen `pdf-speichern` nicht auf). Gleiche Regeln wie nach `pdf-speichern`, Benutzer aus der Anmeldung, keine Sperre nötig. Antwort `{festgehalten, stand}`; bei gleichem Inhalt `festgehalten=false`, `stand=null`. `404`, wenn das Dokument fehlt |
+| `GET` | `/{standId}` | Ein Stand mit Inhalt (`betreff, datum, mwstSatz, zahlungszielTage, rechnungsadresseOverride, positionenJson, htmlInhalt`) und `dokumentBearbeitbar` (ob das aktuelle Dokument noch geändert werden darf); `404`, wenn er nicht zu diesem Dokument gehört |
+| `GET` | `/{standId}/pdf` | Das beim Export gespeicherte PDF (inline); `404`, wenn es nicht aufbewahrt ist |
+| `POST` | `/{standId}/wiederherstellen` | Inhalt des Stands wieder zum aktuellen machen (Datum bleibt). Nicht exportierte Änderungen werden vorher als Stand `VOR_WIEDERHERSTELLEN` gesichert; Eintrag im Prüfprotokoll. Erhöht `wiederherstellungsZaehler` des Dokuments um 1 (ein Editor mit altem Zähler kann danach nicht mehr überschreiben). Antwort wie `PUT /{id}`. `400` gebucht/angenommen/storniert, Stand schon aktuell oder Übernahme fehlgeschlagen, `404` unbekannter Stand, `409` andere Person hält die Bearbeitungssperre |
 
 ### AusgangsGeschaeftsDokumentAuditController
 
@@ -1864,6 +1878,7 @@ Digitale Freigabe von Angeboten durch Kunden über die Website.
 | 10 | `ArtikelKategorieController` | `/api/artikel/kategorien` | 6 | 8 |
 | 11 | `AusgangsGeschaeftsDokumentAuditController` | `/api/ausgangs-dokumente/audit` | 4 | 5 |
 | 12 | `AusgangsGeschaeftsDokumentController` | `/api/ausgangs-dokumente` | 19 | 5 |
+| 12a | `AusgangsDokumentStandController` | `/api/ausgangs-dokumente/{id}/staende` | 5 | 5 |
 | 13 | `AuthController` | `/api/auth` | 4 | 1 |
 | 14 | `BeitraegeController` | `/api/beitraege` | 10 | 17 |
 | 15 | `BeitragKiController` | `/api/beitraege/ki` | 1 | 17 |

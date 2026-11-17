@@ -1,4 +1,5 @@
 import { X, Save, Upload, Download, FileText, Wrench, Clock, Printer, Minus, FolderOpen, Percent, Mail, FileEdit, Lock } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { Button } from '../ui/button';
 import { cn } from '../../lib/utils';
 import type { AusgangsGeschaeftsDokument } from './types';
@@ -53,6 +54,13 @@ interface DocumentEditorHeaderProps {
      * Dokumenteditor selbst.
      */
     verlauf?: VerlaufKnoepfeProps;
+    /** Knopf „Verlauf“ (Stände und Protokoll); steht vor „Drucken“. */
+    verlaufKnopf?: ReactNode;
+    /**
+     * Ansicht eines eingefrorenen Stands: keine Druck-, Versand- und Exportknöpfe,
+     * damit aus der Ansicht kein neuer Stand entsteht.
+     */
+    nurAnsehen?: boolean;
 }
 
 export function DocumentEditorHeader({
@@ -84,6 +92,8 @@ export function DocumentEditorHeader({
     fileInputRef,
     onFileChange,
     verlauf,
+    verlaufKnopf,
+    nurAnsehen = false,
 }: DocumentEditorHeaderProps) {
     return (
         <div className="bg-white border-b border-slate-200 px-3 h-11 flex items-center justify-between gap-2 flex-shrink-0">
@@ -259,57 +269,61 @@ export function DocumentEditorHeader({
                         </Button>
                     </>
                 )}
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={onPrint}
-                    aria-label="Drucken"
-                    title="Drucken"
-                    className="h-7 px-1.5 text-[11px] gap-1 rounded-md text-slate-500 hover:text-slate-700"
-                >
-                    <Printer className="w-3 h-3" />
-                    {/* Unter 1536 px nur das Drucker-Symbol: schafft Platz, damit die
-                        Dokumentnummer auch neben „Ungespeichert“ ganz lesbar bleibt. */}
-                    <span className="hidden 2xl:inline">Drucken</span>
-                </Button>
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={onSendDraft}
-                    disabled={emailLoading}
-                    className="h-7 px-1.5 text-[11px] gap-1 rounded-md text-slate-500 hover:text-rose-600"
-                    title="Entwurf mit Wasserzeichen senden – Dokument bleibt offen und änderbar"
-                >
-                    {emailLoading ? (
-                        <div className="w-3 h-3 border-2 border-slate-300 border-t-rose-500 rounded-full animate-spin" />
-                    ) : (
-                        <FileEdit className="w-3 h-3" />
-                    )}
-                    Entwurf
-                </Button>
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={onSendEmail}
-                    disabled={emailLoading}
-                    className="h-7 px-1.5 text-[11px] gap-1 rounded-md text-slate-500 hover:text-rose-600"
-                    title="Dokument per E-Mail senden"
-                >
-                    {emailLoading ? (
-                        <div className="w-3 h-3 border-2 border-slate-300 border-t-rose-500 rounded-full animate-spin" />
-                    ) : (
-                        <Mail className="w-3 h-3" />
-                    )}
-                    E-Mail
-                </Button>
-                <Button
-                    size="sm"
-                    onClick={onExport}
-                    className="h-7 px-3 text-[11px] bg-rose-600 hover:bg-rose-700 text-white gap-1 shadow-sm"
-                >
-                    <Download className="w-3 h-3" />
-                    PDF
-                </Button>
+                {verlaufKnopf}
+                {!nurAnsehen && (<>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={onPrint}
+                        aria-label="Drucken"
+                        title="Drucken"
+                        // Unter 1536 px nur Symbol mit schmalerem Rand: Platz für die Dokumentnummer (14 Zoll).
+                        className="h-7 px-1 2xl:px-1.5 text-[11px] gap-1 rounded-md text-slate-500 hover:text-slate-700"
+                    >
+                        <Printer className="w-3 h-3" />
+                        {/* Unter 1536 px nur das Drucker-Symbol: schafft Platz, damit die
+                            Dokumentnummer auch neben „Ungespeichert“ ganz lesbar bleibt. */}
+                        <span className="hidden 2xl:inline">Drucken</span>
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={onSendDraft}
+                        disabled={emailLoading}
+                        className="h-7 px-1.5 text-[11px] gap-1 rounded-md text-slate-500 hover:text-rose-600"
+                        title="Entwurf mit Wasserzeichen senden – Dokument bleibt offen und änderbar"
+                    >
+                        {emailLoading ? (
+                            <div className="w-3 h-3 border-2 border-slate-300 border-t-rose-500 rounded-full animate-spin" />
+                        ) : (
+                            <FileEdit className="w-3 h-3" />
+                        )}
+                        Entwurf
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={onSendEmail}
+                        disabled={emailLoading}
+                        className="h-7 px-1.5 text-[11px] gap-1 rounded-md text-slate-500 hover:text-rose-600"
+                        title="Dokument per E-Mail senden"
+                    >
+                        {emailLoading ? (
+                            <div className="w-3 h-3 border-2 border-slate-300 border-t-rose-500 rounded-full animate-spin" />
+                        ) : (
+                            <Mail className="w-3 h-3" />
+                        )}
+                        E-Mail
+                    </Button>
+                    <Button
+                        size="sm"
+                        onClick={onExport}
+                        className="h-7 px-3 text-[11px] bg-rose-600 hover:bg-rose-700 text-white gap-1 shadow-sm"
+                    >
+                        <Download className="w-3 h-3" />
+                        PDF
+                    </Button>
+                </>)}
             </div>
         </div>
     );

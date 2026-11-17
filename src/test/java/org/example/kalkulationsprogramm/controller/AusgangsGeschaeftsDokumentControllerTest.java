@@ -79,6 +79,12 @@ class AusgangsGeschaeftsDokumentControllerTest {
     @MockitoBean
     private DatensatzLockService dokumentLockService;
 
+    @MockitoBean
+    private org.example.kalkulationsprogramm.service.dokumentstand.DokumentStandService standService;
+
+    @MockitoBean
+    private org.example.kalkulationsprogramm.service.dokumentstand.WiederherstellungsZaehlerPruefung zaehlerPruefung;
+
     /**
      * MockMvc-Tests laufen mit `addFilters = false`, daher wird der
      * `Authentication`-Parameter im Controller nicht aus dem SecurityContext
@@ -457,6 +463,58 @@ class AusgangsGeschaeftsDokumentControllerTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(dto)))
                     .andExpect(status().isOk());
+            verify(standService).merkeBearbeitung(1L, 42L);
+        }
+
+        @Test
+        @DisplayName("Editor kennt ein Zurücksetzen auf einen älteren Stand nicht: 409 JSON, nichts gespeichert")
+        void veralteterWiederherstellungsZaehlerGibt409() throws Exception {
+            org.mockito.Mockito.doThrow(new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.CONFLICT, "Dieses Dokument wurde inzwischen auf einen älteren "
+                    + "Stand zurückgesetzt. Ihre letzte Änderung wurde nicht gespeichert. Bitte das Dokument neu öffnen."))
+                    .when(zaehlerPruefung).pruefe(1L, 0);
+            AusgangsGeschaeftsDokumentUpdateDto dto = new AusgangsGeschaeftsDokumentUpdateDto();
+            dto.setBetreff("Alt");
+            dto.setWiederherstellungsZaehler(0);
+            mockMvc.perform(put("/api/ausgangs-dokumente/1")
+                            .principal(testAuth())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(dto)))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.startsWith("Dieses Dokument wurde inzwischen")));
+            verify(service, never()).aktualisieren(anyLong(), any());
+        }
+
+        @Test
+        @DisplayName("Fehler beim Vormerken des Bearbeiters macht ein erfolgreiches Speichern nicht zu 400")
+        void vormerkFehlerBrichtSpeichernNichtAb() throws Exception {
+            AusgangsGeschaeftsDokument entity = new AusgangsGeschaeftsDokument();
+            entity.setId(1L);
+            given(service.aktualisieren(eq(1L), any(AusgangsGeschaeftsDokumentUpdateDto.class))).willReturn(entity);
+            given(service.findById(1L)).willReturn(buildResponseDto(1L, "RE-2026-001"));
+            doThrow(new org.springframework.dao.DataIntegrityViolationException("uk"))
+                    .when(standService).merkeBearbeitung(1L, 42L);
+            AusgangsGeschaeftsDokumentUpdateDto dto = new AusgangsGeschaeftsDokumentUpdateDto();
+            dto.setBetreff("Aktualisiert");
+            mockMvc.perform(put("/api/ausgangs-dokumente/1")
+                            .principal(testAuth())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(dto)))
+                    .andExpect(status().isOk());
+        }
+
+        @Test
+        @DisplayName("Ohne Sperre wird keine Bearbeitung vorgemerkt")
+        void ohneSperreKeineBearbeitungVorgemerkt() throws Exception {
+            given(dokumentLockService.isHeldBy(any(SperrbarerTyp.class), anyLong(), anyLong())).willReturn(false);
+            AusgangsGeschaeftsDokumentUpdateDto dto = new AusgangsGeschaeftsDokumentUpdateDto();
+            dto.setBetreff("Versuch");
+            mockMvc.perform(put("/api/ausgangs-dokumente/1")
+                            .principal(testAuth())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(dto)))
+                    .andExpect(status().isConflict());
+            verify(standService, never()).merkeBearbeitung(anyLong(), anyLong());
         }
 
         @Test
@@ -850,10 +908,40 @@ class AusgangsGeschaeftsDokumentControllerTest {
                     .willReturn("abc123.pdf");
 
             mockMvc.perform(post("/api/ausgangs-dokumente/1/pdf-speichern")
+                            .principal(testAuth())
                             .contentType(MediaType.APPLICATION_OCTET_STREAM)
                             .content(new byte[]{0x25, 0x50, 0x44, 0x46}))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.dateiname").value("abc123.pdf"));
+            verify(standService).festhaltenNachExport(1L, 42L, "abc123.pdf");
+        }
+
+        @Test
+        @DisplayName("Fehler beim Festhalten des Stands bricht den Export nicht ab")
+        void standFehlerBrichtExportNichtAb() throws Exception {
+            given(service.speicherePdfFuerDokument(eq(1L), any(byte[].class))).willReturn("abc123.pdf");
+            given(standService.festhaltenNachExport(1L, 42L, "abc123.pdf"))
+                    .willThrow(new IllegalStateException("Datenbank weg"));
+
+            mockMvc.perform(post("/api/ausgangs-dokumente/1/pdf-speichern")
+                            .principal(testAuth())
+                            .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                            .content(new byte[]{0x25, 0x50, 0x44, 0x46}))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.dateiname").value("abc123.pdf"));
+        }
+
+        @Test
+        @DisplayName("Fehlgeschlagenes PDF-Speichern hält keinen Stand fest")
+        void fehlerBeimSpeichernKeinStand() throws Exception {
+            given(service.speicherePdfFuerDokument(eq(1L), any(byte[].class)))
+                    .willThrow(new RuntimeException("Datei konnte nicht geschrieben werden"));
+            mockMvc.perform(post("/api/ausgangs-dokumente/1/pdf-speichern")
+                            .principal(testAuth())
+                            .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                            .content(new byte[]{0x25, 0x50, 0x44, 0x46}))
+                    .andExpect(status().isBadRequest());
+            verify(standService, never()).festhaltenNachExport(any(), any(), any());
         }
 
         @Test

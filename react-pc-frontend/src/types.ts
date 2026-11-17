@@ -993,6 +993,8 @@ export interface AusgangsGeschaeftsDokument {
   erstelltVonName?: string;
   /** Direkter PDF-URL — derzeit nur für virtuelle Mahn-Einträge gesetzt. */
   pdfUrl?: string;
+  /** Steigt bei jedem Wiederherstellen eines Stands; geht beim Speichern mit (409, wenn veraltet). */
+  wiederherstellungsZaehler?: number;
 }
 
 /**

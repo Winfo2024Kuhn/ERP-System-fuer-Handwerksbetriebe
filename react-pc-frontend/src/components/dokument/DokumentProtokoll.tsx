@@ -1,0 +1,266 @@
+import { useState, useEffect } from 'react';
+import { FileText, Edit2, Lock, Send, RotateCcw, Trash2, CheckCircle2, RefreshCw, Copy, ShieldCheck } from 'lucide-react';
+import { useToast } from '../ui/toast';
+import { InfoAbschnitt, InfoButton } from '../ui/info-button';
+import { AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN } from '../../types';
+import { AnnahmeNachweisDetails } from '../../features/freigabe/AnnahmeNachweisDetails';
+import { ladeFreigabeAudit, type FreigabeAuditErgebnis } from '../../features/freigabe/freigabeAudit';
+
+export interface DokumentAuditEintrag {
+    id: number;
+    aktion: string;
+    dokumentId: number;
+    dokumentNummer: string;
+    typ: string;
+    betragNetto: number | null;
+    betragBrutto: number | null;
+    gebucht: boolean;
+    storniert: boolean;
+    digitalAngenommen: boolean;
+    inhaltHash: string | null;
+    geaendertVon: string | null;
+    geaendertVonId: number | null;
+    geaendertAm: string;
+    aenderungsgrund: string | null;
+    ipAdresse: string | null;
+}
+
+interface DokumentProtokollProps {
+    /** Nur laden, solange der Reiter sichtbar ist. */
+    aktiv: boolean;
+    dokumentId: number | undefined;
+}
+
+const AKTION_META: Record<string, { label: string; icon: React.ComponentType<{className?: string}>; color: string }> = {
+    ERSTELLT:           { label: 'Erstellt',           icon: FileText,    color: 'bg-slate-100 text-slate-700 border-slate-200' },
+    GEAENDERT:          { label: 'Geändert',           icon: Edit2,       color: 'bg-amber-100 text-amber-700 border-amber-200' },
+    GEBUCHT:            { label: 'Gebucht',            icon: Lock,        color: 'bg-blue-100 text-blue-700 border-blue-200' },
+    VERSENDET:          { label: 'Versendet',          icon: Send,        color: 'bg-purple-100 text-purple-700 border-purple-200' },
+    STORNIERT:          { label: 'Storniert',          icon: RotateCcw,   color: 'bg-orange-100 text-orange-700 border-orange-200' },
+    GELOESCHT:          { label: 'Gelöscht',           icon: Trash2,      color: 'bg-red-100 text-red-700 border-red-200' },
+    DIGITAL_ANGENOMMEN: { label: 'Digital angenommen', icon: CheckCircle2, color: 'bg-green-100 text-green-700 border-green-200' },
+};
+
+/** Erklärt am Fingerabdruck jedes Verlaufseintrags, dass er nicht der Annahme-Hash ist. */
+const DOKUMENT_FINGERABDRUCK_HINWEIS =
+    'Fingerabdruck des Dokumentinhalts zu diesem Zeitpunkt – nicht der Annahme-Hash. Klick kopiert den vollen Wert.';
+
+const typLabel = (typ: string) => AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN.find(t => t.value === typ)?.label || typ;
+
+/**
+ * Neuester „Digital angenommen“-Eintrag: Nur an ihm steht der Annahme-Nachweis, weil der
+ * Nachweis immer die aktuelle Freigabe beschreibt.
+ */
+function neuesteAnnahmeId(eintraege: DokumentAuditEintrag[]): number | null {
+    let treffer: DokumentAuditEintrag | null = null;
+    for (const e of eintraege) {
+        if (e.aktion !== 'DIGITAL_ANGENOMMEN') continue;
+        // Die ID steigt mit jedem Eintrag; Zeitstempel-Texte lassen sich nicht sicher vergleichen.
+        if (!treffer || e.id > treffer.id) treffer = e;
+    }
+    return treffer ? treffer.id : null;
+}
+
+/**
+ * Wer den Eintrag ausgelöst hat; die Online-Annahme kommt vom Kunden, nicht vom „System“.
+ * Den Namen gibt es nur am neuesten Annahme-Eintrag – nur zu ihm gehört der geladene Nachweis.
+ */
+function bearbeiter(e: DokumentAuditEintrag, nachweis: FreigabeAuditErgebnis | undefined, istNeuesteAnnahme: boolean): string {
+    if (e.geaendertVon) return e.geaendertVon;
+    if (e.aktion !== 'DIGITAL_ANGENOMMEN') return 'System';
+    const name = istNeuesteAnnahme && nachweis?.art === 'gefunden' ? nachweis.daten.unterzeichnerName : null;
+    return name ? `Kunde: ${name}` : 'Kunde (online)';
+}
+
+function AnnahmeNachweisImVerlauf({ nachweis }: { nachweis: FreigabeAuditErgebnis | undefined }) {
+    if (nachweis?.art === 'keine') return null;
+    return (
+        <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+            <div className="flex items-center gap-1 mb-2">
+                <ShieldCheck className="w-4 h-4 text-rose-600" aria-hidden="true" />
+                <p className="text-sm font-semibold text-slate-900">Annahme-Nachweis</p>
+                <InfoButton titel="Annahme-Nachweis">
+                    <InfoAbschnitt titel="Was passiert im Hintergrund?">
+                        <p>
+                            Wenn ein Kunde ein Angebot online annimmt, speichert das Programm den eingetragenen Namen,
+                            die E-Mail mit dem Bestätigungs-Code, jedes Häkchen mit seinem genauen Wortlaut, den
+                            gedrückten Knopf und die Fassungen von Widerrufsbelehrung und Datenschutzerklärung. Daraus
+                            wird ein Fingerabdruck (Annahme-Hash) berechnet. Der Kunde bekommt denselben Hash in seiner
+                            Bestätigungs-Mail. Alle Angaben stehen zusätzlich im Eintrag „Digital angenommen“ dieses
+                            Verlaufs, und der lässt sich nachträglich nicht unbemerkt ändern.
+                        </p>
+                    </InfoAbschnitt>
+                    <InfoAbschnitt titel="Was bewirkt das?">
+                        <p>
+                            Im Streitfall vergleichen Sie den Hash hier mit dem in der Mail des Kunden und mit dem
+                            Eintrag „Digital angenommen“ im Verlauf. Stimmen alle drei überein, gehören Mail und Nachweis
+                            zur selben Annahme. Außerdem sehen Sie sofort,
+                            ob Sie vor Ablauf der Widerrufsfrist beginnen dürfen. Die Auftragsbestätigung zeigt den
+                            Nachweis des Angebots, aus dem sie entstanden ist.
+                        </p>
+                    </InfoAbschnitt>
+                </InfoButton>
+            </div>
+            {nachweis === undefined ? (
+                <div className="space-y-2" aria-label="Annahme-Nachweis wird geladen">
+                    <div className="h-4 w-2/3 rounded bg-slate-200 motion-safe:animate-pulse" />
+                    <div className="h-4 w-1/2 rounded bg-slate-200 motion-safe:animate-pulse" />
+                </div>
+            ) : nachweis.art === 'fehler' ? (
+                <p className="text-sm text-amber-800">
+                    Annahme-Nachweis konnte nicht geladen werden. Bitte den Verlauf später erneut öffnen.
+                </p>
+            ) : (
+                <AnnahmeNachweisDetails daten={nachweis.daten} kompakt />
+            )}
+        </div>
+    );
+}
+
+/**
+ * Protokoll (Audit-Verlauf) eines AusgangsGeschaeftsDokuments für die Steuerprüfung.
+ * Reiter „Protokoll“ im Verlauf-Dialog.
+ * Zeigt alle protokollierten Aktionen mit Bearbeiter, Zeitstempel, Begründung und Inhaltsfingerabdruck.
+ * Beim Eintrag „Digital angenommen“ steht zusätzlich der Annahme-Nachweis (bei einer
+ * Auftragsbestätigung der des angenommenen Angebots).
+ */
+export function DokumentProtokoll({ aktiv: open, dokumentId }: DokumentProtokollProps) {
+    const toast = useToast();
+    const [cache, setCache] = useState<Record<number, DokumentAuditEintrag[]>>({});
+
+    useEffect(() => {
+        if (!open || !dokumentId) return;
+        if (cache[dokumentId]) return;
+        let cancelled = false;
+        fetch(`/api/ausgangs-dokumente/${dokumentId}/historie`)
+            .then(r => r.ok ? r.json() : [])
+            .then((data: DokumentAuditEintrag[]) => {
+                if (!cancelled) setCache(prev => ({ ...prev, [dokumentId]: data }));
+            })
+            .catch(e => {
+                console.error(e);
+                if (!cancelled) {
+                    setCache(prev => ({ ...prev, [dokumentId]: [] }));
+                    toast.error('Verlauf konnte nicht geladen werden');
+                }
+            });
+        return () => { cancelled = true; };
+    }, [open, dokumentId, cache, toast]);
+
+    const eintraege = dokumentId !== undefined ? cache[dokumentId] : undefined;
+    const loading = open && dokumentId !== undefined && eintraege === undefined;
+    const annahmeId = eintraege ? neuesteAnnahmeId(eintraege) : null;
+
+    // Annahme-Nachweis nur laden, wenn der Verlauf eine digitale Annahme enthält.
+    const [nachweisCache, setNachweisCache] = useState<Record<number, FreigabeAuditErgebnis>>({});
+    // Ein fehlgeschlagener Nachweis wird beim nächsten Öffnen neu geladen.
+    const [warOffen, setWarOffen] = useState(open);
+    if (open !== warOffen) {
+        setWarOffen(open);
+        if (open) {
+            setNachweisCache(prev => Object.fromEntries(
+                Object.entries(prev).filter(([, ergebnis]) => ergebnis.art !== 'fehler'),
+            ));
+        }
+    }
+    useEffect(() => {
+        if (!open || !dokumentId || annahmeId === null) return;
+        if (nachweisCache[dokumentId]) return;
+        let cancelled = false;
+        ladeFreigabeAudit(dokumentId).then((ergebnis) => {
+            if (!cancelled) setNachweisCache(prev => ({ ...prev, [dokumentId]: ergebnis }));
+        });
+        return () => { cancelled = true; };
+    }, [open, dokumentId, annahmeId, nachweisCache]);
+    const nachweis = dokumentId !== undefined ? nachweisCache[dokumentId] : undefined;
+
+    const formatBetrag = (n: number | null) => n != null ? n.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' }) : '–';
+    const formatDate = (s: string) => {
+        try { return new Date(s).toLocaleString('de-DE'); } catch { return s; }
+    };
+    const copyHash = (hash: string) => {
+        navigator.clipboard.writeText(hash)
+            .then(() => toast.success('Fingerabdruck des Dokuments kopiert'))
+            .catch(() => toast.error('Kopieren fehlgeschlagen'));
+    };
+
+    return (
+        <div>
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-slate-600">
+                    Lückenlose Protokollierung aller Aktionen für die Steuerprüfung (GoBD § 146 AO).
+                    Einträge können nicht geändert oder gelöscht werden.
+                </div>
+
+                {loading || !eintraege ? (
+                    <div className="flex items-center justify-center py-12">
+                        <RefreshCw className="w-6 h-6 animate-spin text-rose-600" />
+                    </div>
+                ) : eintraege.length === 0 ? (
+                    <div className="text-center py-12 text-slate-400">
+                        Keine Audit-Einträge vorhanden.
+                        <p className="text-xs mt-2">
+                            Hinweis: Für Dokumente, die vor Einführung der Audit-Tabelle erstellt wurden, fehlen historische Einträge.
+                        </p>
+                    </div>
+                ) : (
+                    <div className="space-y-3 mt-2">
+                        {eintraege.map((e) => {
+                            const meta = AKTION_META[e.aktion] || { label: e.aktion, icon: FileText, color: 'bg-slate-100 text-slate-700 border-slate-200' };
+                            const Icon = meta.icon;
+                            return (
+                                <div key={e.id} className="border border-slate-200 rounded-lg p-3 bg-white">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="flex items-start gap-3">
+                                            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded border text-xs font-medium ${meta.color}`}>
+                                                <Icon className="w-3 h-3" />
+                                                {meta.label}
+                                            </span>
+                                            <div className="text-sm">
+                                                <div className="font-medium text-slate-900">
+                                                    {bearbeiter(e, nachweis, e.id === annahmeId)}
+                                                </div>
+                                                <div className="text-xs text-slate-500">
+                                                    {formatDate(e.geaendertAm)}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="text-right text-xs">
+                                            <div className="text-slate-700">{formatBetrag(e.betragBrutto)}</div>
+                                            <div className="text-slate-400">{typLabel(e.typ)}</div>
+                                        </div>
+                                    </div>
+
+                                    {e.aenderungsgrund && (
+                                        <div className="mt-2 text-sm text-slate-700 bg-slate-50 rounded p-2 border border-slate-100 whitespace-pre-line break-words">
+                                            <span className="font-medium">Begründung: </span>
+                                            {e.aenderungsgrund}
+                                        </div>
+                                    )}
+
+                                    {e.id === annahmeId && <AnnahmeNachweisImVerlauf nachweis={nachweis} />}
+
+                                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+                                        {e.ipAdresse && <span>IP: {e.ipAdresse}</span>}
+                                        {e.inhaltHash && (
+                                            <button
+                                                type="button"
+                                                onClick={() => copyHash(e.inhaltHash!)}
+                                                className="inline-flex items-center gap-1 rounded hover:text-rose-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
+                                                title={DOKUMENT_FINGERABDRUCK_HINWEIS}
+                                            >
+                                                <Copy className="w-3 h-3" aria-hidden="true" />
+                                                <span>
+                                                    Fingerabdruck des Dokuments:{' '}
+                                                    <span className="font-mono">{e.inhaltHash.substring(0, 12)}…</span>
+                                                </span>
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+        </div>
+    );
+}

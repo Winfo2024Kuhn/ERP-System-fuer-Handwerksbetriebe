@@ -36,6 +36,9 @@ public class AusgangsGeschaeftsDokumentResponseDto {
     private boolean digitalAngenommen;
     private boolean bearbeitbar;
 
+    /** Wie oft ein älterer Stand zurückgeholt wurde; der Editor schickt ihn beim Speichern zurück. */
+    private int wiederherstellungsZaehler;
+
     // Projekt
     private Long projektId;
     private String projektBauvorhaben;

@@ -11,7 +11,26 @@ interface UseKonfliktMeldungResult {
      * `false`, ohne den Antwort-Body zu lesen (der bleibt damit fuer
      * anderen Fehler-Handling-Code des Aufrufers verfuegbar).
      */
-    pruefeAntwort: (res: Response) => Promise<boolean>;
+    pruefeAntwort: (res: Response, optionen?: KonfliktOptionen) => Promise<boolean>;
+}
+
+interface KonfliktOptionen {
+    /**
+     * Die Meldung des Servers (`message` im JSON) zeigen, wenn es eine gibt. Für
+     * Konflikte mit eigenem Grund, z. B. „Dokument wurde auf einen älteren Stand
+     * zurückgesetzt“ (Dokumenteditor). Ohne Meldung gilt der eigene Text.
+     */
+    serverMeldung?: boolean;
+}
+
+async function leseServerMeldung(res: Response): Promise<string | null> {
+    try {
+        const body: unknown = await res.json();
+        const message = body && typeof body === 'object' ? (body as { message?: unknown }).message : null;
+        return typeof message === 'string' && message.trim() ? message : null;
+    } catch {
+        return null;
+    }
 }
 
 /**
@@ -26,7 +45,7 @@ export function useKonfliktMeldung(bezeichnung: string = 'Dokument'): UseKonflik
     const confirm = useConfirm();
 
     const pruefeAntwort = useCallback(
-        async (res: Response): Promise<boolean> => {
+        async (res: Response, optionen: KonfliktOptionen = {}): Promise<boolean> => {
             if (res.status !== 409) {
                 return false;
             }
@@ -35,13 +54,14 @@ export function useKonfliktMeldung(bezeichnung: string = 'Dokument'): UseKonflik
             // ApiError.message (siehe RestExceptionHandler.
             // handleOptimisticLockingFailure), aber die eigene, mit der
             // Bezeichnung konkretisierte Formulierung ist IMMER vorhanden und
-            // genauer -- das Backend-Feld wird darum bewusst NICHT gelesen.
+            // genauer -- das Backend-Feld wird darum nur auf Wunsch (serverMeldung) gelesen.
             // (Fund aus dem Review, Task 8a: die vorherige Fassung parste den
             // Antwort-Body trotzdem und haengte body?.message sowie einen
             // dritten, generischen Text als "Fallback" an -- toter Code, denn
             // eigeneMeldung ist ein Template-String mit `bezeichnung` und
             // damit nie leer, der Fallback konnte also nie greifen.)
-            const meldungstext = `Jemand anders hat dieses ${bezeichnung} gerade gespeichert. Ihre Änderungen wurden nicht übernommen — bitte neu laden.`;
+            const eigeneMeldung = `Jemand anders hat dieses ${bezeichnung} gerade gespeichert. Ihre Änderungen wurden nicht übernommen — bitte neu laden.`;
+            const meldungstext = (optionen.serverMeldung ? await leseServerMeldung(res) : null) ?? eigeneMeldung;
 
             const neuLaden = await confirm({
                 title: 'Nicht gespeichert',

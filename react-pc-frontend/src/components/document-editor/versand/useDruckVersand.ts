@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useToast } from '../../ui/toast';
 import { druckePdf, erzeugePdf, legePdfAb } from './pdfAblage';
+import { halteStandFest } from '../../dokument/staende/staendeApi';
 import type { VersandKontext } from './versandTypen';
 
 export interface DruckOptionen {
@@ -46,7 +47,13 @@ export function useDruckVersand(k: VersandKontext) {
             }
 
             const pdf = await erzeugePdf('/api/dokument-generator/preview', anfrage);
-            if (endgueltig && k.dokument?.id) await legePdfAb(k.dokument.id, pdf);
+            if (endgueltig && k.dokument?.id) {
+                await legePdfAb(k.dokument.id, pdf);
+            } else if (k.dokument?.id && !k.standAnsicht) {
+                // Druck ohne PDF-Ablage: Stand für den Verlauf festhalten. Er soll dem
+                // Gedruckten entsprechen, also offene Änderungen vorher speichern.
+                if (!k.hasUnsavedChanges || await k.handleSave()) await halteStandFest(k.dokument.id, toast.warning);
+            }
             druckePdf(pdf);
             // Verlauf-Reset nur beim endgültigen Druck, der Vorschau-Druck lässt ihn stehen.
             if (endgueltig) k.verlaufLeeren();
