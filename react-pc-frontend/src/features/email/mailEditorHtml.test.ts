@@ -10,7 +10,6 @@ import {
     hatZitiertenVerlauf,
     KEIN_VERLAUF_MELDUNG,
     htmlFuerVersand,
-    klartextAlsAbsaetze,
     ladeStandardSignatur,
     setzeEditorHtml,
     signaturAlsEditorHtml,
@@ -138,52 +137,47 @@ describe('htmlFuerVersand', () => {
     });
 });
 
-describe('klartextAlsAbsaetze', () => {
-    it('macht Absaetze und Umbrueche und maskiert den Text', () => {
-        expect(klartextAlsAbsaetze('Guten Tag,\n\nPreis < 100 €\nbitte & danke\n\n\n'))
-            .toBe('<p>Guten Tag,</p><p>Preis &lt; 100 €<br>bitte &amp; danke</p>');
-    });
-});
-
 describe('zerlegeEditorHtml', () => {
-    it('trennt Text, Signatur und Zitat und behaelt Absaetze im Text', () => {
+    it('trennt eigenen Text als HTML, Signatur und Zitat', () => {
         const teile = zerlegeEditorHtml(
-            `<p>Sehr geehrte Damen und Herren,</p><p><br></p><p>bitte um Angebot.<br>Danke</p>${SIGNATUR}<div class="email-quote">Alte Nachricht</div>`,
+            `<p>Sehr geehrte Damen und Herren,</p><p><br></p><p>bitte um <b>Angebot</b>.<br>Danke</p>${SIGNATUR}<div class="email-quote">Alte Nachricht</div>`,
         );
-        expect(teile.text).toBe('Sehr geehrte Damen und Herren,\n\nbitte um Angebot.\nDanke');
+        expect(teile.eigenerHtml).toBe('<p>Sehr geehrte Damen und Herren,</p><p><br></p><p>bitte um <b>Angebot</b>.<br>Danke</p>');
         expect(teile.signaturHtml).toBe(SIGNATUR);
         expect(teile.zitatHtml).toBe('<div class="email-quote">Alte Nachricht</div>');
         expect(teile.zitatText).toBe('Alte Nachricht');
     });
 
-    it('trennt Tabellenzellen und -zeilen im Text', () => {
-        const teile = zerlegeEditorHtml('<table><tbody><tr><td>Träger</td><td>2 Stk</td></tr><tr><td>Stütze</td><td>4 Stk</td></tr></tbody></table>');
-        expect(teile.text).toBe('Träger 2 Stk\nStütze 4 Stk');
+    it('behält Tabellen im eigenen HTML, leere Zeilen vor Signatur und Zitat fallen weg', () => {
+        const tabelle = '<table><tbody><tr><td>Träger</td><td>2 Stk</td></tr></tbody></table>';
+        expect(zerlegeEditorHtml(`<p>Positionen:</p>${tabelle}<p><br></p>\n${SIGNATUR}<br><div class="email-quote">Alt</div>`).eigenerHtml)
+            .toBe(`<p>Positionen:</p>${tabelle}`);
     });
 
     it('erkennt Zitate am Rand-Stil, wenn die Klasse fehlt', () => {
         const teile = zerlegeEditorHtml('<p>Text</p><div style="border-left: 3px solid #ccc">Zitat</div>');
         expect(teile.zitatText).toBe('Zitat');
-        expect(teile.text).toBe('Text');
+        expect(teile.eigenerHtml).toBe('<p>Text</p>');
     });
 });
 
 describe('formuliereMitKi', () => {
     it('meldet fehlenden eigenen Text, ohne die KI zu fragen', async () => {
         expect(await formuliereMitKi(SIGNATUR)).toEqual({ status: 'kein-text' });
+        expect(await formuliereMitKi(`<p><br></p><p>&nbsp;</p>${SIGNATUR}`)).toEqual({ status: 'kein-text' });
         expect(fetchMock).not.toHaveBeenCalled();
     });
 
-    it('schickt Text und Kontext, setzt Vorschlag, Signatur und Zitat zusammen', async () => {
-        fetchMock.mockReturnValue(antwort({ body: 'Guten Tag,\n\nwir bitten um ein Angebot.' }));
+    it('schickt den eigenen Text als HTML mit Kontext, setzt Vorschlag, Signatur und Zitat zusammen', async () => {
+        fetchMock.mockReturnValue(antwort({ body: '<p>Guten Tag,</p><p>wir bitten um ein Angebot.</p>' }));
         const ergebnis = await formuliereMitKi(
-            `<p>hallo</p><p>angebot bitte</p>${SIGNATUR}<div class="email-quote">Alte Nachricht</div>`,
+            `<p>hallo</p><p><b>angebot</b> bitte</p>${SIGNATUR}<div class="email-quote">Alte Nachricht</div>`,
             { kontext: 'Bestellung' },
         );
 
         const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
         expect(url).toBe('/api/email/beautify');
-        expect(JSON.parse(String(init.body))).toEqual({ body: 'hallo\n\nangebot bitte', context: 'Alte Nachricht' });
+        expect(JSON.parse(String(init.body))).toEqual({ body: '<p>hallo</p><p><b>angebot</b> bitte</p>', context: 'Alte Nachricht' });
         expect(ergebnis).toEqual({
             status: 'ok',
             html: `<p>Guten Tag,</p><p>wir bitten um ein Angebot.</p>${SIGNATUR}<br><div class="email-quote">Alte Nachricht</div>`,
@@ -191,7 +185,7 @@ describe('formuliereMitKi', () => {
     });
 
     it('nutzt ohne Zitat den Kontext und ohne Signatur im Editor die Ersatz-Signatur', async () => {
-        fetchMock.mockReturnValue(antwort({ body: 'Neu.' }));
+        fetchMock.mockReturnValue(antwort({ body: '<p>Neu.</p>' }));
         const ergebnis = await formuliereMitKi('<p>alt</p>', { kontext: 'Bestellung', ersatzSignaturHtml: SIGNATUR });
         expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body)).context).toBe('Bestellung');
         expect(ergebnis).toEqual({ status: 'ok', html: `<p>Neu.</p>${SIGNATUR}` });
@@ -203,13 +197,12 @@ describe('formuliereMitKi', () => {
         expect(ergebnis).toEqual({ status: 'ok', html: '<p>Fertig.</p><img src="x">' });
     });
 
-    it('behandelt Text mit einzelnen Inline-Tags oder spitzen Klammern als Klartext', async () => {
-        fetchMock.mockReturnValue(antwort({ body: 'Bitte <b>bis Freitag</b>.\n\nPreis < 100 und > 50.' }));
-        const ergebnis = await formuliereMitKi('<p>alt</p>');
-        expect(ergebnis).toEqual({
-            status: 'ok',
-            html: '<p>Bitte &lt;b&gt;bis Freitag&lt;/b&gt;.</p><p>Preis &lt; 100 und &gt; 50.</p>',
-        });
+    it('behält Formatierung und Tabelle der Antwort', async () => {
+        const tabelle = '<table><tbody><tr><td style="border:1px solid #cbd5e1">Träger</td></tr></tbody></table>';
+        fetchMock.mockReturnValue(antwort({ body: `<p>Bitte <strong>bis Freitag</strong>, Preis &lt; 100 €.</p>${tabelle}` }));
+        const ergebnis = await formuliereMitKi(`<p>bitte bis freitag</p>${tabelle}`);
+        expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body)).body).toBe(`<p>bitte bis freitag</p>${tabelle}`);
+        expect(ergebnis).toEqual({ status: 'ok', html: `<p>Bitte <strong>bis Freitag</strong>, Preis &lt; 100 €.</p>${tabelle}` });
     });
 
     it('meldet einen leeren Vorschlag', async () => {
@@ -226,7 +219,7 @@ describe('formuliereMitKi', () => {
         fetchMock.mockImplementation(() => antwort({ body: 'Neu.' }));
         await formuliereMitKi('<p>alt</p>', { kontext: 'Projekt', stil: 'LOCKER' });
         expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body)))
-            .toEqual({ body: 'alt', context: 'Projekt', stil: 'LOCKER' });
+            .toEqual({ body: '<p>alt</p>', context: 'Projekt', stil: 'LOCKER' });
         await formuliereMitKi('<p>alt</p>');
         expect(JSON.parse(String((fetchMock.mock.calls[1][1] as RequestInit).body))).not.toHaveProperty('stil');
     });
@@ -236,12 +229,13 @@ describe('formuliereMitKi', () => {
         await formuliereMitKi('<p>ja passt</p><div class="email-quote">Hi, passt Donnerstag?</div>',
             { kontext: 'Projekt/Anfrage: Carport', stil: 'VERLAUF' });
         expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body)))
-            .toEqual({ body: 'ja passt', context: 'Hi, passt Donnerstag?', stil: 'VERLAUF' });
+            .toEqual({ body: '<p>ja passt</p>', context: 'Hi, passt Donnerstag?', stil: 'VERLAUF' });
     });
 
     it('fragt bei VERLAUF ohne Zitat gar nicht erst, auch nicht mit Projekt-Kontext', async () => {
         expect(await formuliereMitKi('<p>alt</p><div class="email-quote">  </div>', { kontext: 'Projekt', stil: 'VERLAUF' }))
             .toEqual({ status: 'abgelehnt', meldung: KEIN_VERLAUF_MELDUNG });
+        expect(KEIN_VERLAUF_MELDUNG).toBe('Kein Mail-Verlauf vorhanden. Bitte einen anderen Stil wählen.');
         expect(fetchMock).not.toHaveBeenCalled();
     });
 

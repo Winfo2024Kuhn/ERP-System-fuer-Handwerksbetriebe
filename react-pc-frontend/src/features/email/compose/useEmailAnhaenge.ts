@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateActio
 import { useToast } from '../../../components/ui/toast';
 import type { ProjektDokument } from '../../../types';
 import { komprimiereBildFuerEmail, komprimiereBilderFuerEmail } from '../../../lib/bildKomprimierung';
-import { ANHANG_ZU_GROSS, MAX_ATTACHMENT_BYTES, formatFileSize, neuerAnhang, type UploadedFile } from './anhangGrenze';
+import { ANHANG_ZU_GROSS, MAX_ATTACHMENT_BYTES, formatFileSize, neuerAnhang, passendeAnhaenge, type UploadedFile } from './anhangGrenze';
 
 interface AnhangOptionen {
     uploadedFiles: UploadedFile[];
@@ -60,8 +60,12 @@ export function useEmailAnhaenge({ uploadedFiles, setUploadedFiles, weiterleitun
         [uploadedFiles],
     );
 
-    const hochladen = async (dateien: FileList | null) => {
-        if (!dateien || dateien.length === 0) return;
+    /**
+     * Hängt Dateien an (Auswahl, Ablegen, aus dem Nachrichtenfeld eingefügt) und
+     * liefert, wie viele angenommen wurden; zu große fallen mit Meldung weg.
+     */
+    const hochladen = async (dateien: FileList | File[] | null): Promise<number> => {
+        if (!dateien || dateien.length === 0) return 0;
         setKomprimiere(true);
         let verkleinert: File[];
         try {
@@ -70,22 +74,15 @@ export function useEmailAnhaenge({ uploadedFiles, setUploadedFiles, weiterleitun
             setKomprimiere(false);
         }
         // Grenze gegen die aktuelle Liste prüfen (nach dem Verkleinern kann sie sich geändert haben).
-        const angenommen: UploadedFile[] = [];
-        let groesse = summe(listeRef.current, weiterleitungsBytes);
-        let zuGross = false;
-        for (const file of verkleinert) {
-            if (groesse + file.size > MAX_ATTACHMENT_BYTES) {
-                zuGross = true;
-                continue;
-            }
-            angenommen.push(neuerAnhang(file));
-            groesse += file.size;
-        }
+        const pruefung = passendeAnhaenge(verkleinert, summe(listeRef.current, weiterleitungsBytes));
+        const angenommen = pruefung.angenommen.map(file => neuerAnhang(file));
+        const zuGross = pruefung.zuGross;
         if (zuGross) melde(ANHANG_ZU_GROSS);
-        if (angenommen.length === 0) return;
+        if (angenommen.length === 0) return 0;
         if (!zuGross) setError(null);
         markDirty();
         setUploadedFiles(vorher => [...vorher, ...angenommen]);
+        return angenommen.length;
     };
 
     const ladeDokument = async (dokument: ProjektDokument) => {

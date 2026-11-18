@@ -1,6 +1,7 @@
 import { useRef, useState, type DragEvent } from 'react';
 import { Eye, FolderOpen, Loader2, Paperclip, Upload } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
+import { InfoAbschnitt, InfoButton } from '../../../components/ui/info-button';
 import type { ProjektDokument } from '../../../types';
 import { EigeneAnhaenge, WeiterleitungsAnhaenge } from './AnhangListe';
 import { MAX_ATTACHMENT_BYTES, formatFileSize, type UploadedFile } from './anhangGrenze';
@@ -42,6 +43,27 @@ export function AutomatischAngehaengt({ beschriftung, vorschauGesperrt, erstesPd
     );
 }
 
+/** Erklärt, warum eingefügte Bilder hier und nicht im Text landen. */
+function EingefuegteBilderInfo() {
+    return (
+        <InfoButton titel="Anhänge">
+            <InfoAbschnitt titel="Was passiert im Hintergrund?">
+                <p>
+                    Bilder und Dateien, die Sie in den Text einfügen oder hineinziehen, kommen nicht in den Text. Das
+                    Programm hängt sie hier an die Mail an. So kommen sie bei jedem Mailprogramm an.
+                </p>
+            </InfoAbschnitt>
+            <InfoAbschnitt titel="Was bewirkt das?">
+                <p>
+                    Der Empfänger bekommt die Bilder als Anhang. Tabellen und Formatierung aus Word, Excel oder
+                    Webseiten bleiben im Text. Bilder, die eine Webseite nur aus dem Internet lädt, werden nicht
+                    übernommen. Speichern Sie solche Bilder als Datei und hängen Sie sie an.
+                </p>
+            </InfoAbschnitt>
+        </InfoButton>
+    );
+}
+
 interface EmailComposeAnhaengeProps {
     inline: boolean;
     anhaenge: EmailAnhaenge;
@@ -63,10 +85,13 @@ export function EmailComposeAnhaenge({ inline, anhaenge, dateien, vorgang, origi
     return (
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
             <div className={inline ? "border-b border-slate-100 bg-slate-50/80 px-3 py-2" : "border-b border-slate-100 bg-slate-50/80 px-5 py-3"}>
-                <p className="text-sm font-semibold text-slate-900 flex items-center gap-2">
-                    <Upload className="w-4 h-4 text-rose-600" />
-                    Anhänge
-                </p>
+                <div className="flex items-center gap-1">
+                    <p className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                        <Upload className="w-4 h-4 text-rose-600" />
+                        Anhänge
+                    </p>
+                    <EingefuegteBilderInfo />
+                </div>
                 <p className={inline ? "hidden" : "text-xs text-slate-500 mt-1"}>Zusätzliche Dateien per Klick oder Drag & Drop anhängen.</p>
             </div>
             <div className={inline ? "p-3 space-y-2" : "p-5 space-y-3"}>
@@ -102,6 +127,7 @@ export function EmailComposeAnhaenge({ inline, anhaenge, dateien, vorgang, origi
                             <Upload className={inline ? "hidden" : "w-8 h-8 mx-auto text-slate-400 mb-2"} />
                             <p className="text-sm font-medium text-slate-700">Dateien hier ablegen oder klicken</p>
                             <p className={inline ? "hidden" : "text-xs text-slate-500 mt-1"}>PDFs, Bilder und weitere Dokumente werden direkt als Anhang hinzugefügt. Große Fotos verkleinern wir automatisch.</p>
+                            {dateien.length === 0 && <p className="text-xs text-slate-500 mt-1">Eingefügte Bilder landen ebenfalls hier.</p>}
                         </>
                     )}
                 </div>

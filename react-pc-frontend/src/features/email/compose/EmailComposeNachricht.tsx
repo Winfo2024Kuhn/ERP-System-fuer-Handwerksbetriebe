@@ -4,6 +4,7 @@ import { KiStilMenue } from '../KiStilMenue';
 import { MailFormatLeiste } from '../editor/MailFormatLeiste';
 import { MailTextFeld } from '../editor/MailTextFeld';
 import { useMailEditor } from '../editor/useMailEditor';
+import type { MailDateienAnnehmen } from '../editor/useMailEinfuegen';
 import { hatZitiertenVerlauf, type KiStil } from '../mailEditorHtml';
 
 interface EmailComposeNachrichtProps {
@@ -13,14 +14,18 @@ interface EmailComposeNachrichtProps {
     aktuellesHtml: () => string;
     onFormulieren: (stil: KiStil) => void;
     onInput: () => void;
+    /** Eingefügte oder ins Feld gezogene Bilder und Dateien kommen in die Anhänge. */
+    onDateien: MailDateienAnnehmen;
 }
 
 /**
  * Karte „Nachricht“ des E-Mail-Formulars. Formatierungsleiste und KI-Menü
  * teilen sich die Kopfzeile, damit das Feld keinen Platz nach unten verliert.
  */
-export function EmailComposeNachricht({ inline, editorRef, beautifying, aktuellesHtml, onFormulieren, onInput }: EmailComposeNachrichtProps) {
-    const editor = useMailEditor({ editorRef });
+export function EmailComposeNachricht({
+    inline, editorRef, beautifying, aktuellesHtml, onFormulieren, onInput, onDateien,
+}: EmailComposeNachrichtProps) {
+    const editor = useMailEditor({ editorRef, onDateien });
     return (
         <div className={inline ? "rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden flex flex-col" : "rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden flex flex-col min-h-[320px]"}>
             <div className={inline ? "border-b border-slate-200 bg-slate-50 px-3 py-1.5 flex flex-wrap items-center justify-between gap-2" : "border-b border-slate-200 bg-slate-50 px-5 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"}>

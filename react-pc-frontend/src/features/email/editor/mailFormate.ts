@@ -1,4 +1,5 @@
 import { befehlAktiv, befehlWert, linkBeiAuswahl } from './mailEditorDom';
+import { zelleBeiAuswahl } from './mailTabelle';
 
 /** Befehle, die die Leiste direkt an `execCommand` gibt. */
 export type MailBefehl =
@@ -16,11 +17,13 @@ export interface MailFormatStand {
     nummerierung: boolean;
     ueberschrift: boolean;
     link: boolean;
+    /** Cursor steht in einer Tabellenzelle (Menü „Tabelle“ zeigt Zeilen und Spalten). */
+    tabelle: boolean;
 }
 
 export const KEIN_FORMAT: MailFormatStand = {
     fett: false, kursiv: false, unterstrichen: false, durchgestrichen: false,
-    aufzaehlung: false, nummerierung: false, ueberschrift: false, link: false,
+    aufzaehlung: false, nummerierung: false, ueberschrift: false, link: false, tabelle: false,
 };
 
 /**
@@ -56,6 +59,7 @@ export function formatStand(editor: HTMLElement | null, range: Range | null): Ma
         nummerierung: befehlAktiv('insertOrderedList'),
         ueberschrift: istUeberschrift(),
         link: imLink,
+        tabelle: !!zelleBeiAuswahl(editor, range),
     };
 }
 

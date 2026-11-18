@@ -112,6 +112,11 @@ public class EmailController {
      */
     public record DokumentAbsenderResponse(boolean aktiv, String address) {}
 
+    /**
+     * Formuliert den eigenen Text einer Mail per KI neu (HTML rein, bereinigtes HTML raus;
+     * Tabellen und Bilder bleiben unverändert). Leerer Text ergibt leer, 400 bei unbekanntem
+     * Stil, fehlendem Verlauf oder zu langem Text, 502 bei KI-Fehler. Ablauf: {@link EmailAiService}.
+     */
     @PostMapping("/beautify")
     public ResponseEntity<EmailBeautifyResponse> beautifyEmail(@RequestBody EmailBeautifyRequest request) {
         if (request == null || request.getBody() == null || request.getBody().trim().isEmpty()) {
@@ -129,10 +134,6 @@ public class EmailController {
         } catch (ResponseStatusException ex) {
             // Verständliche Meldung (z. B. „Kein Mail-Verlauf vorhanden“) an den Nutzer durchreichen
             throw ex;
-        } catch (InterruptedException ex) {
-            Thread.currentThread().interrupt();
-            log.warn("KI-Formulierung unterbrochen");
-            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).build();
         } catch (Exception ex) {
             // Nur die Fehlerart: die Ursachen zitieren Teile des E-Mail-Entwurfs.
             log.warn("KI-Formulierung fehlgeschlagen: {}", ex.getClass().getSimpleName());

@@ -1,25 +1,29 @@
-import { useCallback, useEffect, useId, useRef, useState, type FocusEvent, type KeyboardEvent, type RefObject } from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 import { fuehreAus, setzeSchriftgroesse, type MailSchriftgroesse } from './mailEditorDom';
 import { formatStand, gleicherStand, KEIN_FORMAT, type MailBefehl, type MailFormatStand } from './mailFormate';
-import { fokussiereNaechstesNach } from './mailLeisteTasten';
 import { useMailAuswahl } from './useMailAuswahl';
+import { useMailEinfuegen, type MailDateienAnnehmen } from './useMailEinfuegen';
 import { useMailLinks } from './useMailLinks';
+import { useMailTabelle } from './useMailTabelle';
+import { useMailTasten } from './useMailTasten';
 
 export interface MailEditorOptionen {
     /** Ref des Aufrufers auf das editierbare Element (Befüllen, `innerHTML` lesen). */
     editorRef: RefObject<HTMLDivElement | null>;
+    /** Eingefügte oder hineingezogene Dateien und Bilder in die Anhangsliste; ohne: Hinweis statt Anhang. */
+    onDateien?: MailDateienAnnehmen;
 }
 
 /**
- * Steuerung eines Mail-Textfelds: Auswahl merken, Formatierung, Links. Ein
+ * Steuerung eines Mail-Textfelds: Auswahl merken, Formatierung, Links,
+ * Tabellen, Einfügen (Bilder und Dateien als Anhang). Ein
  * Objekt für Leiste (`MailFormatLeiste`) und Feld (`MailTextFeld`), damit die
  * Leiste auch außerhalb des Felds stehen kann (z. B. in der Kopfzeile).
  *
  * <p>Jede Änderung löst am Feld ein `input`-Ereignis aus – Aufrufer hören wie
  * beim Tippen auf `onInput` (Entwurf speichern, Body übernehmen).</p>
  */
-export function useMailEditor({ editorRef }: MailEditorOptionen) {
-    const linkLeisteId = useId();
+export function useMailEditor({ editorRef, onDateien }: MailEditorOptionen) {
     const [aktiv, setAktiv] = useState<MailFormatStand>(KEIN_FORMAT);
     const zeigeLink = useRef<() => void>(() => undefined);
 
@@ -57,6 +61,8 @@ export function useMailEditor({ editorRef }: MailEditorOptionen) {
         beiAuswahl();
         meldeAenderung();
     }, [auswahl, beiAuswahl, meldeAenderung]);
+    const tabelle = useMailTabelle(editorRef, auswahl, nachBefehl);
+    const einfuegen = useMailEinfuegen({ editorRef, auswahl, meldeAenderung, onDateien, adresseEinfuegen: links.beimEinfuegen });
 
     const formatiere = useCallback((befehl: MailBefehl) => {
         auswahl.wiederherstellen();
@@ -89,46 +95,16 @@ export function useMailEditor({ editorRef }: MailEditorOptionen) {
         nachBefehl();
     }, [auswahl, aktiv.ueberschrift, nachBefehl]);
 
-    const zurueckInsFeld = useCallback(() => {
-        links.schliesseLeiste(true);
-        auswahl.wiederherstellen();
-    }, [links, auswahl]);
-
-    /** Tab aus der Link-Leiste: weiter zum nächsten Bedienelement hinter dem Feld. */
-    const verlasseFeld = useCallback(() => {
-        links.schliesseLeiste(true);
-        fokussiereNaechstesNach(editorRef.current);
-    }, [links, editorRef]);
-
-    const beiTaste = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
-        if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 'k') {
-            event.preventDefault();
-            links.oeffneDialog();
-            return;
-        }
-        if (!links.leistenLink) return;
-        if (event.key === 'Escape') {
-            // Nur die Link-Leiste schließen – nicht den Dialog, in dem das Feld steht.
-            event.preventDefault();
-            event.stopPropagation();
-            links.schliesseLeiste(true);
-        } else if (event.key === 'Tab' && !event.shiftKey) {
-            event.preventDefault();
-            document.getElementById(linkLeisteId)?.querySelector<HTMLButtonElement>('button')?.focus();
-        }
-    }, [links, linkLeisteId]);
-
-    const beimVerlassen = useCallback((event: FocusEvent<HTMLDivElement>) => {
-        if (!document.getElementById(linkLeisteId)?.contains(event.relatedTarget as Node | null)) links.schliesseLeiste();
-    }, [links, linkLeisteId]);
+    const tasten = useMailTasten({ editorRef, auswahl, links, tabellenTaste: tabelle.beiTaste });
+    const { linkLeisteId, zurueckInsFeld, verlasseFeld } = tasten;
 
     return {
-        editorRef, linkLeisteId, aktiv, links,
+        editorRef, linkLeisteId, aktiv, links, tabelle,
         formatiere, schriftgroesse, ueberschrift, zurueckInsFeld, verlasseFeld,
         farbe: (wert: string) => mitStil('foreColor', wert),
         marker: (wert: string) => mitStil('hiliteColor', wert),
         feldEreignisse: {
-            onKeyDown: beiTaste,
+            onKeyDown: tasten.beiTaste,
             // Escape schließt die Link-Leiste – ihr Loslassen darf sie nicht wieder öffnen.
             onKeyUp: (event: KeyboardEvent<HTMLDivElement>) => { if (event.key !== 'Escape') beiAuswahlImFeld(); },
             // Ein Klick zeigt die Link-Leiste wieder, auch nach Escape.
@@ -137,8 +113,8 @@ export function useMailEditor({ editorRef }: MailEditorOptionen) {
                 aktualisiere();
                 links.zeigeLinkAnAuswahl(true);
             },
-            onBlur: beimVerlassen,
-            onPaste: links.beimEinfuegen,
+            onBlur: tasten.beimVerlassen,
+            ...einfuegen,
         },
     };
 }

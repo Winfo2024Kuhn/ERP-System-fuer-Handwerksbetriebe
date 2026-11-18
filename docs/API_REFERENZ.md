@@ -986,11 +986,19 @@ Versand von Geschäftsdokumenten per Mail.
 |---|---|---|
 | `GET` | `/from-addresses` | Aktive Absender-Adressen (die des Benutzers zuerst) |
 | `GET` | `/dokument-absender` | Läuft der Dokumentversand über ein eigenes Postfach, und unter welcher Adresse? |
-| `POST` | `/beautify` | Mail-Text per KI verbessern |
+| `POST` | `/beautify` | Eigenen Mail-Text per KI neu formulieren (HTML rein, HTML raus; siehe unten) |
 | `POST` | `/preview` | Vorschau einer Dokument-Mail (Projekt) |
 | `POST` | `/preview/anfrage` | Vorschau einer Dokument-Mail (Anfrage) |
 | `POST` | `/send` | Dokument-Mail senden (Projekt) |
 | `POST` | `/send/anfrage` | Dokument-Mail senden (Anfrage) |
+
+**`POST /beautify` (KI-Optimierung):** Request `{ body, context, stil }`. `body` ist der eigene Text der Mail als **HTML** (ohne Signatur und Zitat, die trennt das Frontend ab; Klartext ohne Tags geht auch und wird zu Absätzen). Grenzen: höchstens 500.000 Zeichen rohes HTML und höchstens 50.000 Zeichen Text für die KI (bereinigtes HTML ohne Tabellen und Bilder; die zählen nur als kurzer Platzhalter). `context` ist die zitierte Vorgänger-Mail bzw. ein Projekt-Hinweis als Klartext (wird auf 8.000 Zeichen gekürzt). `stil`: `RECHTSCHREIBUNG` (Standard), `FOERMLICH`, `LOCKER`, `VERLAUF`. Antwort `{ body }` = bereinigtes HTML des neu formulierten Texts, leer bei leerer Eingabe oder wenn die KI nichts liefert.
+
+- **Formatierung bleibt** (alles, was die Formatleiste des Mail-Editors erzeugt): `p`, `br`, `div`, `h1`–`h4`, `blockquote` (Einzug), `strong`/`b`, `em`/`i`, `u`, `s`/`strike`, `ul`, `ol`, `li`, `a` (nur `http:`, `https:`, `mailto:`) und `span`. Stile an `p`, `div`, `h1`–`h4`, `blockquote` und `span`: `color`, `background-color`, `font-size`, `font-weight`, `font-style`, `text-decoration`, `text-align`, `margin`, `margin-left`, `padding`, `padding-left` (Werte geprüft, nie `url(…)`/`expression`); `align` mit `left`/`center`/`right`/`justify`. Alles andere fällt weg, der Text bleibt.
+- **Tabellen und Bilder bleiben 1:1:** Die KI sieht sie nie, nur Platzhalter. Danach setzt das Backend das Original (bereinigt, sonst unverändert inkl. Inline-Stile) wieder an seine Stelle; fehlt ein Platzhalter, kommt das Element in Originalreihenfolge ans Ende. Preise und Maße in Tabellen ändern sich dadurch nie.
+- **Links:** Ein Link bleibt nur, wenn genau diese Adresse in `body` stand; sonst bleibt nur der Linktext.
+- **Schreibregeln** nach dem Skill humanizer-de (keine Gedankenstriche als Satzzeichen, keine KI-Floskeln, Zahlen/Termine/Preise/Namen exakt übernehmen, nichts erfinden). Gedankenstriche, die trotzdem kommen, ersetzt das Backend im Text durch Komma, zwischen Wochentagen durch den Bis-Strich („Mo - Fr“ → „Mo–Fr“); Bindestriche („E-Mail“), Bereiche („8–10 Uhr“, „Mo–Fr“) und Tabellen bleiben unberührt. Einleitungen („Hier ist …“) und Grußformeln am Ende entfernt das Backend.
+- **Fehler:** 400 `{message}` „Unbekannter Schreibstil.“, „Kein Mail-Verlauf vorhanden. Bitte einen anderen Stil wählen.“ (bei `VERLAUF` ohne `context`) bzw. „Der Text ist zu lang für die KI-Formulierung. Bitte kürzen.“; 502 ohne Body, wenn die KI nicht antwortet.
 
 ### EmailTemplateController
 

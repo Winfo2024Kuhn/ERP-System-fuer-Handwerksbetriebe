@@ -35,7 +35,7 @@ async function eigenenTextVoranstellen(page: Page, text: string) {
 
 test('Antworten: Stil „Ton des Verlaufs übernehmen“ per Tastatur wählen, Vorschlag ersetzt nur den eigenen Text', async ({ page }, info) => {
     await stubbeEmailCenter(page);
-    const anfragen = await stubbeKi(page, { status: 200, body: { body: 'Gern machen wir Ihnen ein Angebot.' } });
+    const anfragen = await stubbeKi(page, { status: 200, body: { body: '<p>Gern machen wir Ihnen ein Angebot.</p>' } });
     await page.goto('/emails/inbox/701');
     await page.getByRole('button', { name: 'Antworten', exact: true }).first().click();
     const editor = page.getByRole('textbox', { name: 'Nachricht' });
@@ -63,7 +63,7 @@ test('Antworten: Stil „Ton des Verlaufs übernehmen“ per Tastatur wählen, V
     await expect(editor).not.toContainText('ja machen wir');
     await expect(editor).toContainText('Können Sie uns ein Angebot machen?');
     expect(anfragen).toHaveLength(1);
-    expect(anfragen[0]).toMatchObject({ body: 'ja machen wir', stil: 'VERLAUF' });
+    expect(anfragen[0]).toMatchObject({ body: '<p>ja machen wir</p>', stil: 'VERLAUF' });
     expect(anfragen[0].context).toContain('Können Sie uns ein Angebot machen?');
 });
 
@@ -75,10 +75,10 @@ test('Neue Mail: ohne Verlauf nur drei Stile, Info-Knopf erklärt, Ablehnung ers
     await eigenenTextVoranstellen(page, 'hallo, termin passt');
 
     await page.getByRole('button', { name: 'Mehr zu: Text mit KI überarbeiten' }).click();
-    await expect(page.getByText(/Ihr Text wird an die KI geschickt/)).toBeVisible();
+    await expect(page.getByText(/Ihr Text geht samt Formatierung an die KI/)).toBeVisible();
     await designPruefung(page, info, 'email-ki-stil-info');
     await page.keyboard.press('Escape');
-    await expect(page.getByText(/Ihr Text wird an die KI geschickt/)).toHaveCount(0);
+    await expect(page.getByText(/Ihr Text geht samt Formatierung an die KI/)).toHaveCount(0);
 
     await page.getByRole('button', { name: 'KI-Optimierung' }).click();
     const menue = page.getByRole('menu');
@@ -89,5 +89,5 @@ test('Neue Mail: ohne Verlauf nur drei Stile, Info-Knopf erklärt, Ablehnung ers
 
     await expect(page.getByText('Unbekannter Schreibstil.')).toBeVisible();
     await expect(page.getByRole('textbox', { name: 'Nachricht' })).toContainText('hallo, termin passt');
-    expect(anfragen).toEqual([{ body: 'hallo, termin passt', context: null, stil: 'LOCKER' }]);
+    expect(anfragen).toEqual([{ body: '<p>hallo, termin passt</p>', context: null, stil: 'LOCKER' }]);
 });

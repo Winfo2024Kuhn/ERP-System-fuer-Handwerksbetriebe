@@ -40,5 +40,24 @@ class EmailAiPostProcessorTest {
         String out = EmailAiPostProcessor.sanitizePlainText(in);
         assertEquals("Sehr geehrte Frau Müller,\n...", out);
     }
-}
 
+    @Test
+    void erkenntEinleitungszeilen() {
+        assertTrue(EmailAiPostProcessor.istEinleitungsZeile("Hier ist der überarbeitete Text:"));
+        assertTrue(EmailAiPostProcessor.istEinleitungsZeile("  Gerne, hier ist die förmliche Fassung:"));
+        assertTrue(EmailAiPostProcessor.istEinleitungsZeile("Optimierte E-Mail:"));
+        assertFalse(EmailAiPostProcessor.istEinleitungsZeile("Gerne können wir den Termin verschieben."));
+        assertFalse(EmailAiPostProcessor.istEinleitungsZeile("Guten Tag Herr Mustermann,"));
+        assertFalse(EmailAiPostProcessor.istEinleitungsZeile(null));
+    }
+
+    @Test
+    void erkenntGrusszeilen() {
+        assertTrue(EmailAiPostProcessor.istGrussZeile("Mit freundlichen Grüßen"));
+        assertTrue(EmailAiPostProcessor.istGrussZeile(" LG "));
+        assertTrue(EmailAiPostProcessor.istGrussZeile("Best regards"));
+        assertFalse(EmailAiPostProcessor.istGrussZeile("Wir kommen Montag."));
+        assertFalse(EmailAiPostProcessor.istGrussZeile(""));
+        assertFalse(EmailAiPostProcessor.istGrussZeile(null));
+    }
+}

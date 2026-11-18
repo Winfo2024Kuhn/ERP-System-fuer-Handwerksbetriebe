@@ -1,5 +1,5 @@
 import { createRef, useRef } from 'react';
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MailNachrichtFeld } from './MailNachrichtFeld';
@@ -42,11 +42,13 @@ beforeEach(() => {
     delete dok.execCommand;
     delete dok.queryCommandState;
     toastFehler.mockReset();
+    toastSpy.success.mockReset();
+    toastSpy.warning.mockReset();
 });
 afterEach(() => { vi.restoreAllMocks(); });
 
 describe('Formatierungsleiste', () => {
-    it('zeigt eine Zeile mit Direktknöpfen und zwei Menüs', () => {
+    it('zeigt eine Zeile mit Direktknöpfen und drei Menüs', () => {
         feldMit('<p>Hallo</p>');
         const leiste = screen.getByRole('toolbar', { name: 'Formatierung' });
         for (const name of ['Fett', 'Kursiv', 'Unterstrichen']) {
@@ -55,6 +57,7 @@ describe('Formatierungsleiste', () => {
         expect(within(leiste).getByRole('button', { name: 'Link einfügen' })).toBeInTheDocument();
         expect(within(leiste).getByRole('button', { name: 'Schrift' })).toHaveAttribute('aria-haspopup', 'menu');
         expect(within(leiste).getByRole('button', { name: 'Absatz' })).toHaveAttribute('aria-haspopup', 'menu');
+        expect(within(leiste).getByRole('button', { name: 'Tabelle' })).toHaveAttribute('aria-haspopup', 'menu');
     });
 
     it('führt Fett aus und zeigt den aktiven Zustand', async () => {
@@ -80,7 +83,7 @@ describe('Formatierungsleiste', () => {
         await userEvent.keyboard('{ArrowRight}');
         expect(screen.getByRole('button', { name: 'Kursiv' })).toHaveFocus();
         await userEvent.keyboard('{ArrowLeft}{ArrowLeft}');
-        expect(screen.getByRole('button', { name: 'Absatz' })).toHaveFocus();
+        expect(screen.getByRole('button', { name: 'Tabelle' })).toHaveFocus();
     });
 
     it('Menü „Schrift“ bietet Größe, Farben und Marker und setzt die Farbe', async () => {
@@ -375,5 +378,126 @@ describe('Adresse über markierten Text einfügen', () => {
         expect(einfuegen(editor, 'Hallo Welt').defaultPrevented).toBe(false);
         expect(einfuegen(editor, `${ONEDRIVE} und mehr`).defaultPrevented).toBe(false);
         expect(editor.querySelector('a')).toBeNull();
+    });
+});
+
+describe('Bilder und Dateien einfügen oder hineinziehen', () => {
+    const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+    function mitDateien(onDateien?: (dateien: File[]) => unknown) {
+        const ref = createRef<HTMLDivElement>();
+        render(<MailNachrichtFeld editorRef={ref} ariaLabel="Nachricht" onDateien={onDateien} />);
+        const editor = screen.getByRole('textbox', { name: 'Nachricht' });
+        editor.innerHTML = '<p>Hallo </p>';
+        markiere(editor.querySelector('p')!.firstChild!, 6, 6);
+        return editor;
+    }
+
+    function zwischenablage(daten: { html?: string; text?: string; dateien?: File[] }) {
+        return {
+            files: daten.dateien ?? [],
+            types: [...(daten.dateien?.length ? ['Files'] : []), ...(daten.html ? ['text/html'] : []), 'text/plain'],
+            getData: (typ: string) => (typ === 'text/html' ? daten.html ?? '' : typ === 'text/plain' ? daten.text ?? '' : ''),
+        };
+    }
+
+    function einfuegen(ziel: HTMLElement, daten: Parameters<typeof zwischenablage>[0]) {
+        const ereignis = new Event('paste', { bubbles: true, cancelable: true }) as Event & { clipboardData: unknown };
+        ereignis.clipboardData = zwischenablage(daten);
+        act(() => { ziel.dispatchEvent(ereignis); });
+        return ereignis;
+    }
+
+    it('hängt eine eingefügte Bilddatei an, statt sie in den Text zu setzen', async () => {
+        const onDateien = vi.fn(() => Promise.resolve(1));
+        const editor = mitDateien(onDateien);
+        const ereignis = einfuegen(editor, { dateien: [new File(['x'], 'image.png', { type: 'image/png' })] });
+
+        expect(ereignis.defaultPrevented).toBe(true);
+        expect(editor.querySelector('img')).toBeNull();
+        expect(onDateien).toHaveBeenCalledTimes(1);
+        const [dateien] = onDateien.mock.calls[0] as unknown as [File[]];
+        expect(dateien.map(d => d.name)).toEqual(['Bild-1.png']);
+        await waitFor(() => expect(toastSpy.success).toHaveBeenCalledWith('Bild als Anhang hinzugefügt.'));
+    });
+
+    it('meldet ohne Anhangsliste, dass hier keine Dateien hineingehen', () => {
+        const editor = mitDateien();
+        const ereignis = einfuegen(editor, { dateien: [new File(['%PDF'], 'Plan.pdf', { type: 'application/pdf' })] });
+        expect(ereignis.defaultPrevented).toBe(true);
+        expect(toastSpy.warning).toHaveBeenCalledWith('In dieses Feld lassen sich keine Bilder oder Dateien einfügen.');
+        expect(editor.innerHTML).toBe('<p>Hallo </p>');
+    });
+
+    it('setzt eingefügtes HTML bereinigt ein: Tabelle bleibt, eingebettetes Bild wird Anhang', async () => {
+        const onDateien = vi.fn();
+        const editor = mitDateien(onDateien);
+        const onInput = vi.fn();
+        editor.addEventListener('input', onInput);
+        einfuegen(editor, {
+            html: `<table><tbody><tr><td><b>Träger</b></td><td>2 Stk</td></tr></tbody></table><img src="${PNG}"><img src=x onerror=alert(1)><script>alert(2)</script>`,
+            text: 'Träger 2 Stk',
+        });
+
+        expect(editor.querySelector('td b')?.textContent).toBe('Träger');
+        expect(editor.querySelector('img, script')).toBeNull();
+        expect(onInput).toHaveBeenCalled();
+        const [dateien] = onDateien.mock.calls[0] as [File[]];
+        expect(dateien.map(d => d.name)).toEqual(['Bild-1.png']);
+        await waitFor(() => expect(toastSpy.success).toHaveBeenCalledWith('Bild als Anhang hinzugefügt.'));
+        expect(toastSpy.warning).toHaveBeenCalledWith('1 Bild konnte nicht übernommen werden. Bitte als Datei anhängen.');
+    });
+
+    it('entfernt Bilder aus dem Internet mit Hinweis, außer die Bilddatei kam mit', () => {
+        const onDateien = vi.fn();
+        const editor = mitDateien(onDateien);
+        einfuegen(editor, { html: '<p>Katalog</p><img src="https://example.com/a.png"><img src="https://example.com/b.png">' });
+        expect(editor.textContent).toContain('Katalog');
+        expect(editor.querySelector('img')).toBeNull();
+        expect(toastSpy.warning).toHaveBeenCalledWith('2 Bilder aus dem Internet wurden nicht übernommen. Bitte als Datei anhängen.');
+        expect(onDateien).not.toHaveBeenCalled();
+
+        toastSpy.warning.mockClear();
+        einfuegen(editor, {
+            html: '<img src="https://example.com/a.png">',
+            dateien: [new File(['x'], 'image.png', { type: 'image/png' })],
+        });
+        expect(toastSpy.warning).not.toHaveBeenCalled();
+        expect(onDateien).toHaveBeenCalledTimes(1);
+        expect((onDateien.mock.calls[0] as [File[]])[0]).toHaveLength(1);
+    });
+
+    it('lässt reinen Text und Adressen wie bisher', () => {
+        const onDateien = vi.fn();
+        const editor = mitDateien(onDateien);
+        expect(einfuegen(editor, { text: 'Hallo Welt' }).defaultPrevented).toBe(false);
+        expect(einfuegen(editor, { text: ONEDRIVE, html: `<a href="${ONEDRIVE}">${ONEDRIVE}</a>` }).defaultPrevented).toBe(true);
+        expect(editor.querySelector('a')?.getAttribute('href')).toBe(ONEDRIVE);
+        expect(onDateien).not.toHaveBeenCalled();
+    });
+
+    it('hängt hineingezogene Dateien an und lässt das Ziehen im Text in Ruhe', async () => {
+        const onDateien = vi.fn(() => Promise.resolve(2));
+        const editor = mitDateien(onDateien);
+        const daten = zwischenablage({ dateien: [
+            new File(['a'], 'Aufmass.pdf', { type: 'application/pdf' }),
+            new File(['b'], 'Foto.jpg', { type: 'image/jpeg' }),
+        ] });
+
+        const ueber = new Event('dragover', { bubbles: true, cancelable: true }) as Event & { dataTransfer: unknown };
+        ueber.dataTransfer = { ...daten, dropEffect: 'none' };
+        act(() => { editor.dispatchEvent(ueber); });
+        expect(ueber.defaultPrevented).toBe(true);
+
+        fireEvent.drop(editor, { dataTransfer: daten });
+        expect(onDateien).toHaveBeenCalledWith([expect.objectContaining({ name: 'Aufmass.pdf' }), expect.objectContaining({ name: 'Foto.jpg' })]);
+        await waitFor(() => expect(toastSpy.success).toHaveBeenCalledWith('2 Dateien als Anhang hinzugefügt.'));
+
+        onDateien.mockClear();
+        fireEvent.dragStart(editor.querySelector('p')!);
+        const intern = createEvent.drop(editor, { dataTransfer: zwischenablage({ html: '<p>Hallo</p>' }) });
+        fireEvent(editor, intern);
+        expect(intern.defaultPrevented).toBe(false);
+        expect(onDateien).not.toHaveBeenCalled();
     });
 });

@@ -3,6 +3,7 @@ import { cn } from '../../../lib/utils';
 import { MailFormatLeiste } from './MailFormatLeiste';
 import { MailTextFeld } from './MailTextFeld';
 import { useMailEditor } from './useMailEditor';
+import type { MailDateienAnnehmen } from './useMailEinfuegen';
 
 export interface MailNachrichtFeldProps {
     /** Ref auf das editierbare Element: Befüllen per `setzeEditorHtml()`, Versand per `innerHTML`. */
@@ -17,14 +18,18 @@ export interface MailNachrichtFeldProps {
     onBlur?: (event: FocusEvent<HTMLDivElement>) => void;
     /** Nach Klick oder Taste im Feld (Cursorstelle merken). */
     onAuswahl?: () => void;
+    /** Eingefügte oder hineingezogene Bilder und Dateien anhängen. Ohne: Hinweis, nur der Text kommt ins Feld. */
+    onDateien?: MailDateienAnnehmen;
 }
 
 /**
  * Mail-Textfeld mit schmaler Formatierungsleiste darüber – für alle Mailfelder
  * außer dem E-Mail-Formular (dort sitzt die Leiste in der Kopfzeile).
  */
-export function MailNachrichtFeld({ editorRef, ariaLabel, id, className, rahmenClassName, onInput, onBlur, onAuswahl }: MailNachrichtFeldProps) {
-    const editor = useMailEditor({ editorRef });
+export function MailNachrichtFeld({
+    editorRef, ariaLabel, id, className, rahmenClassName, onInput, onBlur, onAuswahl, onDateien,
+}: MailNachrichtFeldProps) {
+    const editor = useMailEditor({ editorRef, onDateien });
     return (
         <div className={cn(
             'overflow-hidden rounded-lg border border-slate-200 bg-white transition-colors focus-within:border-rose-300',

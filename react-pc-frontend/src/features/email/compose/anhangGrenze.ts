@@ -60,5 +60,24 @@ export function neuerAnhang(file: File, sourceDokumentId?: number): UploadedFile
     return eintrag;
 }
 
+/**
+ * Welche Dateien passen noch zu den schon belegten Bytes in die Grenze? Dateien,
+ * die nicht passen, fallen weg (`zuGross`); kleinere dahinter dürfen noch rein.
+ */
+export function passendeAnhaenge(dateien: File[], belegtBytes: number): { angenommen: File[]; zuGross: boolean } {
+    const angenommen: File[] = [];
+    let groesse = belegtBytes;
+    let zuGross = false;
+    for (const datei of dateien) {
+        if (groesse + datei.size > MAX_ATTACHMENT_BYTES) {
+            zuGross = true;
+            continue;
+        }
+        angenommen.push(datei);
+        groesse += datei.size;
+    }
+    return { angenommen, zuGross };
+}
+
 /** Meldung, wenn die Anhänge zusammen zu groß werden. */
 export const ANHANG_ZU_GROSS = `Anhänge dürfen zusammen höchstens ${formatFileSize(MAX_ATTACHMENT_BYTES)} groß sein.`;

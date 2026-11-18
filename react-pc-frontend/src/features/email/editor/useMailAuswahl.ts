@@ -66,9 +66,10 @@ export function useMailAuswahl(editorRef: RefObject<HTMLDivElement | null>, onAu
         const editor = editorRef.current;
         if (!editor) return null;
         const lebend = lebendeAuswahlIn(editor);
+        // Vor dem Fokus bestimmen: Manche Browser setzen beim Fokus den Cursor an den Anfang.
+        const range = lebend ?? aktuelle();
         if (document.activeElement !== editor) editor.focus({ preventScroll: true });
         if (lebend) return lebend;
-        const range = aktuelle();
         if (range) {
             const auswahl = window.getSelection();
             auswahl?.removeAllRanges();

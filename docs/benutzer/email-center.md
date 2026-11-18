@@ -47,10 +47,10 @@ Automatisch ordnet das Programm so zu: Antworten folgen der vorigen E-Mail. E-Ma
 3. „Von“: das Postfach, über das die E-Mail rausgeht. Voreingestellt ist das eigene Postfach, sonst das Hauptpostfach.
 4. „Betreff“ und „Nachricht“. Die eigene Standard-Signatur steht schon darunter.
 5. „Gehört zu“: Projekt oder Anfrage wählen. Dann schlägt das Programm die Adressen des Kunden vor, und „Dateien aus Projekt hinzufügen“ hängt Dateien aus dem Vorgang an.
-6. Anhänge in das Feld ziehen oder anklicken. Große Fotos werden verkleinert; der Balken zeigt, wie viel Platz noch ist.
+6. Anhänge in das Feld ziehen oder anklicken. Große Fotos werden verkleinert; der Balken zeigt, wie viel Platz noch ist. Bilder und Dateien, die man in die Nachricht einfügt oder hineinzieht, landen ebenfalls hier (siehe unten).
 7. „E-Mail senden“.
 
-Ohne „Gehört zu“ fragt das Programm vor dem Senden nach. Mit „Als Rundmail verschicken – jeder sieht nur sich selbst“ bekommt jeder Empfänger eine eigene E-Mail. „KI-Optimierung“ formuliert den eigenen Text neu, wenn ein KI-Schlüssel eingerichtet ist.
+Ohne „Gehört zu“ fragt das Programm vor dem Senden nach. Mit „Als Rundmail verschicken – jeder sieht nur sich selbst“ bekommt jeder Empfänger eine eigene E-Mail. „KI-Optimierung“ formuliert den eigenen Text neu, wenn ein KI-Schlüssel eingerichtet ist. Fett, Listen, Farben und Links bleiben dabei erhalten; Tabellen, Signatur und zitierte Mail schreibt die KI nicht um, sie bleiben genau so stehen. Grußformel und Name lässt die KI weg, die kommen aus der Signatur.
 
 ## Text formatieren und Links einfügen
 
@@ -58,6 +58,9 @@ Die Leiste steht in der Kopfzeile „Nachricht“ neben „KI-Optimierung“ (in
 - **Fett**, *Kursiv*, Unterstrichen: Text markieren und den Knopf drücken, oder Strg+B / Strg+I / Strg+U (Mac: ⌘).
 - „Schrift“: Größe (Klein, Normal, Groß, Überschrift), Textfarbe, „Gelb markieren“, „Durchgestrichen“, „Formatierung entfernen“.
 - „Absatz“: Aufzählung, Nummerierung, Ausrichtung links/Mitte/rechts, Einzug.
+- „Tabelle“: Größe im Raster wählen (bis 8 × 8, mit der Maus oder den Pfeiltasten, Enter fügt ein). Steht der Cursor in einer Tabelle, bietet das Menü „Zeile darüber“, „Zeile darunter“, „Spalte links“, „Spalte rechts“ und das Löschen von Zeile, Spalte oder ganzer Tabelle an. Tab springt in die nächste Zelle, Umschalt+Tab zurück; Tab in der letzten Zelle hängt eine Zeile an. Die Rahmen sieht der Empfänger in jedem Mailprogramm.
+
+**Einfügen aus Word, Excel oder Webseiten:** Text, Tabellen und Formatierung (fett, kursiv, Listen, Farben, Schriftgrößen, Links) bleiben erhalten, Word-Beiwerk entfernt das Programm. Bilder kommen nie in den Text: Ein eingefügtes oder hineingezogenes Bild, ein Foto oder eine PDF hängt das Programm an die E-Mail an (Meldung „Bild als Anhang hinzugefügt.“). Bilder, die eine Webseite nur aus dem Internet lädt, werden nicht übernommen; eine Meldung sagt, wie viele es waren. Solche Bilder als Datei speichern und anhängen. In Mail-Fenstern ohne Anhänge (z. B. Abwesenheitsnotiz, Steuerberater-Mails) kommt nur der Text an, Bilder und Dateien werden mit Hinweis abgelehnt.
 
 **Link mit eigenem Text**, z. B. ein OneDrive-Freigabelink hinter „Hier klicken“:
 1. Den Text markieren, der zum Link werden soll (oder den Cursor an die Stelle setzen).

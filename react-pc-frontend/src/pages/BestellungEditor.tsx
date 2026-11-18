@@ -25,6 +25,7 @@ import { Select } from '../components/ui/select-custom';
 import { cn } from "../lib/utils";
 import { formuliereMitKi, htmlFuerVersand, ladeStandardSignatur, setzeEditorHtml } from "../features/email/mailEditorHtml";
 import { MailNachrichtFeld } from "../features/email/editor/MailNachrichtFeld";
+import { ANHANG_ZU_GROSS, passendeAnhaenge } from "../features/email/compose/anhangGrenze";
 import { DialogEbene } from "../components/ui/dialog";
 import { aktuellesFrontendProfil } from '../lib/frontendProfil';
 import { Input } from "../components/ui/input";
@@ -296,20 +297,21 @@ export const BestellungEmailModal: React.FC<BestellungEmailModalProps> = ({
         }
     };
 
-    // Datei-Upload Handler
-    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const files = e.target.files;
-        if (!files) return;
-
-        const newFiles: UploadedFile[] = [];
-        for (let i = 0; i < files.length; i++) {
-            const file = files[i];
-            const previewUrl = (isImageFile(file.name) || isPdfFile(file.name))
-                ? URL.createObjectURL(file)
-                : undefined;
-            newFiles.push({ file, previewUrl });
-        }
+    // Dateien anhängen: Auswahl per Knopf und aus dem Nachrichtenfeld eingefügte oder hineingezogene
+    const dateienAnhaengen = (files: File[]) => {
+        const { angenommen, zuGross } = passendeAnhaenge(files, uploadedFiles.reduce((s, uf) => s + uf.file.size, 0));
+        if (zuGross) toast.error(ANHANG_ZU_GROSS);
+        const newFiles: UploadedFile[] = angenommen.map(file => ({
+            file,
+            previewUrl: (isImageFile(file.name) || isPdfFile(file.name)) ? URL.createObjectURL(file) : undefined,
+        }));
         setUploadedFiles(prev => [...prev, ...newFiles]);
+        return newFiles.length;
+    };
+
+    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!e.target.files) return;
+        dateienAnhaengen(Array.from(e.target.files));
         e.target.value = '';
     };
 
@@ -587,6 +589,7 @@ export const BestellungEmailModal: React.FC<BestellungEmailModalProps> = ({
                                     ariaLabel="Nachricht"
                                     className="min-h-[250px] prose prose-sm max-w-none"
                                     onInput={() => setBody(editorRef.current?.innerHTML || '')}
+                                    onDateien={dateienAnhaengen}
                                 />
                             </DialogEbene>
                         </div>
