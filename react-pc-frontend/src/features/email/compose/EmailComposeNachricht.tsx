@@ -29,11 +29,12 @@ export function EmailComposeNachricht({
     return (
         <div className={inline ? "rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden flex flex-col" : "rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden flex flex-col min-h-[320px]"}>
             <div className={inline ? "border-b border-slate-200 bg-slate-50 px-3 py-1.5 flex flex-wrap items-center justify-between gap-2" : "border-b border-slate-200 bg-slate-50 px-5 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"}>
-                <div>
+                {/* Der Hinweis darf umbrechen, damit die Leiste auch im schmalen Antwort-Dialog in der Zeile bleibt. */}
+                <div className="min-w-0">
                     <Label className="text-slate-900">Nachricht</Label>
                     <p className={inline ? "hidden" : "text-xs text-slate-500 mt-1"}>Formulieren, überarbeiten und anschließend direkt versenden.</p>
                 </div>
-                <div className="flex min-w-0 flex-nowrap items-center gap-1">
+                <div className="flex shrink-0 flex-nowrap items-center gap-1">
                     <MailFormatLeiste editor={editor} />
                     <span aria-hidden="true" className="mx-0.5 h-5 w-px shrink-0 bg-slate-200" />
                     <KiStilMenue
