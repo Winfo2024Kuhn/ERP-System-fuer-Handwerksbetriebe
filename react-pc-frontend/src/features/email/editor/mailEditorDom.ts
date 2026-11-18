@@ -1,4 +1,4 @@
-import { sanitizeHtml } from '../../../lib/htmlSanitizer';
+import { parseHtmlInert, sanitizeHtml } from '../../../lib/htmlSanitizer';
 
 /**
  * DOM-Bausteine des Mail-Textfelds (natives contentEditable).
@@ -184,4 +184,71 @@ export function setzeSchriftgroesse(editor: HTMLElement, groesse: MailSchriftgro
         waehleAus(range);
     }
     return true;
+}
+
+const STIL_MARKE = 'data-mail-stil';
+
+/** Merkt die Inline-Stile des HTML an einer Nummer je Element (siehe `fuegeHtmlEin`). */
+function markiereStile(html: string): { html: string; stile: string[] } {
+    const wurzel = parseHtmlInert(html);
+    const stile: string[] = [];
+    wurzel.querySelectorAll('[style]').forEach(element => {
+        element.setAttribute(STIL_MARKE, String(stile.length));
+        stile.push(element.getAttribute('style') ?? '');
+    });
+    return { html: wurzel.innerHTML, stile };
+}
+
+function stelleStileWiederHer(editor: HTMLElement, stile: string[]): void {
+    editor.querySelectorAll(`[${STIL_MARKE}]`).forEach(element => {
+        const stil = stile[Number(element.getAttribute(STIL_MARKE))];
+        if (stil) element.setAttribute('style', stil);
+        element.removeAttribute(STIL_MARKE);
+    });
+}
+
+/**
+ * Setzt HTML an der Stelle ein (markierter Text wird ersetzt), bereinigt mit
+ * `sanitizeHtml()`. Bevorzugt `insertHTML`, damit Strg+Z es zurücknimmt; sonst
+ * als Knoten aus einem inerten `<template>`. Der Cursor steht danach dahinter.
+ *
+ * <p>Chrome kürzt beim `insertHTML` Inline-Stile, die auf der ERP-Seite ohnehin
+ * gelten (Tailwind setzt `border-style` und `border-collapse` global). In der
+ * verschickten Mail fehlten dann die Tabellenrahmen. Darum werden die Stile vorher
+ * gemerkt und danach wieder genau so gesetzt.</p>
+ */
+export function fuegeHtmlEin(editor: HTMLElement, range: Range, html: string): void {
+    const sauber = sanitizeHtml(html);
+    if (!sauber) return;
+    waehleAus(range);
+    const markiert = markiereStile(sauber);
+    // Genau die Ausgabe von DOMPurify geht ins Feld (die Marken sind data-Attribute, die es stehen lässt).
+    if (fuehreAus('insertHTML', sanitizeHtml(markiert.html))) {
+        stelleStileWiederHer(editor, markiert.stile);
+        return;
+    }
+    const vorlage = editor.ownerDocument.createElement('template');
+    vorlage.innerHTML = sauber;
+    const letztes = vorlage.content.lastChild;
+    range.deleteContents();
+    range.insertNode(vorlage.content);
+    if (letztes) cursorHinter(letztes);
+}
+
+/** Cursorstelle unter dem Mauszeiger (beim Ablegen), nur innerhalb des Felds. */
+export function stelleAmPunkt(editor: HTMLElement, x: number, y: number): Range | null {
+    const dokument = editor.ownerDocument as Document & {
+        caretRangeFromPoint?: (x: number, y: number) => Range | null;
+        caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+    };
+    let range = dokument.caretRangeFromPoint?.(x, y) ?? null;
+    if (!range) {
+        const position = dokument.caretPositionFromPoint?.(x, y);
+        if (position) {
+            range = dokument.createRange();
+            range.setStart(position.offsetNode, position.offset);
+            range.collapse(true);
+        }
+    }
+    return range && editor.contains(range.startContainer) ? range : null;
 }

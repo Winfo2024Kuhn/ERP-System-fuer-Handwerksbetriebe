@@ -151,7 +151,7 @@ describe('EmailComposeForm – Text, Signatur und KI', () => {
     });
 
     it('formuliert mit KI um und behält Signatur und Zitat', async () => {
-        routen['/api/email/beautify'] = { body: { body: 'Erster Absatz.\n\nZweiter Absatz.' } };
+        routen['/api/email/beautify'] = { body: { body: '<p>Erster Absatz.</p><p>Zweiter Absatz.</p>' } };
         render(<EmailComposeForm onClose={() => {}} replyEmailId={5} antwortPostfach={null}
             replyQuote='<div class="email-quote">Alte Nachricht</div>' initialRecipient="kunde@example.org" initialSubject="Re: x" />);
         const editor = screen.getByRole('textbox', { name: 'Nachricht' });
@@ -161,7 +161,7 @@ describe('EmailComposeForm – Text, Signatur und KI', () => {
         await waitFor(() => expect(editor.innerHTML).toContain('<p>Erster Absatz.</p><p>Zweiter Absatz.</p>'));
         expect(editor.innerHTML).toContain('Alte Nachricht');
         const anfrage = aufrufe.find(a => a.url === '/api/email/beautify')!;
-        expect(JSON.parse(String(anfrage.init?.body))).toMatchObject({ body: 'bitte schöner', context: 'Alte Nachricht' });
+        expect(JSON.parse(String(anfrage.init?.body))).toMatchObject({ body: '<p>bitte schöner</p>', context: 'Alte Nachricht' });
     });
 
     it('übernimmt HTML-Vorschläge und erkennt Zitate am Stil', async () => {
@@ -235,7 +235,7 @@ describe('EmailComposeForm – Text, Signatur und KI', () => {
         await waitFor(() => expect(editor.innerHTML).toContain('Sehr geehrter Herr Mustermann, gern.'));
         expect(screen.queryByRole('menu')).not.toBeInTheDocument();
         const anfrage = aufrufe.find(a => a.url === '/api/email/beautify')!;
-        expect(JSON.parse(String(anfrage.init?.body))).toEqual({ body: 'klar machen wir', context: null, stil: 'FOERMLICH' });
+        expect(JSON.parse(String(anfrage.init?.body))).toEqual({ body: '<p>klar machen wir</p>', context: null, stil: 'FOERMLICH' });
     });
 
     it('bietet „Ton des Verlaufs übernehmen“ nur mit zitierter Mail an und lässt sich per Tastatur bedienen', async () => {
@@ -268,7 +268,7 @@ describe('EmailComposeForm – Text, Signatur und KI', () => {
         await userEvent.click(await screen.findByRole('menuitem', { name: /Ton des Verlaufs/ }));
         await waitFor(() => expect(editor.innerHTML).toContain('Passt, Donnerstag geht klar.'));
         const anfrage = aufrufe.find(a => a.url === '/api/email/beautify')!;
-        expect(JSON.parse(String(anfrage.init?.body))).toEqual({ body: 'ja geht', context: 'Hi, passt Donnerstag?', stil: 'VERLAUF' });
+        expect(JSON.parse(String(anfrage.init?.body))).toEqual({ body: '<p>ja geht</p>', context: 'Hi, passt Donnerstag?', stil: 'VERLAUF' });
     });
 
     it('zeigt die Begründung, wenn das Backend den Stil ablehnt', async () => {
@@ -285,8 +285,9 @@ describe('EmailComposeForm – Text, Signatur und KI', () => {
     it('erklärt per Info-Knopf, was an die KI geht', async () => {
         render(<EmailComposeForm onClose={() => {}} />);
         await userEvent.click(screen.getByRole('button', { name: /Mehr zu: Text mit KI überarbeiten/ }));
-        expect(await screen.findByText(/Ihr Text wird an die KI geschickt/)).toBeInTheDocument();
-        expect(screen.getByText(/Grußformel und Name lässt die KI weg/)).toBeInTheDocument();
+        expect(await screen.findByText(/Ihr Text geht samt Formatierung an die KI/)).toBeInTheDocument();
+        expect(screen.getByText(/Grußformel und Name lässt sie weg/)).toBeInTheDocument();
+        expect(screen.getByText(/ohne typische KI-Floskeln\. Zahlen, Termine und Namen übernimmt sie unverändert\./)).toBeInTheDocument();
     });
 
     it('merkt Eingaben im Text als Änderung', async () => {

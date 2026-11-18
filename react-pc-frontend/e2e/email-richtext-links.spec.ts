@@ -1,6 +1,7 @@
-import type { Locator, Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
 import { test, expect } from './hilfen/test';
 import { designPruefung } from './hilfen/design';
+import { erwarteEineZeile, markiereText } from './hilfen/mailFeld';
 import { EINGANG, json, stubbeEmailCenter } from './hilfen/postfaecher';
 
 /**
@@ -23,36 +24,6 @@ async function stubbeMitAdresseImVerlauf(page: Page) {
     await page.route('**/api/emails/701', route => json(route, eingang));
     await page.route('**/api/emails/701/thread', route => json(route, { rootEmailId: 701, focusedEmailId: 701, emails: [eingang] }));
     return stub;
-}
-
-/** Markiert im Feld genau den angegebenen Text (wie mit der Maus). */
-async function markiereText(feld: Locator, text: string) {
-    await feld.evaluate((element, gesucht) => {
-        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
-        for (let knoten = walker.nextNode(); knoten; knoten = walker.nextNode()) {
-            const start = knoten.textContent?.indexOf(gesucht) ?? -1;
-            if (start < 0) continue;
-            const range = document.createRange();
-            range.setStart(knoten, start);
-            range.setEnd(knoten, start + gesucht.length);
-            window.getSelection()?.removeAllRanges();
-            window.getSelection()?.addRange(range);
-            return;
-        }
-        throw new Error(`Text nicht gefunden: ${gesucht}`);
-    }, text);
-}
-
-/** Kopfzeile „Nachricht“: Leiste und KI-Knopf stehen in einer Zeile, nichts bricht um. */
-async function erwarteEineZeile(page: Page) {
-    const leiste = await page.getByRole('toolbar', { name: 'Formatierung' }).boundingBox();
-    const ki = await page.getByRole('button', { name: 'KI-Optimierung' }).boundingBox();
-    const label = await page.getByText('Nachricht', { exact: true }).boundingBox();
-    expect(leiste && ki && label).toBeTruthy();
-    expect(Math.abs(leiste!.y + leiste!.height / 2 - (ki!.y + ki!.height / 2))).toBeLessThan(4);
-    // Gleiche Zeile wie „Nachricht“ (im Dialog steht darunter noch ein Hinweis).
-    expect(leiste!.y).toBeLessThan(label!.y + label!.height);
-    expect(leiste!.y + leiste!.height).toBeGreaterThan(label!.y);
 }
 
 test('Neue Mail: Text markieren, Link mit eigenem Text einfügen, ändern und senden', async ({ page }, info) => {

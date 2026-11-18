@@ -90,17 +90,18 @@ export function KiStilMenue({ isLoading, hatVerlauf, onWaehlen }: KiStilMenuePro
             <InfoButton titel="Text mit KI überarbeiten">
                 <InfoAbschnitt titel="Was passiert im Hintergrund?">
                     <p>
-                        Ihr Text wird an die KI geschickt und neu formuliert. Antworten Sie auf eine Mail, geht die
-                        zitierte Mail mit, damit die KI den Zusammenhang versteht – bei „Ton des Verlaufs übernehmen“
-                        richtet sie danach auch Anrede und Ton aus. Signatur und zitierte Mail bleiben unverändert
-                        stehen.
+                        Ihr Text geht samt Formatierung an die KI und wird neu formuliert. Antworten Sie auf eine Mail,
+                        geht die zitierte Mail mit, damit die KI den Zusammenhang versteht. Bei „Ton des Verlaufs
+                        übernehmen“ richtet sie danach auch Anrede und Ton aus. Tabellen, Signatur und zitierte Mail
+                        schreibt die KI nicht um, sie bleiben genau so stehen.
                     </p>
                 </InfoAbschnitt>
                 <InfoAbschnitt titel="Was bewirkt das?">
                     <p>
-                        Der Vorschlag ersetzt Ihren Text im Nachrichtenfeld. Gesendet wird erst, wenn Sie auf Senden
-                        klicken – Sie können vorher alles anpassen. Grußformel und Name lässt die KI weg, die kommen
-                        aus der Signatur.
+                        Der Vorschlag ersetzt Ihren Text im Nachrichtenfeld. Fett, Listen, Farben und Links bleiben
+                        erhalten. Die KI schreibt ohne Gedankenstriche und ohne typische KI-Floskeln. Zahlen, Termine
+                        und Namen übernimmt sie unverändert. Grußformel und Name lässt sie weg, die kommen aus der
+                        Signatur. Gesendet wird erst, wenn Sie auf Senden klicken.
                     </p>
                 </InfoAbschnitt>
             </InfoButton>

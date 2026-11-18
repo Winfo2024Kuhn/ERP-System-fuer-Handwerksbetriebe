@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import BestellungEditor, { BestellungEmailModal } from './BestellungEditor';
 import { ToastProvider } from '../components/ui/toast';
 import { ConfirmProvider } from '../components/ui/confirm-dialog';
+import { ANHANG_ZU_GROSS, MAX_ATTACHMENT_BYTES } from '../features/email/compose/anhangGrenze';
 
 vi.mock('../components/ui/PdfCanvasViewer', () => ({
     PdfCanvasViewer: ({ url }: { url: string }) => <div data-testid="pdf">{url}</div>,
@@ -60,6 +61,26 @@ describe('BestellungEmailModal Nachrichtentext', () => {
     });
 });
 
+describe('BestellungEmailModal Anhänge', () => {
+    it('hält die gleiche Größengrenze wie das E-Mail-Formular ein, auch für eingefügte Bilder', async () => {
+        vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:x'), revokeObjectURL: vi.fn() }));
+        render(
+            <ToastProvider><ConfirmProvider>
+                <BestellungEmailModal isOpen onClose={vi.fn()} lieferantId={1}
+                    lieferantName="Mustermann Stahlhandel" onSuccess={vi.fn()} />
+            </ConfirmProvider></ToastProvider>,
+        );
+        await screen.findByText('Max Mustermann', { selector: 'strong' });
+        const riesig = new File(['x'], 'Riesig.pdf', { type: 'application/pdf' });
+        Object.defineProperty(riesig, 'size', { value: MAX_ATTACHMENT_BYTES + 1 });
+        await userEvent.upload(screen.getByLabelText('Dateien als zusätzlichen Anhang auswählen'), [riesig, new File(['a'], 'Plan.pdf', { type: 'application/pdf' })]);
+
+        expect(await screen.findByText(ANHANG_ZU_GROSS)).toBeInTheDocument();
+        expect(screen.getByText('Plan.pdf')).toBeInTheDocument();
+        expect(screen.queryByText('Riesig.pdf')).not.toBeInTheDocument();
+    });
+});
+
 describe('BestellungEmailModal KI-Formulierung', () => {
     const oeffneDialog = () => render(
         <ToastProvider><ConfirmProvider>
@@ -71,7 +92,7 @@ describe('BestellungEmailModal KI-Formulierung', () => {
     it('schickt den eigenen Text an die KI und ersetzt ihn, die Signatur bleibt', async () => {
         const fetchMock = vi.mocked(fetch);
         fetchMock.mockImplementation(((url: string) => {
-            if (url === '/api/email/beautify') return antwort({ body: 'Guten Tag,\n\nwir bitten um ein Angebot bis Freitag.' });
+            if (url === '/api/email/beautify') return antwort({ body: '<p>Guten Tag,</p><p>wir bitten um ein Angebot bis Freitag.</p>' });
             if (url.startsWith('/api/email/signatures/default')) return antwort({ html: '<p>Max Mustermann</p>' });
             return antwort([]);
         }) as unknown as typeof fetch);
@@ -88,7 +109,7 @@ describe('BestellungEmailModal KI-Formulierung', () => {
 
         const anfrage = fetchMock.mock.calls.find(([url]) => url === '/api/email/beautify')!;
         expect(JSON.parse(String((anfrage[1] as RequestInit).body))).toEqual({
-            body: 'Sehr geehrte Damen und Herren,\n\nbitte erstellen Sie uns ein Angebot für die angehängten Positionen.',
+            body: '<p>Sehr geehrte Damen und Herren,</p><p><br></p><p>bitte erstellen Sie uns ein Angebot für die angehängten Positionen.</p>',
             context: 'Bestellung beim Lieferanten Mustermann Stahlhandel',
         });
     });

@@ -8,6 +8,10 @@ import java.util.Locale;
  * Nachbearbeitungs-Helfer für KI-generierte E-Mail-Texte.
  * Ziel: Nur den bereinigten E-Mail-Inhalt ohne einleitende Zeilen,
  * Codeblöcke oder Überschriften zurückgeben und Absätze sowie Aufzählungen erhalten.
+ *
+ * <p>{@link #sanitizePlainText} gilt für KI-Antworten in Klartext. Für HTML-Antworten nutzt
+ * {@code service.emailki.EmailKiAntwortRahmen} die Zeilen-Prüfungen
+ * {@link #istEinleitungsZeile} und {@link #istGrussZeile} je Absatz bzw. Zeile.
  */
 public final class EmailAiPostProcessor {
 
@@ -43,7 +47,7 @@ public final class EmailAiPostProcessor {
     }
 
     /** Entfernt führende und abschließende Markdown-Codeblöcke inklusive optionaler Sprache. */
-    static String stripCodeFences(String s) {
+    public static String stripCodeFences(String s) {
         // führender Codeblock
         s = s.replaceFirst("(?s)^\n*```[a-zA-Z0-9_-]*\n?", "");
         // abschließender Codeblock
@@ -73,33 +77,41 @@ public final class EmailAiPostProcessor {
         int i = 0;
         while (i < lines.length) {
             String ln = lines[i].trim();
-            if (ln.isEmpty()) { i++; continue; }
-            String lower = ln.toLowerCase(Locale.ROOT);
-
-            boolean isHeadingLike = ln.endsWith(":");
-            boolean containsIntroKeyword =
-                    lower.contains("hier ist") ||
-                    lower.contains("überarbeitet") || lower.contains("ueberarbeitet") ||
-                    lower.contains("verbessert") || lower.contains("optimiert") ||
-                    lower.contains("version:") || lower.contains("text:") ||
-                    lower.contains("e-mail:") || lower.contains("email:") || lower.contains("mail:") ||
-                    lower.startsWith("verbesserte version") ||
-                    lower.startsWith("überarbeitete version") || lower.startsWith("ueberarbeitete version") ||
-                    lower.startsWith("überarbeiteter text") || lower.startsWith("ueberarbeiteter text") ||
-                    lower.startsWith("optimierte e-mail") || lower.startsWith("optimierte email") ||
-                    lower.startsWith("antwort:") || lower.equals("antwort");
-
-            boolean politeIntroThenColon =
-                    (lower.startsWith("gerne") || lower.startsWith("gern ") || lower.startsWith("natürlich") ||
-                     lower.startsWith("natuerlich") || lower.startsWith("selbstverständlich") ||
-                     lower.startsWith("selbstverstaendlich") || lower.startsWith("klar") || lower.startsWith("sicher"))
-                            && (ln.contains(":") || lower.contains("hier ist"));
-
-            if (isHeadingLike && containsIntroKeyword) { i++; continue; }
-            if (politeIntroThenColon) { i++; continue; }
+            if (ln.isEmpty() || istEinleitungsZeile(ln)) { i++; continue; }
             break;
         }
         return joinFrom(lines, i);
+    }
+
+    /**
+     * Ob eine Zeile wie eine Einleitung der KI aussieht ("Hier ist der überarbeitete Text:",
+     * "Gerne, hier ist …:"), die nicht zur Mail gehört.
+     */
+    public static boolean istEinleitungsZeile(String zeile) {
+        if (zeile == null) return false;
+        String ln = zeile.trim();
+        String lower = ln.toLowerCase(Locale.ROOT);
+
+        boolean isHeadingLike = ln.endsWith(":");
+        boolean containsIntroKeyword =
+                lower.contains("hier ist") ||
+                lower.contains("überarbeitet") || lower.contains("ueberarbeitet") ||
+                lower.contains("verbessert") || lower.contains("optimiert") ||
+                lower.contains("version:") || lower.contains("text:") ||
+                lower.contains("e-mail:") || lower.contains("email:") || lower.contains("mail:") ||
+                lower.startsWith("verbesserte version") ||
+                lower.startsWith("überarbeitete version") || lower.startsWith("ueberarbeitete version") ||
+                lower.startsWith("überarbeiteter text") || lower.startsWith("ueberarbeiteter text") ||
+                lower.startsWith("optimierte e-mail") || lower.startsWith("optimierte email") ||
+                lower.startsWith("antwort:") || lower.equals("antwort");
+
+        boolean politeIntroThenColon =
+                (lower.startsWith("gerne") || lower.startsWith("gern ") || lower.startsWith("natürlich") ||
+                 lower.startsWith("natuerlich") || lower.startsWith("selbstverständlich") ||
+                 lower.startsWith("selbstverstaendlich") || lower.startsWith("klar") || lower.startsWith("sicher"))
+                        && (ln.contains(":") || lower.contains("hier ist"));
+
+        return (isHeadingLike && containsIntroKeyword) || politeIntroThenColon;
     }
 
     /** Schneidet paarige Anführungszeichen am Anfang und Ende des Textes ab. */
@@ -129,8 +141,7 @@ public final class EmailAiPostProcessor {
 
         int lastClosing = -1;
         for (int i = 0; i <= end; i++) {
-            String ln = lines[i].trim().toLowerCase(Locale.ROOT);
-            if (isClosingLine(ln)) {
+            if (istGrussZeile(lines[i])) {
                 lastClosing = i;
             }
         }
@@ -146,12 +157,11 @@ public final class EmailAiPostProcessor {
     }
 
     /**
-     * Ermittelt, ob eine Zeile wie eine Grußformel aussieht – sowohl deutsch als auch
-     * englisch.
+     * Ermittelt, ob eine Zeile wie eine Grußformel aussieht, deutsch oder englisch.
      */
-    private static boolean isClosingLine(String lower) {
-        if (lower == null) return false;
-        lower = lower.trim();
+    public static boolean istGrussZeile(String zeile) {
+        if (zeile == null) return false;
+        String lower = zeile.trim().toLowerCase(Locale.ROOT);
         if (lower.isEmpty()) return false;
         return lower.startsWith("mit freundlichen gr") ||
                lower.startsWith("viele gr") ||

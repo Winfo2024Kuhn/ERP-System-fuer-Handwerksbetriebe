@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-    aendereLink, entferneLink, fuegeLinkEin, fuehreAus, linkBeiAuswahl, machAuswahlZumLink, setzeSchriftgroesse,
+    aendereLink, entferneLink, fuegeHtmlEin, fuegeLinkEin, fuehreAus, linkBeiAuswahl, machAuswahlZumLink, setzeSchriftgroesse,
 } from './mailEditorDom';
 
 type ExecCommand = (befehl: string, ui?: boolean, wert?: string) => boolean;
@@ -210,5 +210,36 @@ describe('setzeSchriftgroesse', () => {
     it('meldet false, wenn der Browser die Größe nicht setzen kann', () => {
         const editor = editorMit('<p>x</p>');
         expect(setzeSchriftgroesse(editor, 'klein')).toBe(false);
+    });
+});
+
+describe('fuegeHtmlEin', () => {
+    const TABELLE = '<table style="border-collapse:collapse"><tbody><tr><td style="border:1px solid #cbd5e1;padding:4px 8px">A</td></tr></tbody></table>';
+
+    it('setzt bereinigtes HTML ohne Browser-Befehl als Knoten ein, Cursor dahinter', () => {
+        const editor = editorMit('<p>Hallo Welt</p>');
+        const range = markiere(editor.querySelector('p')!.firstChild!, 6, 10);
+        fuegeHtmlEin(editor, range, '<b>Max</b><img src=x onerror=alert(1)>');
+        expect(editor.innerHTML).toBe('<p>Hallo <b>Max</b><img src="x"></p>');
+        expect(window.getSelection()!.getRangeAt(0).startContainer).toBe(editor.querySelector('p'));
+    });
+
+    it('stellt Inline-Stile wieder her, die der Browser beim Einfügen wegkürzt', () => {
+        // Chrome lässt beim insertHTML Stile weg, die auf der Seite ohnehin gelten (Tailwind:
+        // border-style, border-collapse). Beim Empfänger fehlen dann die Rahmen.
+        const editor = editorMit('<p>x</p>');
+        dok.execCommand = vi.fn<ExecCommand>((befehl, _ui, wert) => {
+            if (befehl !== 'insertHTML' || !wert) return false;
+            const gekuerzt = wert.replace(/border-collapse:collapse/, '').replace('border:1px solid #cbd5e1', 'border-width:1px');
+            const range = window.getSelection()!.getRangeAt(0);
+            const vorlage = document.createElement('template');
+            vorlage.innerHTML = gekuerzt;
+            range.insertNode(vorlage.content);
+            return true;
+        });
+        fuegeHtmlEin(editor, markiere(editor.querySelector('p')!.firstChild!, 1, 1), TABELLE);
+        expect(editor.querySelector('table')!.getAttribute('style')).toBe('border-collapse:collapse');
+        expect(editor.querySelector('td')!.getAttribute('style')).toBe('border:1px solid #cbd5e1;padding:4px 8px');
+        expect(editor.innerHTML).not.toContain('data-mail-stil');
     });
 });

@@ -33,6 +33,7 @@ import java.util.Optional;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -150,7 +151,8 @@ class EmailControllerTest {
         @DisplayName("SQL Injection im Body wird als String behandelt")
         void sqlInjectionImBody() throws Exception {
             String sqlPayload = "'; DROP TABLE emails; --";
-            given(emailAiService.beautify(sqlPayload, null, EmailSchreibstil.RECHTSCHREIBUNG)).willReturn(sqlPayload);
+            given(emailAiService.beautify(sqlPayload, null, EmailSchreibstil.RECHTSCHREIBUNG))
+                    .willReturn("<p>" + sqlPayload + "</p>");
 
             EmailBeautifyRequest request = new EmailBeautifyRequest();
             request.setBody(sqlPayload);
@@ -158,14 +160,18 @@ class EmailControllerTest {
             mockMvc.perform(post("/api/email/beautify")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
-                    .andExpect(status().isOk());
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.body").value("<p>" + sqlPayload + "</p>"));
+            verify(emailAiService).beautify(sqlPayload, null, EmailSchreibstil.RECHTSCHREIBUNG);
         }
 
         @Test
         @DisplayName("XSS im Body")
         void xssImBody() throws Exception {
-            String xssPayload = "<script>alert('xss')</script>";
-            given(emailAiService.beautify(xssPayload, null, EmailSchreibstil.RECHTSCHREIBUNG)).willReturn(xssPayload);
+            String xssPayload = "<p>Hallo<script>alert('xss')</script><img src=x onerror=alert(1)>"
+                    + "<a href=\"javascript:alert(2)\">Max</a></p>";
+            given(emailAiService.beautify(xssPayload, null, EmailSchreibstil.RECHTSCHREIBUNG))
+                    .willReturn("<p>HalloMax</p>");
 
             EmailBeautifyRequest request = new EmailBeautifyRequest();
             request.setBody(xssPayload);
@@ -173,7 +179,9 @@ class EmailControllerTest {
             mockMvc.perform(post("/api/email/beautify")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
-                    .andExpect(status().isOk());
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.body").value("<p>HalloMax</p>"));
+            verify(emailAiService).beautify(xssPayload, null, EmailSchreibstil.RECHTSCHREIBUNG);
         }
 
         @Test
@@ -213,7 +221,7 @@ class EmailControllerTest {
         void verlaufOhneKontextGibt400() throws Exception {
             given(emailAiService.beautify("Test", null, EmailSchreibstil.VERLAUF))
                     .willThrow(new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                            "Kein Mail-Verlauf vorhanden – bitte einen anderen Stil wählen."));
+                            "Kein Mail-Verlauf vorhanden. Bitte einen anderen Stil wählen."));
 
             EmailBeautifyRequest request = new EmailBeautifyRequest();
             request.setBody("Test");
@@ -223,7 +231,42 @@ class EmailControllerTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isBadRequest())
-                    .andExpect(jsonPath("$.message").value("Kein Mail-Verlauf vorhanden – bitte einen anderen Stil wählen."));
+                    .andExpect(jsonPath("$.message").value("Kein Mail-Verlauf vorhanden. Bitte einen anderen Stil wählen."));
+        }
+
+        @Test
+        @DisplayName("Zu langer Text gibt 400 mit Meldung statt 502")
+        void zuLangGibt400() throws Exception {
+            given(emailAiService.beautify(any(), any(), any()))
+                    .willThrow(new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "Der Text ist zu lang für die KI-Formulierung. Bitte kürzen."));
+
+            EmailBeautifyRequest request = new EmailBeautifyRequest();
+            request.setBody("<p>" + "a".repeat(50_001) + "</p>");
+
+            mockMvc.perform(post("/api/email/beautify")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("Der Text ist zu lang für die KI-Formulierung. Bitte kürzen."));
+        }
+
+        @Test
+        @DisplayName("HTML mit Tabelle geht unverändert an den Dienst, HTML kommt zurück")
+        void htmlRundreise() throws Exception {
+            String html = "<p>Hallo Herr Mustermann, anbei die Preise:</p>"
+                    + "<table><tbody><tr><td>Geländer</td><td>1.234,56 €</td></tr></tbody></table>";
+            given(emailAiService.beautify(html, null, EmailSchreibstil.FOERMLICH)).willReturn(html);
+
+            EmailBeautifyRequest request = new EmailBeautifyRequest();
+            request.setBody(html);
+            request.setStil("FOERMLICH");
+
+            mockMvc.perform(post("/api/email/beautify")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.body").value(html));
         }
 
         @Test

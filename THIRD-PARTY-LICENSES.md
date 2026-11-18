@@ -22,7 +22,7 @@ sind unten aufgeführt und müssen bei Weitergabe der Software beachtet werden.
 | Flyway (Core) | (managed) | Apache License 2.0 | https://flywaydb.org/ |
 | Jakarta Mail | 2.0.1 | EPL 2.0 / GPL 2.0 mit Classpath Exception | https://eclipse-ee4j.github.io/mail/ |
 | Jakarta Activation | 2.0.1 | EDL 1.0 (BSD 3-Clause) | https://eclipse-ee4j.github.io/jaf/ |
-| jsoup | 1.17.2 | MIT License | https://jsoup.org/ |
+| jsoup | 1.23.2 | MIT License | https://jsoup.org/ |
 | Apache PDFBox | 3.0.2 | Apache License 2.0 | https://pdfbox.apache.org/ |
 | OpenPDF | 3.0.5 | LGPL 2.1 / MPL 2.0 | https://github.com/LibrePDF/OpenPDF |
 | Apache Commons Text | 1.10.0 | Apache License 2.0 | https://commons.apache.org/proper/commons-text/ |
@@ -30,6 +30,17 @@ sind unten aufgeführt und müssen bei Weitergabe der Software beachtet werden.
 | OpenCV (OpenPnP Wrapper) | 4.9.0-0 | Apache 2.0 (Wrapper), BSD 3-Clause (OpenCV) | https://github.com/openpnp/opencv |
 | H2 Database *(nur Test)* | (managed) | EPL 1.0 / MPL 2.0 | https://h2database.com/ |
 | Awaitility *(nur Test)* | (managed) | Apache License 2.0 | https://github.com/awaitility/awaitility |
+
+## Übernommene Regeln (kein Programmcode)
+
+| Werk | Version | Lizenz | Quelle | Verwendung |
+|---|---|---|---|---|
+| humanizer-de (Claude-Skill), © 2026 Martin Moeller, Teile © 2025 Siqi Chen (blader/humanizer) | 5.28.2 | MIT License | https://github.com/blader/humanizer (Original), Autor: https://martin-moeller.biz | Schreibregeln der E-Mail-KI in eigener Kurzfassung (`service/emailki/KiSchreibregeln`, `util/GedankenstrichBereinigung`) |
+
+Übernommen sind nur die Regeln in eigenen Worten (z. B. „keine Gedankenstriche als Satzzeichen“,
+„keine KI-Floskeln“, „Zahlen und Namen exakt übernehmen“), keine Texte aus dem Musterkatalog. Dessen
+aus der Wikipedia übernommene Teile („Anzeichen für KI-generierte Inhalte“, „Signs of AI writing“)
+stehen unter CC BY-SA 4.0 und sind hier nicht enthalten.
 
 ## React PC-Frontend
 
@@ -106,7 +117,7 @@ Lizenztexte liegen jeweils daneben (`LICENSE*`).
 > permissions and limitations under the License.
 
 ### MIT License
-Betrifft: Lombok, jsoup, React, React DOM, React Router, dnd-kit, Tiptap, Chart.js,
+Betrifft: Lombok, jsoup, humanizer-de (Schreibregeln der E-Mail-KI), React, React DOM, React Router, dnd-kit, Tiptap, Chart.js,
 clsx, tailwind-merge, Tailwind CSS, Vite, Vitest, jsPDF, scanic, scanic-ml (inkl. Modell DocCornerNet, Architektur von mapo80/DocCornerNet-CoordClass),
 ONNX Runtime Web, react-dropzone, react-webcam u.a.
 
@@ -183,4 +194,4 @@ Diese Datei dient der Erfüllung der Lizenzbedingungen aller eingebundenen Dritt
 Bibliotheken. Für die vollständigen Lizenztexte wird auf die jeweiligen Quellen und die
 Dateien in den Bibliotheks-Archiven (JAR/node_modules) verwiesen.
 
-Letzte Aktualisierung: Oktober 2026
+Letzte Aktualisierung: November 2026

@@ -51,13 +51,15 @@ Gezählt wurden Testdateien und Testmethoden (`@Test` + `@ParameterizedTest`, je
 
 **Mapper:** ProjektMapper, AnfrageMapper, KundeMapper, LieferantMapper, LeistungMapper, ArbeitsgangMapper, MieteMapper, ProduktkategorieMapper
 
-**Utility:** EmailHtmlSanitizer, EmailAiPostProcessor (jeweils + `…LueckenTest`)
+**Utility:** EmailHtmlSanitizer, EmailAiPostProcessor (jeweils + `…LueckenTest`), GedankenstrichBereinigung
+
+**E-Mail-KI (`service/emailki/`):** EmailKiVorbereitung, EmailKiNachbereitung, EmailKiHtmlBereinigung, EmailKiPrompt, KiSchreibregeln; dazu `EmailAiServiceTest` (Ablauf mit gemockter KI: Tabellen bleiben, Links und Schadcode aus der Antwort fliegen raus, Längengrenze)
 
 **Frontend (react-pc-frontend):** u. a. Button, Input, Card, Label, SelectCustom, DatePicker, ImageViewer, Dialog, ConfirmDialog, Toast, cn()-Utility, Seiten wie Monatsabschluss, Zeitkonten, Langzeitkrankmeldungen, Urlaubsanträge, Verrechnungslohn-Rechner
 
 **Frontend (react-zeiterfassung):** u. a. MobileDatePicker, NetworkStatusBadge, ImageViewer, OfflineService, Dashboard, Zeiterfassung, Tagesbuchungen, Urlaubsantrag, Spracheingabe (`VoiceInputButton`), Token-Transport (`mobileTransport`)
 
-**Bekannte Lücken:** `EmailAiServiceTest` ist vollständig auskommentiert (0 aktive Tests); `ProjektManagementServiceIntegrationTest.java` ist eine leere Datei; `ProjektManagementServiceIT` (2 Tests) läuft nie, weil Surefire nur `*Test`/`*Tests`/`Test*`/`*TestCase` ausführt.
+**Bekannte Lücken:** `ProjektManagementServiceIntegrationTest.java` ist eine leere Datei; `ProjektManagementServiceIT` (2 Tests) läuft nie, weil Surefire nur `*Test`/`*Tests`/`Test*`/`*TestCase` ausführt.
 
 ---
 

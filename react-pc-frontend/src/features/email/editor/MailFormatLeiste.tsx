@@ -2,6 +2,7 @@ import { Bold, Italic, Link2, Underline } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { MailAbsatzMenue } from './MailAbsatzMenue';
 import { MailSchriftMenue } from './MailSchriftMenue';
+import { MailTabelleMenue } from './MailTabelleMenue';
 import { LeistenKnopf, Trenner } from './mailLeisteTeile';
 import { pfeilNavigation } from './mailLeisteTasten';
 import type { MailEditor } from './useMailEditor';
@@ -16,7 +17,7 @@ interface MailFormatLeisteProps {
 
 /**
  * Eine Zeile Formatierung für Mail-Textfelder: Fett, Kursiv, Unterstrichen und
- * Link direkt, alles Weitere in den Menüs „Schrift“ und „Absatz“. Braucht nie
+ * Link direkt, alles Weitere in den Menüs „Schrift“, „Absatz“ und „Tabelle“. Braucht nie
  * eine zweite Zeile und kann außerhalb des Felds stehen (Kopfzeile).
  */
 export function MailFormatLeiste({ editor, className }: MailFormatLeisteProps) {
@@ -45,6 +46,7 @@ export function MailFormatLeiste({ editor, className }: MailFormatLeisteProps) {
             <Trenner />
             <MailSchriftMenue editor={editor} />
             <MailAbsatzMenue editor={editor} />
+            <MailTabelleMenue editor={editor} />
         </div>
     );
 }

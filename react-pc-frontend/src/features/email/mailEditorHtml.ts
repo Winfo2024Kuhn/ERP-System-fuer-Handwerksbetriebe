@@ -1,5 +1,4 @@
-import { escapeHtml } from '../../lib/emailAddress';
-import { parseHtmlInert, sanitizeHtml } from '../../lib/htmlSanitizer';
+import { htmlToText, parseHtmlInert, sanitizeHtml } from '../../lib/htmlSanitizer';
 import { verlinkeAdressen } from '../../lib/linkErkennungDom';
 
 /**
@@ -66,19 +65,9 @@ export function htmlFuerVersand(rawHtml?: string | null): string {
     return wrapper.innerHTML.trim();
 }
 
-/** Klartext der KI → Absätze; einzelne Umbrüche werden zu `<br>`. Der Text wird maskiert. */
-export function klartextAlsAbsaetze(text: string): string {
-    return text
-        .split(/\n{2,}/)
-        .map(absatz => absatz.trim())
-        .filter(Boolean)
-        .map(absatz => `<p>${escapeHtml(absatz).replace(/\n/g, '<br>')}</p>`)
-        .join('');
-}
-
 export interface EditorTeile {
-    /** Eigener Text ohne Signatur und Zitat, als Klartext. */
-    text: string;
+    /** Eigener Text ohne Signatur und Zitat, als HTML (Formatierung, Tabellen). */
+    eigenerHtml: string;
     signaturHtml: string;
     zitatHtml: string;
     zitatText: string;
@@ -98,24 +87,19 @@ export function zerlegeEditorHtml(editorHtml: string): EditorTeile {
     const zitatText = zitat?.textContent ?? '';
     zitat?.remove();
 
-    return { text: alsKlartextMitAbsaetzen(container), signaturHtml, zitatHtml, zitatText };
+    entferneLeerraumAmEnde(container);
+    return { eigenerHtml: container.innerHTML.trim(), signaturHtml, zitatHtml, zitatText };
 }
 
-/**
- * Text des Editors mit erhaltenen Absätzen (Leerzeile) und Umbrüchen –
- * `textContent` allein klebt `<p>Hallo</p><p>wir…</p>` zu „Hallowir…“ zusammen.
- */
-function alsKlartextMitAbsaetzen(container: HTMLElement): string {
-    container.querySelectorAll('br').forEach(br => br.replaceWith('\n'));
-    container.querySelectorAll('td, th').forEach(zelle => zelle.append(' '));
-    container.querySelectorAll('tr').forEach(zeile => zeile.append('\n'));
-    container.querySelectorAll('p, div, li').forEach(block => block.append('\n\n'));
-    return (container.textContent ?? '')
-        .split('\n')
-        .map(zeile => zeile.trim())
-        .join('\n')
-        .replace(/\n{3,}/g, '\n\n')
-        .trim();
+/** Leere Zeilen vor Signatur und Zitat gehören nicht zum eigenen Text. */
+function entferneLeerraumAmEnde(container: HTMLElement): void {
+    for (let letztes = container.lastChild; letztes; letztes = container.lastChild) {
+        const leer = !(letztes.textContent ?? '').trim();
+        const leererAbsatz = leer && (letztes.nodeName === 'P' || letztes.nodeName === 'DIV')
+            && !(letztes as Element).querySelector('img, table, hr');
+        if (!(leer && letztes.nodeType === Node.TEXT_NODE) && letztes.nodeName !== 'BR' && !leererAbsatz) return;
+        letztes.remove();
+    }
 }
 
 /**
@@ -128,7 +112,7 @@ function alsKlartextMitAbsaetzen(container: HTMLElement): string {
 export type KiStil = 'RECHTSCHREIBUNG' | 'FOERMLICH' | 'LOCKER' | 'VERLAUF';
 
 /** Meldung, wenn „Ton des Verlaufs übernehmen“ ohne zitierte Mail gewählt wird. */
-export const KEIN_VERLAUF_MELDUNG = 'Kein Mail-Verlauf vorhanden – bitte einen anderen Stil wählen.';
+export const KEIN_VERLAUF_MELDUNG = 'Kein Mail-Verlauf vorhanden. Bitte einen anderen Stil wählen.';
 
 export type KiFormulierung =
     | { status: 'ok'; html: string }
@@ -153,6 +137,8 @@ async function ablehnungsMeldung(res: Response): Promise<string | null> {
 
 /**
  * Lässt den eigenen Text im Editor von der KI neu formulieren (`POST /api/email/beautify`).
+ * Der eigene Text geht als HTML hin (Formatierung, Links, Tabellen) und kommt als
+ * HTML zurück; Tabellen und Bilder lässt das Backend unverändert stehen.
  * Signatur und Zitat bleiben unverändert; fehlt die Signatur im Editor, wird
  * `ersatzSignaturHtml` angehängt. Das Ergebnis ist bereinigtes Editor-HTML.
  *
@@ -166,7 +152,7 @@ export async function formuliereMitKi(
     optionen: { kontext?: string | null; ersatzSignaturHtml?: string; stil?: KiStil } = {},
 ): Promise<KiFormulierung> {
     const teile = zerlegeEditorHtml(editorHtml);
-    if (!teile.text) return { status: 'kein-text' };
+    if (!htmlToText(teile.eigenerHtml).trim()) return { status: 'kein-text' };
 
     const { stil } = optionen;
     const zitatText = teile.zitatText.trim();
@@ -176,7 +162,7 @@ export async function formuliereMitKi(
     const res = await fetch('/api/email/beautify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ body: teile.text, context, ...(stil ? { stil } : {}) }),
+        body: JSON.stringify({ body: teile.eigenerHtml, context, ...(stil ? { stil } : {}) }),
     });
     if (res.status === 400) {
         const meldung = await ablehnungsMeldung(res);
@@ -188,10 +174,7 @@ export async function formuliereMitKi(
     const vorschlag = typeof data?.body === 'string' ? data.body.trim() : '';
     if (!vorschlag) return { status: 'kein-vorschlag' };
 
-    // Nur echte Block-Struktur gilt als HTML – ein einzelnes <b> oder „Preis < 100“
-    // ist Klartext und behält so seine Absätze.
-    const vorschlagHtml = /<(p|div|br|ul|ol|li|table)\b/i.test(vorschlag) ? vorschlag : klartextAlsAbsaetze(vorschlag);
     const signatur = teile.signaturHtml || optionen.ersatzSignaturHtml || '';
     const zitat = teile.zitatHtml ? `<br>${teile.zitatHtml}` : '';
-    return { status: 'ok', html: sanitizeHtml(`${vorschlagHtml}${signatur}${zitat}`) };
+    return { status: 'ok', html: sanitizeHtml(`${vorschlag}${signatur}${zitat}`) };
 }

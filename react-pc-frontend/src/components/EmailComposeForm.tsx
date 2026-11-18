@@ -238,7 +238,7 @@ export function EmailComposeForm(props: EmailComposeFormProps) {
                     <EmailComposeNachricht
                         inline={inline} editorRef={editorRef} beautifying={nachricht.beautifying}
                         aktuellesHtml={nachricht.aktuellesHtml} onFormulieren={(stil) => void nachricht.formuliere(stil)}
-                        onInput={nachricht.beimTippen}
+                        onInput={nachricht.beimTippen} onDateien={anhaenge.hochladen}
                     />
                     <EmailComposeAnhaenge
                         inline={inline} anhaenge={anhaenge} dateien={uploadedFiles} vorschau={vorschau}
