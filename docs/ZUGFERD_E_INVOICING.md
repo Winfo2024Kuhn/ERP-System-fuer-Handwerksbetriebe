@@ -52,7 +52,7 @@ POST /api/dokument-generator/zugferd-pdf
 ZUGFeRD-Hybrid-PDF (PDF/A-3 + eingebettetes XML) als Download bzw. E-Mail-Anhang
 ```
 
-PDF und XML entstehen aus **demselben** `RechnungDto`. Der Mapper rechnet die Beträge genau wie der Summenblock im PDF (`RechnungPdfService#addSummenBlock`) – XML und Papier stimmen auf den Cent überein.
+PDF und XML entstehen aus **demselben** `RechnungDto`. Der Mapper rechnet die Beträge genau wie der Summenblock im PDF (`RechnungPdfService#addSummenBlock` bzw. mit Basisdokument `RechnungAbrechnungsstandPdf`/`AbrechnungsstandRechnung`) – XML und Papier stimmen auf den Cent überein.
 
 ### 1.4 Methoden
 

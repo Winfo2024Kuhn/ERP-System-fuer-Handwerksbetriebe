@@ -50,7 +50,8 @@ class ZugferdRechnungMapperTest {
 
     private static AbrechnungsverlaufPdfDto verlauf(String basisNetto, AbrechnungspositionPdfDto... vorher) {
         return new AbrechnungsverlaufPdfDto("AB-2026-0007", "Auftragsbestätigung", LocalDate.of(2026, 9, 1),
-                basisNetto != null ? new BigDecimal(basisNetto) : null, List.of(vorher));
+                basisNetto != null ? new BigDecimal(basisNetto) : null, List.of(vorher), true, null, false,
+                null, null);
     }
 
     private static AbrechnungspositionPdfDto vorher(String nummer, String netto) {
@@ -288,7 +289,7 @@ class ZugferdRechnungMapperTest {
         @Test
         void abschlagOhneAuftragsbezugHatKeineBeschreibung() {
             AbrechnungsverlaufPdfDto ohneNummer = new AbrechnungsverlaufPdfDto(null, "Angebot", null,
-                    new BigDecimal("2000"), List.of());
+                    new BigDecimal("2000"), List.of(), true, null, false, null, null);
 
             ZugferdDaten mitTyp = MAPPER.ausRechnung(
                     rechnung(kopf(" ", null, 14), List.of(), null, ohneNummer, "500"));

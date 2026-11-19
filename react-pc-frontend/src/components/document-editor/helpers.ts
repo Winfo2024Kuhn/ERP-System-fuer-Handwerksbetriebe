@@ -2,6 +2,7 @@ import { CLOSURE_BLOCK_ID } from './blockOps';
 import type { DocBlock, LeistungApiDto } from './types';
 import { DEFAULT_ZAHLUNGSZIEL_TAGE } from '../../lib/zahlungsziel';
 import { htmlZuEinzeiler } from '../../lib/htmlSanitizer';
+import { abschlussZeilenSpeicherwert, type AbschlussZeilen } from './abschluss/abschlussZeilen';
 
 interface AdresseKundeLike {
     name?: string;
@@ -923,6 +924,8 @@ export interface DokumentSignaturDaten {
     dokumentTyp: string;
     globalRabatt: number;
     balkenAnzeigen: boolean;
+    /** Fehlt oder leer = alles automatisch, zaehlt dann nicht mit (Bestandsrechnungen). */
+    abschlussZeilen?: AbschlussZeilen;
 }
 
 /**
@@ -950,5 +953,11 @@ export function baueDokumentSignatur(daten: DokumentSignaturDaten): string {
         dokumentTyp: daten.dokumentTyp,
         globalRabatt: daten.globalRabatt,
         balkenAnzeigen: daten.balkenAnzeigen,
+        ...signaturAbschlussZeilen(daten.abschlussZeilen),
     });
+}
+
+function signaturAbschlussZeilen(zeilen: AbschlussZeilen | undefined): { abschlussZeilen?: AbschlussZeilen } {
+    const wert = zeilen ? abschlussZeilenSpeicherwert(zeilen) : undefined;
+    return wert ? { abschlussZeilen: wert } : {};
 }

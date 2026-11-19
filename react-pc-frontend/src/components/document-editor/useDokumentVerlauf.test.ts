@@ -9,6 +9,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useDokumentVerlauf, type AenderungsAuftrag, type DokumentStand } from './useDokumentVerlauf';
+import { abschlussZeileAuftrag } from './abschluss/useAbschlussZeilen';
 import type { DocBlock } from './types';
 
 function neuerBlock(id: string, title: string): DocBlock {
@@ -23,6 +24,7 @@ function neuerStand(overrides: Partial<DokumentStand> = {}): DokumentStand {
         zahlungsziel: 8,
         rechnungsadresse: 'Max Mustermann\nMusterweg 1\n12345 Musterstadt',
         balkenAnzeigen: true,
+        abschlussZeilen: {},
         ...overrides,
     };
 }
@@ -162,6 +164,23 @@ describe('useDokumentVerlauf', () => {
         });
 
         expect(meldung).toEqual({ anzahl: 3, bezeichnung: '3 Schritte', ziel: null });
+    });
+
+    it('nimmt das Ausblenden einer Abschluss-Zeile mit Rueckgaengig zurueck', () => {
+        const { hook, getStand } = aufbauen();
+
+        act(() => {
+            hook.result.current.aendern(abschlussZeileAuftrag({}, 'differenz', { ausgeblendet: true }));
+        });
+        expect(getStand().abschlussZeilen).toEqual({ differenz: { ausgeblendet: true } });
+
+        let meldung: ReturnType<typeof hook.result.current.rueckgaengig>;
+        act(() => {
+            meldung = hook.result.current.rueckgaengig();
+        });
+
+        expect(meldung!.bezeichnung).toBe('Zeile ausgeblendet');
+        expect(getStand().abschlussZeilen).toEqual({});
     });
 
     it('wiederholen() nach rueckgaengig() stellt den Stand wieder her', () => {

@@ -257,6 +257,12 @@ Stornierte Dokumente werden aus der Summe **ausgenommen**. Bei Teilrechnungen me
 
 Auf Rechnungen kann ein **Abrechnungsstand** (Auftragssumme, bereits gestellte Rechnungen, offener Rest, wahlweise mit Fortschrittsbalken) gedruckt werden.
 
+**Zeilen „diese Rechnung“ und Differenzzeile anpassen.** Der Handwerker kann im Editor die Zeile „diese Rechnung“ (bzw. „diese Abschlagsrechnung“/„diese Schlussrechnung“) und die Differenzzeile („Zusätzliche Leistungen“/„Nicht angefallen“) selbst beschriften (Bezeichnung + Unterzeile) oder ganz aus dem PDF nehmen. Der Editor speichert das im `positionenJson` unter `abschlussZeilen` und schickt es beim Drucken im PDF-Request mit (`abrechnungsverlauf.dieseRechnungZeile` / `.differenzZeile`, siehe 10.6).
+- **Nur die Zeile fällt weg.** Auftragssumme, Zahlbetrag, Steuer, Fortschrittsbalken und „Noch offen“ bleiben exakt gleich; der Rest wird weiter mit der Differenz gerechnet (bei abschließender Rechnung also 0,00 € bzw. ausgeblendet wie bisher). Die Spalte geht dann optisch nicht mehr auf – das ist gewollt.
+- Die Differenzzeile gibt es nur, wenn die Rechnung den Auftrag abschließt und mindestens 1 Cent Unterschied besteht; sonst hat ihre Anpassung keine Wirkung. Vorzeichen und Betrag bleiben automatisch.
+- Eine eigene Unterzeile der Differenzzeile geht vor den automatisch ermittelten Leistungsnamen (`differenzHinweis`) und vor „Unterschied zur Auftragsbestätigung“.
+- Gebuchte Rechnungen: Die Anpassung ist Teil des Dokumentinhalts (`positionenJson`) und wird beim erneuten Drucken wieder mitgeschickt.
+
 ### 8.4 Endpoint
 
 ```
@@ -374,6 +380,22 @@ Der Service parst Rich-Text-HTML in PDF-Elemente und unterstützt:
 ### 10.5 ZUGFeRD-Integration
 
 Beim Export oder Versand im Format **„ZUGFeRD PDF“** wird das PDF über `POST /api/dokument-generator/zugferd-pdf` mit maschinenlesbaren Rechnungsdaten (EN 16931) angereichert (siehe `ZUGFERD_E_INVOICING.md`). Vorher prüft das Programm, ob die Firmendaten vollständig sind – sonst wird **nicht** gebucht.
+
+### 10.6 Abrechnungsstand im Summenblock
+
+Den Summenblock einer Rechnung mit Bezug zu Angebot/Auftragsbestätigung (`abrechnungsverlauf.basisdokumentBetragNetto > 0`) setzt `service/rechnungpdf/RechnungAbrechnungsstandPdf` (Abschnitte „Abrechnungsstand“ und „Zu zahlen“); die Beträge (Differenz, Rest, Prozent, Anteil) rechnet die reine Klasse `AbrechnungsstandRechnung`. `RechnungPdfService#addSummenBlock` ruft nur noch auf. Zeichenbausteine (Überschrift, Balken, Übersichts-/Zahlzeile) liegen in `SummenblockBausteine`, Farben in `RechnungPdfStil`.
+
+Request-Felder im Objekt `abrechnungsverlauf` von `POST /api/dokument-generator/pdf`, `/preview` und `/zugferd-pdf`:
+
+| Feld | Typ | Bedeutung |
+|---|---|---|
+| `balkenAnzeigen` | Boolean | Fortschrittsbalken zeigen; fehlt = ja |
+| `differenzHinweis` | String | Leistungsnamen als Unterzeile der Differenzzeile; serverseitig bereinigt, max. 200 Zeichen |
+| `schliesstAuftragAb` | Boolean | einfache Rechnung über den ganzen Auftrag schließt ihn ab; fehlt = nein |
+| `dieseRechnungZeile` | Objekt, optional | `{ "bezeichnung", "unterzeile", "ausblenden" }` für die Zeile „diese Rechnung“ |
+| `differenzZeile` | Objekt, optional | dasselbe für die Differenzzeile |
+
+`dieseRechnungZeile`/`differenzZeile` (Record `AbschlussZeileAnpassung`): jedes Feld einzeln optional. `bezeichnung`/`unterzeile` leer oder nur Leerzeichen → automatischer Text; `ausblenden` fehlt → `false`. Serverseitig werden die Texte getrimmt, Steuer- und unsichtbare Formatzeichen (auch Zeilenumbrüche, Richtungsumkehr U+202E, Zero-Width U+200B) zu Leerzeichen und auf 80 (`bezeichnung`) bzw. 200 Zeichen (`unterzeile`) mit „…“ gekürzt (`util/DruckTextBegrenzung`). Unsinn wird gekürzt, nicht abgelehnt; es gibt keine neuen Fehlercodes. Der Text ist Klartext, HTML wird wörtlich gedruckt. Die E-Rechnung (XML) ist davon nicht betroffen, ihre Beträge ändern sich nie.
 
 ---
 

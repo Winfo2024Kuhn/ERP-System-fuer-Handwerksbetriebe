@@ -133,7 +133,7 @@ class DokumentGeneratorControllerZugferdExportTest {
 
     private static AbrechnungsverlaufRequest verlauf(AbrechnungspositionRequest... vorher) {
         return new AbrechnungsverlaufRequest("AB-2026-0007", "Auftragsbestätigung", "2026-09-01", 2000.0,
-                List.of(vorher), true, null);
+                List.of(vorher), true, null, null, null, null);
     }
 
     @Test
@@ -263,7 +263,7 @@ class DokumentGeneratorControllerZugferdExportTest {
         @Test
         void kaputtesDatumImAbrechnungsverlaufWirdAbgefangen() throws Exception {
             AbrechnungsverlaufRequest kaputt = new AbrechnungsverlaufRequest("AB-2026-0007", "Auftragsbestätigung",
-                    "2026-13-45", 2000.0, List.of(), true, null);
+                    "2026-13-45", 2000.0, List.of(), true, null, null, null, null);
 
             mvc.perform(post("/api/dokument-generator/zugferd-pdf")
                             .contentType(MediaType.APPLICATION_JSON)

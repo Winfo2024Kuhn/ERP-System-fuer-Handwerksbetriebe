@@ -107,7 +107,7 @@ Die Nummer wird beim Anlegen vergeben, nicht erst beim Buchen. Über „Dokument
 
 Der Abschlagsbetrag lässt sich im Editor nicht mehr ändern. Für einen anderen Betrag den Entwurf löschen und neu anlegen.
 
-Im Editor zeigt der Block „Abschluss“: „Auftragssumme“, frühere Rechnungen, „Diese Abschlagsrechnung“, „Noch offen nach dieser Rechnung“ und „Zahlbetrag“. Der Balken „Mit dieser Rechnung sind … % des Auftrags abgerechnet“ lässt sich mit „Fortschrittsbalken auf die Rechnung drucken“ abschalten. Abschläge werden je Auftrag durchgezählt („Abschlagsrechnung #2“); stornierte zählen mit.
+Im Editor zeigt der Block „Abschluss“: „Auftragssumme“, frühere Rechnungen, „diese Abschlagsrechnung“ (darunter z. B. „ca. 30 % der Auftragssumme“ oder „Eingabe: 1.190,00 € brutto“), „Noch offen nach dieser Rechnung“ und „Zahlbetrag“. Der Balken „Mit dieser Rechnung sind … % des Auftrags abgerechnet“ lässt sich mit „Fortschrittsbalken auf die Rechnung drucken“ abschalten. Abschläge werden je Auftrag durchgezählt („Abschlagsrechnung #2“); stornierte zählen mit.
 
 ## Schlussrechnung schreiben
 
@@ -115,7 +115,18 @@ Im Editor zeigt der Block „Abschluss“: „Auftragssumme“, frühere Rechnun
 2. Karte „Schlussrechnung“ wählen. Sie ist erst wählbar, wenn es eine nicht stornierte Abschlags- oder Teilrechnung gibt.
 3. Das Programm rechnet den Restbetrag selbst aus: „Die Schlussrechnung wird automatisch über den verbleibenden Restbetrag von … erstellt.“
 
-Abgezogen werden **alle nicht stornierten Rechnungen** zu diesem Auftrag – auch solche, die noch nicht bezahlt oder noch Entwurf sind. Die Positionen aus dem Auftrag lassen sich im Editor anpassen, z. B. nicht angefallene Leistungen löschen oder zusätzliche ergänzen. Der Block „Abschluss“ zeigt dann „Nicht angefallen“ bzw. „Zusätzliche Leistungen“, „Noch offen nach dieser Rechnung“ und den „Zahlbetrag“.
+Abgezogen werden **alle nicht stornierten Rechnungen** zu diesem Auftrag – auch solche, die noch nicht bezahlt oder noch Entwurf sind. Die Positionen aus dem Auftrag lassen sich im Editor anpassen, z. B. nicht angefallene Leistungen löschen oder zusätzliche ergänzen. Der Block „Abschluss“ zeigt dann „Nicht angefallen“ bzw. „Zusätzliche Leistungen“, „Noch offen nach dieser Rechnung“ und den „Zahlbetrag“ (siehe „Abrechnungsstand im Block „Abschluss““).
+
+## Abrechnungsstand im Block „Abschluss“
+
+Hängt eine Rechnung an einem Angebot oder einer Auftragsbestätigung, druckt das PDF unter der Summe den **Abrechnungsstand**. Der Block „Abschluss“ im Editor zeigt dieselben Zeilen und Beträge: bei Abschlags-, Teil- und Schlussrechnungen, und bei einer einfachen Rechnung, die den ganzen Auftrag abrechnet (es gibt am Angebot keine andere Rechnung). Dort stehen dann „Auftragssumme“, „diese Rechnung“ (klein geschrieben wie auf dem PDF), bei Abweichungen „Zusätzliche Leistungen“ oder „Nicht angefallen“ (darunter die betroffenen Leistungen), „Noch offen nach dieser Rechnung“ und „Zahlbetrag“. Rechnet eine Rechnung den ganzen Auftrag ohne frühere Rechnung ab, fehlt „Noch offen“ wie auf dem PDF.
+
+Zwei Zeilen lassen sich anpassen, solange die Rechnung nicht gebucht ist:
+
+- **Stift („Text ändern“)** an „diese Rechnung“ (bzw. „diese Abschlagsrechnung“, „diese Schlussrechnung“) und an der Zeile „Zusätzliche Leistungen“ / „Nicht angefallen“: Bezeichnung (bis 80 Zeichen) und Unterzeile (bis 200 Zeichen) eintragen. Enter oder Klick daneben übernimmt, Esc verwirft. Ein leeres Feld nimmt wieder den automatischen Text. „Automatischen Text verwenden“ setzt beide Felder zurück.
+- **Durchgestrichenes Auge („Zeile von der Rechnung entfernen“):** Die Zeile verschwindet aus dem PDF. Im Editor bleibt sie blass mit dem Hinweis „Steht nicht auf der Rechnung“ stehen. „Wieder einblenden“ oder Strg+Z holt sie zurück.
+
+Die Beträge bleiben immer automatisch: Zahlbetrag, Steuer, „Noch offen“ und der Fortschrittsbalken ändern sich nicht. Fehlt eine Zeile, geht die Spalte auf dem Papier deshalb nicht mehr auf. Das ist so gewollt. Die Anpassungen werden mit der Rechnung gespeichert und gelten auch nach dem Buchen für jeden Nachdruck. Das (i) neben „Abrechnungsstand“ erklärt das kurz.
 
 ## Entwurf löschen
 

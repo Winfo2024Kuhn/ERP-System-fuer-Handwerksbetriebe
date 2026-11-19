@@ -723,6 +723,18 @@ describe('baueDokumentSignatur', () => {
             .not.toBe(baueDokumentSignatur(basisDaten()));
     });
 
+    it('liefert fuer geaenderte Abschluss-Zeilen eine andere Signatur', () => {
+        expect(baueDokumentSignatur(basisDaten({ abschlussZeilen: { differenz: { ausgeblendet: true } } })))
+            .not.toBe(baueDokumentSignatur(basisDaten()));
+    });
+
+    it('zaehlt leere Abschluss-Zeilen nicht als Aenderung (Bestandsrechnungen)', () => {
+        expect(baueDokumentSignatur(basisDaten({ abschlussZeilen: {} })))
+            .toBe(baueDokumentSignatur(basisDaten()));
+        expect(baueDokumentSignatur(basisDaten({ abschlussZeilen: { differenz: { bezeichnung: '  ' } } })))
+            .toBe(baueDokumentSignatur(basisDaten()));
+    });
+
     it('liefert fuer geaenderte blocks eine andere Signatur', () => {
         expect(baueDokumentSignatur(basisDaten({ blocks: [dummyBlock({ title: 'Leistung B' })] })))
             .not.toBe(baueDokumentSignatur(basisDaten()));

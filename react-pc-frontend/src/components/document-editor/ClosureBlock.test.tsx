@@ -209,3 +209,94 @@ describe('ClosureBlock – Abrechnungsstand der Schlussrechnung', () => {
         });
     });
 });
+
+/**
+ * Einfache Rechnung, die den ganzen Auftrag abrechnet, und eigene Texte bzw.
+ * ausgeblendete Zeilen im Abrechnungsstand (Nutzerwunsch 11/2026).
+ */
+describe('ClosureBlock – einfache Rechnung und eigene Zeilen', () => {
+    const summaryFuer = (gesamtNetto: number): ClosureSummary => ({
+        gesamtNetto, sections: [], sonstigeTotal: gesamtNetto, hasSonstige: true,
+    });
+    // Auftrag 5.404,00 netto, Rechnung 6.479,75 netto.
+    const einfache = (extra = {}) => (
+        <ClosureBlock
+            summary={summaryFuer(6479.75)}
+            dokumentTyp="RECHNUNG"
+            basisdokumentBetragNetto={5404}
+            schliesstAuftragAb
+            differenzHinweis="Treppengeländer Edelstahl mit Glasfüllung"
+            {...extra}
+        />
+    );
+
+    it('zeigt den Abrechnungsstand wie im PDF', () => {
+        render(einfache());
+
+        expect(screen.getByText('Auftragssumme')).toBeInTheDocument();
+        expect(screen.getByText(/6\.430,76 €/)).toBeInTheDocument();
+        expect(screen.getByText('diese Rechnung')).toBeInTheDocument();
+        expect(screen.getByText(/−\s*7\.710,90 €/)).toBeInTheDocument();
+        // Wie im PDF: ganzer Auftrag ohne Vorrechnung -> keine Zeile „Noch offen“.
+        expect(screen.queryByText('Noch offen nach dieser Rechnung')).toBeNull();
+        expect(screen.getByText('Zusätzliche Leistungen')).toBeInTheDocument();
+        expect(screen.getByText(/\+\s*1\.280,14 €/)).toBeInTheDocument();
+        expect(screen.getByText('Treppengeländer Edelstahl mit Glasfüllung')).toBeInTheDocument();
+        expect(screen.getByText(/sind 100 % des Auftrags abgerechnet/)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Mehr zu: Abrechnungsstand/ })).toBeInTheDocument();
+    });
+
+    it('zeigt bei der Abschlagsrechnung die Unterzeile wie im PDF', () => {
+        render(
+            <ClosureBlock
+                summary={summaryFuer(5000)}
+                dokumentTyp="ABSCHLAGSRECHNUNG"
+                abschlagBetragNetto={1500}
+                basisdokumentBetragNetto={5000}
+                abschlagInfo={{ modus: 'brutto', eingabeWert: 1785 }}
+            />
+        );
+
+        expect(screen.getByText('diese Abschlagsrechnung')).toBeInTheDocument();
+        expect(screen.getByText('Eingabe: 1.785,00 € brutto')).toBeInTheDocument();
+    });
+
+    it('zeigt keinen Abrechnungsstand, wenn die einfache Rechnung den Auftrag nicht abschliesst', () => {
+        render(einfache({ schliesstAuftragAb: false }));
+
+        expect(screen.queryByText('Auftragssumme')).toBeNull();
+        expect(screen.getByText('Gesamtsumme Netto')).toBeInTheDocument();
+    });
+
+    it('bietet gesperrt keine Knoepfe an', () => {
+        render(einfache({ abschlussZeilen: { dieseRechnung: { bezeichnung: 'Rechnung Treppengeländer' } } }));
+
+        expect(screen.getByText('Rechnung Treppengeländer')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Text ändern' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Zeile von der Rechnung entfernen' })).toBeNull();
+    });
+
+    it('meldet das Ausblenden der Differenzzeile an den Editor', () => {
+        const onAbschlussZeileAendern = vi.fn();
+        render(einfache({ onAbschlussZeileAendern }));
+
+        const knoepfe = screen.getAllByRole('button', { name: 'Zeile von der Rechnung entfernen' });
+        expect(knoepfe).toHaveLength(2);
+        fireEvent.click(knoepfe[1]);
+
+        expect(onAbschlussZeileAendern).toHaveBeenCalledWith('differenz', { ausgeblendet: true });
+    });
+
+    it('laesst Zahlbetrag und Rest gleich, wenn Zeilen ausgeblendet sind', () => {
+        render(einfache({
+            onAbschlussZeileAendern: vi.fn(),
+            abschlussZeilen: { dieseRechnung: { ausgeblendet: true }, differenz: { ausgeblendet: true } },
+        }));
+
+        expect(screen.getAllByText('Steht nicht auf der Rechnung')).toHaveLength(2);
+        expect(screen.getAllByRole('button', { name: 'Wieder einblenden' })).toHaveLength(2);
+        expect(screen.getByText('Zahlbetrag')).toBeInTheDocument();
+        expect(screen.getAllByText(/7\.710,90 €/).length).toBeGreaterThanOrEqual(2);
+        expect(screen.getByText(/\+\s*1\.280,14 €/)).toBeInTheDocument();
+    });
+});

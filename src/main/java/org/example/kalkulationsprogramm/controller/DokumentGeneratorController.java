@@ -16,6 +16,8 @@ import org.example.kalkulationsprogramm.service.RechnungPdfService.KopfdatenDto;
 import org.example.kalkulationsprogramm.service.RechnungPdfService.LayoutDto;
 import org.example.kalkulationsprogramm.service.RechnungPdfService.RechnungDto;
 import org.example.kalkulationsprogramm.service.ZugferdErstellService;
+import org.example.kalkulationsprogramm.service.rechnungpdf.AbschlussZeileAnpassung;
+import org.example.kalkulationsprogramm.util.DruckTextBegrenzung;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -69,20 +71,6 @@ public class DokumentGeneratorController {
             Double eingabeWert) { // Originalwert der Eingabe (z.B. 30 bei 30%)
     }
 
-    /**
-     * Zeichenlimit fuer die Unterzeile der Differenzzeile. Darueber zerlegt ein
-     * ueberlanger Wert das Layout des Summenblocks im PDF.
-     */
-    private static final int DIFFERENZ_HINWEIS_MAX_LAENGE = 200;
-
-    /** Kuerzt den Client-Text auf eine Laenge, die der Summenblock verkraftet. */
-    private static String kuerzeDifferenzHinweis(String hinweis) {
-        if (hinweis == null || hinweis.length() <= DIFFERENZ_HINWEIS_MAX_LAENGE) {
-            return hinweis;
-        }
-        return hinweis.substring(0, DIFFERENZ_HINWEIS_MAX_LAENGE - 1) + "…";
-    }
-
     public record AbrechnungsverlaufRequest(
             String basisdokumentNummer,
             String basisdokumentTyp,
@@ -93,9 +81,10 @@ public class DokumentGeneratorController {
             Boolean balkenAnzeigen,
             /**
              * Leistungen hinter der Differenzzeile der Schlussrechnung, kommasepariert.
-             * Client-Text, der ungeprueft ins PDF gedruckt wird — deshalb serverseitig
-             * auf {@link #DIFFERENZ_HINWEIS_MAX_LAENGE} gekuerzt. Das Frontend begrenzt
-             * die Liste zwar auf vier Namen, das ist aber keine Zusicherung.
+             * Client-Text, der als Klartext ins PDF gedruckt wird — deshalb serverseitig
+             * wie die Unterzeile einer {@link AbschlussZeileAnpassung} bereinigt und auf
+             * {@link AbschlussZeileAnpassung#UNTERZEILE_MAX_LAENGE} Zeichen gekuerzt. Das
+             * Frontend begrenzt die Liste zwar auf vier Namen, das ist aber keine Zusicherung.
              */
             String differenzHinweis,
             /**
@@ -105,16 +94,19 @@ public class DokumentGeneratorController {
              * offener Rest. Fehlt der Wert (gebuchte Rechnungen, aeltere Clients):
              * nein, damit sich an bestehenden Rechnungen nichts aendert.
              */
-            Boolean schliesstAuftragAb) {
-
-        /** Ohne Abschluss-Kennzeichen: Verhalten wie vor der einfachen Rechnung mit 100 %. */
-        public AbrechnungsverlaufRequest(String basisdokumentNummer, String basisdokumentTyp,
-                                         String basisdokumentDatum, Double basisdokumentBetragNetto,
-                                         List<AbrechnungspositionRequest> positionen,
-                                         Boolean balkenAnzeigen, String differenzHinweis) {
-            this(basisdokumentNummer, basisdokumentTyp, basisdokumentDatum, basisdokumentBetragNetto,
-                 positionen, balkenAnzeigen, differenzHinweis, null);
-        }
+            Boolean schliesstAuftragAb,
+            /**
+             * Optional: Zeile „diese Rechnung“ umbenennen ({@code bezeichnung},
+             * {@code unterzeile}) oder ausblenden. Fehlt das Objekt: wie bisher.
+             * Texte werden beim Lesen bereinigt und gekuerzt, siehe {@link AbschlussZeileAnpassung}.
+             */
+            AbschlussZeileAnpassung dieseRechnungZeile,
+            /**
+             * Optional: Differenzzeile („Zusätzliche Leistungen“/„Nicht angefallen“)
+             * umbenennen oder ausblenden; die Unterzeile geht vor {@code differenzHinweis}.
+             * Ohne Differenz wirkungslos. Betraege aendern sich nie.
+             */
+            AbschlussZeileAnpassung differenzZeile) {
     }
 
     public record AbrechnungspositionRequest(
@@ -440,8 +432,11 @@ public class DokumentGeneratorController {
                     // Fehlendes Flag = Balken an: Bestandsdokumente und aeltere
                     // Clients sollen aussehen wie bisher.
                     avReq.balkenAnzeigen() == null || avReq.balkenAnzeigen(),
-                    kuerzeDifferenzHinweis(avReq.differenzHinweis()),
-                    Boolean.TRUE.equals(avReq.schliesstAuftragAb())
+                    DruckTextBegrenzung.begrenze(avReq.differenzHinweis(),
+                            AbschlussZeileAnpassung.UNTERZEILE_MAX_LAENGE),
+                    Boolean.TRUE.equals(avReq.schliesstAuftragAb()),
+                    avReq.dieseRechnungZeile(),
+                    avReq.differenzZeile()
             );
         }
 
