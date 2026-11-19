@@ -12,6 +12,7 @@ import {
     type Verlauf,
 } from '../../lib/aenderungsVerlauf';
 import type { DocBlock } from './types';
+import type { AbschlussZeilen } from './abschluss/abschlussZeilen';
 
 /**
  * Bindet den generischen Aenderungsverlauf (`src/lib/aenderungsVerlauf.ts`) an
@@ -29,6 +30,8 @@ export interface DokumentStand {
     /** Nie undefined; leer = ''. */
     rechnungsadresse: string;
     balkenAnzeigen: boolean;
+    /** Eigene Texte bzw. ausgeblendete Zeilen im Abrechnungsstand; {} = automatisch. */
+    abschlussZeilen: AbschlussZeilen;
 }
 
 /** Wohin die UI nach einem Rueckgaengig/Wiederholen scrollen bzw. welches Feld sie fokussieren soll. */

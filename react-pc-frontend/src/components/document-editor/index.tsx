@@ -137,7 +137,7 @@ import '@fontsource/open-sans/latin-400-italic.css';
 import '@fontsource/open-sans/latin-700.css';
 import '@fontsource/open-sans/latin-700-italic.css';
 import '@fontsource/montserrat/latin-600.css';
-import { blocksToHtml, calculateNetto, calculateNettoNachRabatt, extractBoldFromHtml, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, gruppiereFuerAnzeige, computeClosureSummary, zahlungszielPlaceholderToChipHtml, chipHtmlToZahlungszielPlaceholder, berechneZahlungszielDatum, DEFAULT_ZAHLUNGSZIEL_TAGE, MIN_ZAHLUNGSZIEL_TAGE, MAX_ZAHLUNGSZIEL_TAGE, ZAHLUNGSZIEL_NACHFRAGE_AB_TAGEN, defaultsLabelKandidaten, mussAufBezugsdokumentWarten, mussAufKontextWarten, repariereLeeresBezugsdatumInStandardtext, parseBlocksAusPositionenJson, vergleicheLeistungen, formatiereDifferenzHinweis, baueDokumentSignatur, weichtVonLeistungAb, anzeigeEinheitDerLeistung } from './helpers';
+import { blocksToHtml, calculateNetto, calculateNettoNachRabatt, extractBoldFromHtml, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, gruppiereFuerAnzeige, computeClosureSummary, zahlungszielPlaceholderToChipHtml, chipHtmlToZahlungszielPlaceholder, berechneZahlungszielDatum, DEFAULT_ZAHLUNGSZIEL_TAGE, MIN_ZAHLUNGSZIEL_TAGE, MAX_ZAHLUNGSZIEL_TAGE, ZAHLUNGSZIEL_NACHFRAGE_AB_TAGEN, defaultsLabelKandidaten, mussAufBezugsdokumentWarten, mussAufKontextWarten, repariereLeeresBezugsdatumInStandardtext, parseBlocksAusPositionenJson, baueDokumentSignatur, weichtVonLeistungAb, anzeigeEinheitDerLeistung } from './helpers';
 import { schliesstEinfacheRechnungAuftragAb } from '../../lib/abrechnungsverlauf';
 import { AlternativGruppeBox } from './AlternativGruppeBox';
 import { AlternativGruppeDialog } from './AlternativGruppeDialog';
@@ -148,6 +148,11 @@ import { useIdsVerfuegbar } from '../ids/useIdsVerfuegbar';
 import { ServiceBlock } from './ServiceBlock';
 import { TextBlock } from './TextBlock';
 import { ClosureBlock } from './ClosureBlock';
+import { abschlussZeileAuftrag, useAbschlussZeilen } from './abschluss/useAbschlussZeilen';
+import { abschlussZeilenSpeicherwert, normalisiereAbschlussZeilen, type AbschlussZeilen } from './abschluss/abschlussZeilen';
+import { baueAbrechnungsverlaufRequest, brauchtAbrechnungsverlauf, ladeAbrechnungsverlaufFuerPdf, type PdfAbrechnungsverlauf } from './abschluss/abrechnungsverlaufRequest';
+import { useDifferenzHinweis } from './abschluss/useDifferenzHinweis';
+import { useVorschauMarker } from './vorschau/useVorschauMarker';
 import { SeparatorBlock } from './SeparatorBlock';
 import { SectionHeaderBlock } from './SectionHeaderBlock';
 import { SortableBlock } from './SortableBlock';
@@ -183,20 +188,6 @@ interface ImportedGaebBlock {
 }
 
 type PreviewLayoutBlock = FormBlock | (Omit<FormBlock, 'type'> & { type: 'watermark' });
-
-type PdfAbrechnungsverlauf = Pick<AbrechnungsverlaufDto, 'basisdokumentNummer' | 'basisdokumentTyp' | 'basisdokumentBetragNetto'> & {
-    basisdokumentDatum?: string;
-    positionen: Array<Pick<AbrechnungspositionDto, 'dokumentNummer' | 'typ' | 'datum' | 'betragNetto' | 'abschlagsNummer'>>;
-    /** Fortschrittsbalken im Abrechnungsstand drucken. */
-    balkenAnzeigen: boolean;
-    /** Leistungen hinter der Differenzzeile der Schlussrechnung, kommasepariert. */
-    differenzHinweis: string | null;
-    /**
-     * Einfache Rechnung, die den Auftrag abschliesst: das PDF rechnet sie wie
-     * eine Schlussrechnung (100 %, "Nicht angefallen", Rest 0,00 €).
-     */
-    schliesstAuftragAb: boolean;
-};
 
 /** Inline-editable Rechnungsadresse – changes only the document, not the customer table */
 function RechnungsadresseBlock({
@@ -513,6 +504,8 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
         balkenAnzeigenRef.current = neu;
         setBalkenAnzeigen(neu);
     }, []);
+    // Eigene Texte bzw. ausgeblendete Zeilen im Abrechnungsstand (positionenJson.abschlussZeilen).
+    const { abschlussZeilen, abschlussZeilenRef, setzeAbschlussZeilen } = useAbschlussZeilen();
     // Detaillierte Abrechnungspositionen für die ClosureBlock-Anzeige
     const [abrechnungsPositionen, setAbrechnungsPositionen] = useState<Array<{
         dokumentNummer: string;
@@ -588,12 +581,14 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
         zahlungsziel: kontextDatenRef.current.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE,
         rechnungsadresse: kontextDatenRef.current.rechnungsadresse ?? '',
         balkenAnzeigen: balkenAnzeigenRef.current,
-    }), [kontextDatenRef]);
+        abschlussZeilen: abschlussZeilenRef.current,
+    }), [kontextDatenRef, abschlussZeilenRef]);
 
     const schreibeStand = useCallback((werte: Partial<DokumentStand>) => {
         if (werte.blocks !== undefined) setzeBlocks(werte.blocks);
         if (werte.globalRabatt !== undefined) setzeGlobalRabatt(werte.globalRabatt);
         if (werte.balkenAnzeigen !== undefined) setzeBalkenAnzeigen(werte.balkenAnzeigen);
+        if (werte.abschlussZeilen !== undefined) setzeAbschlussZeilen(werte.abschlussZeilen);
         if (werte.datum !== undefined) {
             datumRef.current = werte.datum;
             setDatum(werte.datum);
@@ -624,7 +619,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
             }
             setzeKontextDaten(naechste);
         }
-    }, [setzeBlocks, setzeGlobalRabatt, setzeBalkenAnzeigen, setzeKontextDaten, kontextDatenRef, adresseUserEditedRef, zahlungszielUserEditedRef]);
+    }, [setzeBlocks, setzeGlobalRabatt, setzeBalkenAnzeigen, setzeAbschlussZeilen, setzeKontextDaten, kontextDatenRef, adresseUserEditedRef, zahlungszielUserEditedRef]);
 
     const verlauf = useDokumentVerlauf({ leseStand, schreibeStand, gesperrt: isLocked });
 
@@ -927,6 +922,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                     // Ladebaseline fuer baueDokumentSignatur unten -- die State-Variable
                     // balkenAnzeigen ist zu diesem Zeitpunkt noch nicht aktualisiert.
                     let geladenerBalken = true;
+                    let geladeneAbschlussZeilen: AbschlussZeilen = {};
                     if (data.positionenJson) {
                         try {
                             const parsed = JSON.parse(data.positionenJson);
@@ -940,6 +936,9 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                                 // Fehlendes Flag = an: Bestandsrechnungen behalten ihren Balken.
                                 geladenerBalken = parsed.abrechnungsstandBalkenAnzeigen !== false;
                                 setzeBalkenAnzeigen(geladenerBalken);
+                                // Fehlender Schluessel = alles automatisch (Bestandsrechnungen).
+                                geladeneAbschlussZeilen = normalisiereAbschlussZeilen(parsed.abschlussZeilen);
+                                setzeAbschlussZeilen(geladeneAbschlussZeilen);
                                 setGespeichertSchliesstAuftragAb(parsed.schliesstAuftragAb === true);
                                 if (parsed.abschlagInfo) {
                                     setAbschlagInfo(parsed.abschlagInfo);
@@ -980,6 +979,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                             dokumentTyp: data.typ,
                             globalRabatt: loadedGlobalRabatt,
                             balkenAnzeigen: geladenerBalken,
+                            abschlussZeilen: geladeneAbschlussZeilen,
                         });
                         setHasUnsavedChanges(false);
                     }, 0);
@@ -1334,10 +1334,13 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
             // Zahl anderer Rechnungen (Verlauf nicht geladen) = weglassen statt raten.
             const schliesstAuftragAbSpeichern = !isLocked && andereAktiveRechnungen !== null
                 && schliesstEinfacheRechnungAuftragAb(dokumentTyp, andereAktiveRechnungen, false);
+            // Nur Abweichungen vom Automatischen speichern (fehlt = alles automatisch).
+            const abschlussZeilenSpeichern = abschlussZeilenSpeicherwert(abschlussZeilen);
             const positionenData = JSON.stringify({
                 blocks: persistedBlocks,
                 globalRabatt,
                 abrechnungsstandBalkenAnzeigen: balkenAnzeigen,
+                ...(abschlussZeilenSpeichern ? { abschlussZeilen: abschlussZeilenSpeichern } : {}),
                 ...(schliesstAuftragAbSpeichern ? { schliesstAuftragAb: true } : {}),
                 ...(abschlagInfo ? { abschlagInfo } : {})
             });
@@ -1396,7 +1399,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                     setDokument(updated);
                     setDokumentNummer(updated.dokumentNummer);
                     syncDocumentIdInUrl(updated.id);
-                    const currentState = baueDokumentSignatur({ blocks: persistedBlocks, datum: datumRef.current, betreff, dokumentTyp, globalRabatt, balkenAnzeigen });
+                    const currentState = baueDokumentSignatur({ blocks: persistedBlocks, datum: datumRef.current, betreff, dokumentTyp, globalRabatt, balkenAnzeigen, abschlussZeilen });
                     lastSavedStateRef.current = currentState;
                     setHasUnsavedChanges(false);
                     // Gespeicherten Stand spiegeln: wird direkt danach gebucht, stimmt
@@ -1460,7 +1463,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                     setDokument(created);
                     setDokumentNummer(created.dokumentNummer);
                     syncDocumentIdInUrl(created.id);
-                    const currentState = baueDokumentSignatur({ blocks: persistedBlocks, datum: datumRef.current, betreff, dokumentTyp, globalRabatt, balkenAnzeigen });
+                    const currentState = baueDokumentSignatur({ blocks: persistedBlocks, datum: datumRef.current, betreff, dokumentTyp, globalRabatt, balkenAnzeigen, abschlussZeilen });
                     lastSavedStateRef.current = currentState;
                     setHasUnsavedChanges(false);
                     // Gespeicherten Stand spiegeln: wird direkt danach gebucht, stimmt
@@ -1493,7 +1496,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
         }
         return null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [dokument, dokumentTyp, datum, betreff, blocks, projektId, anfrageId, isLocked, syncDocumentIdInUrl, konfliktMeldung, bereitsAbgerechnetDurchAndere, globalRabatt, balkenAnzeigen, andereAktiveRechnungen]);
+    }, [dokument, dokumentTyp, datum, betreff, blocks, projektId, anfrageId, isLocked, syncDocumentIdInUrl, konfliktMeldung, bereitsAbgerechnetDurchAndere, globalRabatt, balkenAnzeigen, abschlussZeilen, andereAktiveRechnungen]);
 
     // Imperatives Handle fuer die Seite (Task 7a, Issue #82): der
     // Untaetigkeits-Timer der Seite (useIdleTimer + useDatensatzLock) darf
@@ -1517,7 +1520,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
     // Einfuegen/Entfernen des Markers nicht als "ungespeicherte Aenderung" zaehlt.
     useEffect(() => {
         const persistedBlocks = blocks.filter(b => b.id !== CLOSURE_BLOCK_ID);
-        const currentState = baueDokumentSignatur({ blocks: persistedBlocks, datum, betreff, dokumentTyp, globalRabatt, balkenAnzeigen });
+        const currentState = baueDokumentSignatur({ blocks: persistedBlocks, datum, betreff, dokumentTyp, globalRabatt, balkenAnzeigen, abschlussZeilen });
         if (lastSavedStateRef.current === '') {
             lastSavedStateRef.current = currentState;
             return;
@@ -1527,20 +1530,20 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
         // zuruecksetzt, das Dirty-Flag loeschen und die geaenderte Adresse
         // bzw. das geaenderte Zahlungsziel ginge beim Schliessen verloren.
         setHasUnsavedChanges(currentState !== lastSavedStateRef.current || adresseGeaendert || zahlungszielGeaendert);
-    }, [blocks, datum, betreff, dokumentTyp, globalRabatt, balkenAnzeigen, adresseGeaendert, zahlungszielGeaendert]);
+    }, [blocks, datum, betreff, dokumentTyp, globalRabatt, balkenAnzeigen, abschlussZeilen, adresseGeaendert, zahlungszielGeaendert]);
 
     // --- Auto-Save ---
     useEffect(() => {
         if (isLocked) return;
         const intervalId = setInterval(() => {
             const persistedBlocks = blocks.filter(b => b.id !== CLOSURE_BLOCK_ID);
-            const currentState = baueDokumentSignatur({ blocks: persistedBlocks, datum, betreff, dokumentTyp, globalRabatt, balkenAnzeigen });
+            const currentState = baueDokumentSignatur({ blocks: persistedBlocks, datum, betreff, dokumentTyp, globalRabatt, balkenAnzeigen, abschlussZeilen });
             if ((currentState !== lastSavedStateRef.current || adresseGeaendert || zahlungszielGeaendert) && !saving && !speicherKonfliktRef.current) {
                 handleSave();
             }
         }, 10000);
         return () => clearInterval(intervalId);
-    }, [blocks, datum, betreff, dokumentTyp, globalRabatt, balkenAnzeigen, saving, isLocked, handleSave, adresseGeaendert, zahlungszielGeaendert]);
+    }, [blocks, datum, betreff, dokumentTyp, globalRabatt, balkenAnzeigen, abschlussZeilen, saving, isLocked, handleSave, adresseGeaendert, zahlungszielGeaendert]);
 
     // --- Tab schliessen (X-Button-Ablauf, Issue #82) ---
     // Feste Reihenfolge laut Spec: (1) Warnung bei ungespeicherten Aenderungen
@@ -2423,7 +2426,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
             // Datum aus dem Ref. Sonst meldet die Change-Detection direkt nach
             // dem Buchen eine Abweichung, die niemand mehr speichern kann.
             const persistedBlocks = blocks.filter(b => b.id !== CLOSURE_BLOCK_ID);
-            const currentState = baueDokumentSignatur({ blocks: persistedBlocks, datum: datumRef.current, betreff, dokumentTyp, globalRabatt, balkenAnzeigen });
+            const currentState = baueDokumentSignatur({ blocks: persistedBlocks, datum: datumRef.current, betreff, dokumentTyp, globalRabatt, balkenAnzeigen, abschlussZeilen });
             lastSavedStateRef.current = currentState;
             setHasUnsavedChanges(false);
             // Muessen mit zurueck: nach dem Buchen ist das Dokument gesperrt und
@@ -2533,29 +2536,10 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
         }
     };
 
-    /**
-     * Namen der Leistungen, die den Unterschied zwischen Auftragsbestaetigung und
-     * Schlussrechnung ausmachen — als Unterzeile der Differenzzeile.
-     *
-     * Das Vorzeichen entscheidet, welche Seite genannt wird: wurde weniger
-     * abgerechnet als beauftragt, sind Leistungen entfallen; wurde mehr
-     * abgerechnet, sind welche dazugekommen. Rein beschreibend, der Betrag
-     * ergibt sich unabhaengig davon als Ausgleichsgroesse.
-     */
-    const differenzHinweis = useMemo(() => {
-        // Die einfache Rechnung, die den Auftrag abschliesst, bekommt im PDF
-        // dieselbe Differenzzeile wie die Schlussrechnung (siehe
-        // schliesstEinfacheRechnungAuftragAb, gesperrt zaehlt nur das gespeicherte Kennzeichen).
-        // Gesperrt braucht es die Zahl anderer Rechnungen nicht (nur das Gespeicherte zaehlt).
-        const mitDifferenzzeile = dokumentTyp === 'SCHLUSSRECHNUNG'
-            || ((isLocked || andereAktiveRechnungen !== null)
-                && schliesstEinfacheRechnungAuftragAb(dokumentTyp, andereAktiveRechnungen ?? 0, isLocked, gespeichertSchliesstAuftragAb));
-        if (!mitDifferenzzeile || basisdokumentBlocks.length === 0) return '';
-        const differenzNetto = (basisdokumentBetragNetto ?? 0) - calculateNettoNachRabatt(blocks, globalRabatt);
-        if (Math.abs(differenzNetto) < 0.01) return '';
-        const { entfallen, zusaetzlich } = vergleicheLeistungen(basisdokumentBlocks, blocks);
-        return formatiereDifferenzHinweis(differenzNetto > 0 ? entfallen : zusaetzlich);
-    }, [dokumentTyp, basisdokumentBlocks, blocks, basisdokumentBetragNetto, globalRabatt, andereAktiveRechnungen, isLocked, gespeichertSchliesstAuftragAb]);
+    const { einfacheRechnungSchliesstAb, differenzHinweis } = useDifferenzHinweis({
+        dokumentTyp, isLocked, andereAktiveRechnungen, gespeichertSchliesstAuftragAb,
+        basisdokumentBlocks, basisdokumentBetragNetto, blocks, globalRabatt,
+    });
 
     const createPdfRequest = async (isPreview: boolean, withDraftWatermark: boolean = false) => {
         const { layoutBlocks, backgroundImage, backgroundImagePage2 } = await fetchTemplateData(dokumentTyp);
@@ -2689,50 +2673,23 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
             zahlungszielTage: kontextDaten.zahlungsziel ?? null
         };
 
-        // Abrechnungsverlauf für Rechnungstypen mit Basisdokument laden
         const schlusstext = '';
         let abrechnungsverlauf: PdfAbrechnungsverlauf | null = null;
-        const rechnungsTypen: AusgangsGeschaeftsDokumentTyp[] = ['RECHNUNG', 'TEILRECHNUNG', 'ABSCHLAGSRECHNUNG', 'SCHLUSSRECHNUNG'];
-        if (dokument?.vorgaengerId && rechnungsTypen.includes(dokumentTyp)) {
-            try {
-                const verlaufRes = await fetch(`/api/ausgangs-dokumente/${dokument.vorgaengerId}/abrechnungsverlauf`);
-                if (verlaufRes.ok) {
-                    const verlauf: AbrechnungsverlaufDto & { basisdokumentDatum?: string } = await verlaufRes.json();
-                    // Filter out the current document from the Abrechnungsverlauf positions
-                    const otherPositions = (verlauf.positionen || []).filter(
-                        (pos: AbrechnungspositionDto) => pos.id !== dokument.id && !pos.storniert
-                    );
-                    // Always send abrechnungsverlauf when basisdokument exists
-                    // (even with 0 other positions, to show Gesamtauftragssumme on first Abschlagsrechnung)
-                    if (verlauf.basisdokumentBetragNetto != null && verlauf.basisdokumentBetragNetto > 0) {
-                        const schliesstAuftragAb = schliesstEinfacheRechnungAuftragAb(dokumentTyp, otherPositions.length, isLocked, gespeichertSchliesstAuftragAb);
-                        // Gesperrt und abschliessend: keine Vorrechnungen mitschicken. Das
-                        // Backend wertet das Kennzeichen nur ohne Vorrechnungen aus, und
-                        // spaeter angelegte Rechnungen sind keine Vorrechnungen dieser Rechnung.
-                        const vorrechnungen = schliesstAuftragAb && isLocked ? [] : otherPositions;
-                        abrechnungsverlauf = {
-                            basisdokumentNummer: verlauf.basisdokumentNummer,
-                            basisdokumentTyp: verlauf.basisdokumentTyp,
-                            basisdokumentDatum: verlauf.basisdokumentDatum,
-                            basisdokumentBetragNetto: verlauf.basisdokumentBetragNetto,
-                            positionen: vorrechnungen.map((pos: AbrechnungspositionDto) => ({
-                                dokumentNummer: pos.dokumentNummer,
-                                typ: pos.typ,
-                                datum: pos.datum,
-                                betragNetto: pos.betragNetto,
-                                abschlagsNummer: pos.abschlagsNummer,
-                            })),
-                            balkenAnzeigen,
-                            differenzHinweis: differenzHinweis || null,
-                            // Ohne andere aktive Rechnung rechnet die einfache Rechnung
-                            // alles ab; was fehlt, ist "nicht angefallen" statt "noch offen".
-                            // Gesperrt zaehlt nur das gespeicherte Kennzeichen.
-                            schliesstAuftragAb,
-                        };
-                    }
-                }
-            } catch (e) {
-                console.error('Abrechnungsverlauf konnte nicht geladen werden:', e);
+        if (dokument?.vorgaengerId && brauchtAbrechnungsverlauf(dokumentTyp, dokument.vorgaengerId)) {
+            const verlauf = await ladeAbrechnungsverlaufFuerPdf(dokument.vorgaengerId);
+            if (verlauf) {
+                abrechnungsverlauf = baueAbrechnungsverlaufRequest({
+                    verlauf,
+                    dokumentId: dokument.id,
+                    dokumentTyp,
+                    isLocked,
+                    gespeichertSchliesstAuftragAb,
+                    balkenAnzeigen,
+                    differenzHinweis,
+                    abschlussZeilen,
+                    positionenNetto: computeClosureSummary(blocks).gesamtNetto,
+                    abschlagBetragNetto,
+                });
             }
         }
 
@@ -2759,6 +2716,25 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
             abschlagInfo: dokumentTyp === 'ABSCHLAGSRECHNUNG' && abschlagInfo ? abschlagInfo : undefined,
         };
     };
+
+    // Mark preview as stale when content changes.
+    // `kontextDaten` steht als ganzes Objekt drin, nicht nur die Adresse: auch
+    // Zahlungsziel & Co. landen ueber `createPdfRequest` im PDF und gehoeren
+    // damit zum Vorschau-Inhalt. Die Objekt-Identitaet aendert sich nur bei
+    // einem neuen Kontext-Stand (useDokumentKontext), loest also keine Endlosschleife aus.
+    // `dokumentNummer` ebenfalls: sie wird erst beim ersten Speichern vom
+    // Server vergeben, vorher steht "VORSCHAU" im PDF.
+    // `balkenAnzeigen` und `abschlussZeilen` aendern nur den Abrechnungsstand im PDF;
+    // Rabatt, Abschlag und Sperre liest createPdfRequest ebenfalls.
+    // (Zustand beim Rendern anpassen: so sieht der Token-Effekt unten den Marker
+    // schon im selben Commit.)
+    const { schluessel: vorschauInhalt, geaendert: vorschauInhaltGeaendert } = useVorschauMarker(
+        {
+            blocks, datum, betreff, dokumentTyp, kontextDaten, dokumentNummer, balkenAnzeigen, abschlussZeilen,
+            globalRabatt, abschlagBetragNetto, abschlagInfo, isLocked,
+        },
+        () => { if (showPreview && previewUrl) setPreviewStale(true); },
+    );
 
     // Vorschau-Block steht hinter createPdfRequest, weil handlePreview es aufruft.
     // --- Preview & Export ---
@@ -2798,31 +2774,13 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                 if (requestId === previewRequestIdRef.current) setPreviewLoading(false);
             });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [blocks, datum, betreff, dokumentTyp, kontextDaten, dokumentNummer]);
+    }, [vorschauInhalt]);
 
     /** Vorschau neu erzeugen, mit Ladeanzeige (Knopf, Debounce-Timer). */
     const handlePreview = useCallback(() => {
         setPreviewLoading(true);
         return erzeugeVorschau();
     }, [erzeugeVorschau]);
-
-    // Mark preview as stale when content changes.
-    // `kontextDaten` steht als ganzes Objekt drin, nicht nur die Adresse: auch
-    // Zahlungsziel & Co. landen ueber `createPdfRequest` im PDF und gehoeren
-    // damit zum Vorschau-Inhalt. Die Objekt-Identitaet aendert sich nur bei
-    // einem neuen Kontext-Stand (useDokumentKontext), loest also keine Endlosschleife aus.
-    // `dokumentNummer` ebenfalls: sie wird erst beim ersten Speichern vom
-    // Server vergeben, vorher steht "VORSCHAU" im PDF.
-    // (Zustand beim Rendern anpassen: so sieht der Token-Effekt unten den Marker
-    // schon im selben Commit.)
-    const [vorschauInhaltVorher, setVorschauInhaltVorher] = useState({ blocks, datum, betreff, dokumentTyp, kontextDaten, dokumentNummer });
-    const vorschauInhaltGeaendert = vorschauInhaltVorher.blocks !== blocks || vorschauInhaltVorher.datum !== datum
-        || vorschauInhaltVorher.betreff !== betreff || vorschauInhaltVorher.dokumentTyp !== dokumentTyp
-        || vorschauInhaltVorher.kontextDaten !== kontextDaten || vorschauInhaltVorher.dokumentNummer !== dokumentNummer;
-    if (vorschauInhaltGeaendert) {
-        setVorschauInhaltVorher({ blocks, datum, betreff, dokumentTyp, kontextDaten, dokumentNummer });
-        if (showPreview && previewUrl) setPreviewStale(true);
-    }
 
     // Nach dem Speichern (Token, siehe Effekt unten) die Ladeanzeige beim Rendern
     // einschalten – unter derselben Bedingung, unter der der Effekt neu rendert.
@@ -2849,7 +2807,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
     // bliebe die Vorschau nach einer Adressaenderung dauerhaft als veraltet
     // markiert (und damit hinter dem Lade-Skelett verborgen).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [blocks, datum, betreff, dokumentTyp, showPreview, kontextDaten, dokumentNummer]);
+    }, [vorschauInhalt, showPreview]);
 
     // Nach jedem erfolgreichen Speichern die Vorschau sofort neu rendern.
     // Damit landet z.B. eine geaenderte Rechnungsadresse direkt im Vorschau-PDF,
@@ -3007,12 +2965,18 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                     summary={closureSummary}
                     dokumentTyp={dokumentTyp}
                     abschlagBetragNetto={abschlagBetragNetto}
+                    abschlagInfo={abschlagInfo}
                     bereitsAbgerechnetDurchAndere={bereitsAbgerechnetDurchAndere}
                     abrechnungsPositionen={abrechnungsPositionen}
                     basisdokumentBetragNetto={basisdokumentBetragNetto}
                     globalRabatt={globalRabatt}
                     firmenfarbe={firmenfarbe}
                     differenzHinweis={differenzHinweis}
+                    schliesstAuftragAb={einfacheRechnungSchliesstAb}
+                    abschlussZeilen={abschlussZeilen}
+                    onAbschlussZeileAendern={isLocked ? undefined : (schluessel, neu) => {
+                        verlauf.aendern(abschlussZeileAuftrag(abschlussZeilenRef.current, schluessel, neu));
+                    }}
                     balkenAnzeigen={balkenAnzeigen}
                     onBalkenAnzeigenChange={isLocked ? undefined : (anzeigen) => {
                         verlauf.aendern({

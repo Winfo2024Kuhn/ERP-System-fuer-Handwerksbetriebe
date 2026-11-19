@@ -1224,7 +1224,10 @@ class RechnungPdfServiceTest {
                             "RE-2026/03/00011", "TEILRECHNUNG", LocalDate.of(2026, 3, 1),
                             BigDecimal.valueOf(4000), null)),
                     balkenAnzeigen,
-                    differenzHinweis);
+                    differenzHinweis,
+                    false,
+                    null,
+                    null);
         }
 
         private KopfdatenDto schlussrechnungKopf() {
@@ -1384,7 +1387,9 @@ class RechnungPdfServiceTest {
                     vorher,
                     true,
                     "Rüstkosten",
-                    schliesstAuftragAb);
+                    schliesstAuftragAb,
+                    null,
+                    null);
         }
 
         private String rendere(long betrag, AbrechnungsverlaufPdfDto verlauf) {

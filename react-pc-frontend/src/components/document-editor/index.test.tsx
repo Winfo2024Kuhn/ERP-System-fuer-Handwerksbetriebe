@@ -1582,6 +1582,30 @@ describe('DocumentEditor – Rückgängig & Wiederholen', () => {
         await waitFor(() => expect(screen.queryByText('Rabatt 10,00 %')).not.toBeInTheDocument());
     });
 
+    it('5b. Ein Pauschalrabatt erzeugt die Vorschau rechts neu', async () => {
+        // Regression: globalRabatt fehlte im Vorschau-Marker, das PDF rechts
+        // zeigte nach einer Rabattaenderung weiter den alten Betrag. Positionen
+        // mit discount 0: so aendert der Dialog nur den Pauschalrabatt, nicht die Bloecke.
+        fetchMock = mockFetch({ positionenJson: JSON.stringify({ blocks: BLOECKE.map(b => (b.type === 'SERVICE' ? { ...b, discount: 0 } : b)), globalRabatt: 0 }) });
+        global.fetch = fetchMock as unknown as typeof fetch;
+        const user = userEvent.setup();
+        renderEditor();
+        await ladenAbwarten();
+        await waitFor(() => expect(vorschauAufrufe(fetchMock)).toBeGreaterThan(0));
+
+        const rabattFeld = await rabattFeldOeffnen(user);
+        await user.clear(rabattFeld);
+        await user.type(rabattFeld, '10');
+        await user.click(screen.getByRole('button', { name: 'Rabatt übernehmen' }));
+
+        await waitFor(() => {
+            const rabatte = fetchMock.mock.calls
+                .filter(call => call[0] === '/api/dokument-generator/preview')
+                .map(call => JSON.parse((call[1] as RequestInit).body as string).globalRabattProzent);
+            expect(rabatte).toContain(10);
+        }, { timeout: 6000 });
+    });
+
     it('6. Rückgängig einer bereits gespeicherten Rabattänderung meldet sich erneut als ungespeichert und sendet globalRabatt 0', async () => {
         // Regression: globalRabatt fehlte vor baueDokumentSignatur in der
         // Ungespeichert-Signatur. Ohne den Fix waere der Stand nach dem
@@ -2117,6 +2141,123 @@ describe('DocumentEditor – einfache Rechnung schliesst den Auftrag ab', () => 
         await waitFor(() => expect(speicherAufrufe(fetchMock as unknown as ReturnType<typeof mockFetch>).length).toBeGreaterThan(0));
         const gespeichert = JSON.parse(speicherAufrufe(fetchMock as unknown as ReturnType<typeof mockFetch>).at(-1)!.positionenJson as string);
         expect(gespeichert).not.toHaveProperty('schliesstAuftragAb');
+    });
+});
+
+describe('DocumentEditor – eigene Zeilen im Abrechnungsstand', () => {
+    // DSGVO: ausschliesslich Dummy-Daten. Einfache Rechnung am Angebot, die den
+    // Auftrag abschliesst; "Rüstkosten" fehlt -> Differenzzeile "Nicht angefallen".
+    const ANGEBOT_ID = 10;
+    const BLOECKE = [
+        { id: 's1', type: 'SERVICE', title: 'Geländer montieren', quantity: 1, unit: 'Stk', price: 9000, fontSize: 10 },
+        { id: 's2', type: 'SERVICE', title: 'Anfahrt', quantity: 1, unit: 'psch', price: 600, fontSize: 10 },
+    ];
+    const VERLAUF = {
+        basisdokumentId: ANGEBOT_ID,
+        basisdokumentNummer: 'AN-2026-0010',
+        basisdokumentTyp: 'ANGEBOT',
+        basisdokumentBetragNetto: 10000,
+        positionen: [{ id: 1, dokumentNummer: 'RE-2026/08/00001', typ: 'RECHNUNG', datum: HEUTE_ISO, betragNetto: 9600, storniert: false }],
+        bereitsAbgerechnet: 9600,
+        restbetrag: 400,
+        basisdokumentPositionenJson: JSON.stringify({ blocks: [...BLOECKE, { id: 's3', type: 'SERVICE', title: 'Rüstkosten', quantity: 1, unit: 'psch', price: 400 }], globalRabatt: 0 }),
+    };
+
+    function mockMitVerlauf(positionenJson: Record<string, unknown>, verlauf: unknown = VERLAUF) {
+        const basis = mockFetch({ vorgaengerId: ANGEBOT_ID, positionenJson: JSON.stringify(positionenJson) });
+        return vi.fn((url: string, init?: RequestInit) => {
+            if (url === `/api/ausgangs-dokumente/${ANGEBOT_ID}/abrechnungsverlauf`) return jsonAntwort(verlauf);
+            return basis(url, init);
+        });
+    }
+
+    function letzterVerlauf(fetchMock: ReturnType<typeof vi.fn>): Record<string, unknown> | undefined {
+        return fetchMock.mock.calls
+            .filter(call => call[0] === '/api/dokument-generator/preview')
+            .map(call => JSON.parse((call[1] as RequestInit).body as string).abrechnungsverlauf)
+            .filter(Boolean)
+            .at(-1);
+    }
+
+    beforeEach(() => {
+        global.URL.createObjectURL = vi.fn(() => `blob:vorschau-${Math.random()}`);
+        global.URL.revokeObjectURL = vi.fn();
+        window.HTMLElement.prototype.scrollIntoView = vi.fn();
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('zeigt den Abrechnungsstand links, nimmt die Differenzzeile von der Rechnung und speichert das', async () => {
+        const fetchMock = mockMitVerlauf({ blocks: BLOECKE, globalRabatt: 0 });
+        global.fetch = fetchMock as unknown as typeof fetch;
+        const user = userEvent.setup();
+        renderEditor();
+
+        await waitFor(() => expect(screen.getByText('Nicht angefallen')).toBeInTheDocument(), { timeout: 5000 });
+        expect(screen.getByText('diese Rechnung')).toBeInTheDocument();
+        // Alte Rechnung ohne Schluessel: alles automatisch.
+        await waitFor(() => {
+            const verlauf = letzterVerlauf(fetchMock);
+            expect(verlauf?.dieseRechnungZeile).toBeNull();
+            expect(verlauf?.differenzZeile).toBeNull();
+        }, { timeout: 5000 });
+
+        await user.click(screen.getAllByRole('button', { name: 'Zeile von der Rechnung entfernen' })[1]);
+
+        expect(screen.getByText('Steht nicht auf der Rechnung')).toBeInTheDocument();
+        await waitFor(() => expect(letzterVerlauf(fetchMock)?.differenzZeile)
+            .toEqual({ bezeichnung: null, unterzeile: null, ausblenden: true }), { timeout: 5000 });
+
+        await user.click(screen.getByRole('button', { name: /Speichern/i }));
+        await waitFor(() => expect(speicherAufrufe(fetchMock as unknown as ReturnType<typeof mockFetch>).length).toBeGreaterThan(0));
+        const gespeichert = JSON.parse(speicherAufrufe(fetchMock as unknown as ReturnType<typeof mockFetch>).at(-1)!.positionenJson as string);
+        expect(gespeichert.abschlussZeilen).toEqual({ differenz: { ausgeblendet: true } });
+
+        await user.click(screen.getByRole('button', { name: 'Wieder einblenden' }));
+        expect(screen.queryByText('Steht nicht auf der Rechnung')).toBeNull();
+    });
+
+    it('schickt gespeicherte Anpassungen nicht mit, wenn der Abrechnungsstand nicht sichtbar ist', async () => {
+        // Inzwischen haengt eine weitere Rechnung am Angebot: die einfache Rechnung
+        // schliesst nicht mehr ab, links steht kein Abrechnungsstand.
+        const mitWeitererRechnung = {
+            ...VERLAUF,
+            positionen: [
+                ...VERLAUF.positionen,
+                { id: 2, dokumentNummer: 'RE-2026/08/00002', typ: 'RECHNUNG', datum: HEUTE_ISO, betragNetto: 100, storniert: false },
+            ],
+        };
+        const fetchMock = mockMitVerlauf({
+            blocks: BLOECKE,
+            globalRabatt: 0,
+            abschlussZeilen: { dieseRechnung: { bezeichnung: 'Rechnung Treppengeländer' }, differenz: { ausgeblendet: true } },
+        }, mitWeitererRechnung);
+        global.fetch = fetchMock as unknown as typeof fetch;
+        renderEditor();
+
+        await waitFor(() => {
+            const verlauf = letzterVerlauf(fetchMock);
+            expect(verlauf?.schliesstAuftragAb).toBe(false);
+            expect(verlauf?.dieseRechnungZeile).toBeNull();
+            expect(verlauf?.differenzZeile).toBeNull();
+        }, { timeout: 5000 });
+        expect(screen.queryByText('Rechnung Treppengeländer')).toBeNull();
+    });
+
+    it('laedt gespeicherte eigene Texte und schickt sie ans PDF', async () => {
+        const fetchMock = mockMitVerlauf({
+            blocks: BLOECKE,
+            globalRabatt: 0,
+            abschlussZeilen: { dieseRechnung: { bezeichnung: 'Rechnung Treppengeländer' } },
+        });
+        global.fetch = fetchMock as unknown as typeof fetch;
+        renderEditor();
+
+        await waitFor(() => expect(screen.getByText('Rechnung Treppengeländer')).toBeInTheDocument(), { timeout: 5000 });
+        await waitFor(() => expect(letzterVerlauf(fetchMock)?.dieseRechnungZeile)
+            .toEqual({ bezeichnung: 'Rechnung Treppengeländer', unterzeile: null, ausblenden: false }), { timeout: 5000 });
     });
 });
 
