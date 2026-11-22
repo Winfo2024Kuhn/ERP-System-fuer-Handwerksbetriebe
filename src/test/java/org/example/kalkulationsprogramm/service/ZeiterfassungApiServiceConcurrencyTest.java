@@ -182,7 +182,8 @@ class ZeiterfassungApiServiceConcurrencyTest {
         verify(zeitbuchungRepository).saveAndFlush(aktiveBuchung);
         verify(ueberschneidungService).nachHandyBuchung(eq(aktiveBuchung), any(Mitarbeiter.class));
         verify(ueberschneidungService).vorNeuerHandyBuchung(any(Mitarbeiter.class), eq(neuerStart));
-        verify(ueberschneidungService).handyBuchungZuordnen(any(), eq(999L));
+        verify(ueberschneidungService).handyBuchungZuordnen(any(),
+                org.mockito.ArgumentMatchers.argThat(b -> Long.valueOf(999L).equals(b.getId())));
     }
 
     @Test
@@ -223,6 +224,36 @@ class ZeiterfassungApiServiceConcurrencyTest {
 
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.startPause(TOKEN, pause, null))
                 .hasMessageContaining("Bitte im Büro klären");
+        verify(zeitbuchungRepository, never()).save(any(Zeitbuchung.class));
+    }
+
+    @Test
+    void startPause_vomVortagMitHeuteLaufendemBueroEintragSagtVerspaetet() {
+        // Tageswechsel: Das Offline-Anstempeln vom Vortag kommt erst heute an, im Büro läuft schon
+        // ein heute gestarteter Eintrag. Er bleibt stehen, die Buchung wird verständlich abgelehnt.
+        when(zeitkontoService.versionAm(eq(MITARBEITER_ID), any()))
+                .thenReturn(Optional.of(new org.example.kalkulationsprogramm.domain.ZeitkontoVersion()));
+        java.time.LocalDate gestern = java.time.LocalDate.now().minusDays(1);
+        LocalDateTime pause = gestern.atTime(12, 0);
+        Zeitbuchung bueroHeute = new Zeitbuchung();
+        bueroHeute.setId(124L);
+        bueroHeute.setMitarbeiter(dummyMitarbeiter());
+        bueroHeute.setStartZeit(java.time.LocalDate.now().atStartOfDay());
+        bueroHeute.setErfasstVia(org.example.kalkulationsprogramm.domain.ErfassungsQuelle.DESKTOP);
+        when(mitarbeiterRepository.findByLoginTokenAndAktivTrueForUpdate(TOKEN))
+                .thenReturn(Optional.of(dummyMitarbeiter()));
+        when(zeitbuchungRepository.findByMitarbeiterIdAndEndeZeitIsNull(MITARBEITER_ID))
+                .thenReturn(List.of(bueroHeute));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.startPause(TOKEN, pause, null))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .hasMessageContaining("Diese Buchung vom "
+                        + gestern.format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy"))
+                        + " kam verspätet an. Im Büro läuft gerade schon ein Eintrag. "
+                        + "Bitte im Büro nachtragen lassen.")
+                .satisfies(e -> assertThat(((org.springframework.web.server.ResponseStatusException) e)
+                        .getStatusCode().value()).isEqualTo(409));
+        assertThat(bueroHeute.getEndeZeit()).isNull();
         verify(zeitbuchungRepository, never()).save(any(Zeitbuchung.class));
     }
 

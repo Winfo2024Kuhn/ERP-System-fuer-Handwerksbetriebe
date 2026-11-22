@@ -81,6 +81,7 @@ class BenachrichtigungServiceTest {
     @Mock BenachrichtigungErledigtService erledigtService;
     @Mock BetriebsstatusService betriebsstatusService;
     @Mock org.example.kalkulationsprogramm.service.ZeitbuchungUeberschneidungService ueberschneidungService;
+    @Mock ZeitenBenachrichtigungen zeitenBenachrichtigungen;
     @Mock org.springframework.transaction.PlatformTransactionManager transactionManager;
 
     @Mock org.example.kalkulationsprogramm.service.EmailGelesenService emailGelesenService;
@@ -329,6 +330,7 @@ class BenachrichtigungServiceTest {
         given(zeitbuchungRepository
                 .findByAutomatischBeendetTrueAndStartZeitAfterOrderByStartZeitDesc(any(LocalDateTime.class)))
                 .willReturn(List.of(buchung));
+        echteZeitenQuellen();
 
         BenachrichtigungZusammenfassungDto summary = service.zusammenfassung(null, null);
 
@@ -349,7 +351,9 @@ class BenachrichtigungServiceTest {
                     assertThat(i.title()).contains("Max Mustermann");
                     assertThat(i.subtitle()).contains("Kein Feierabend gestempelt");
                     assertThat(i.subtitle()).contains("20:00");
-                    assertThat(i.link()).isEqualTo("/zeitbuchungen?mitarbeiterId=4711");
+                    java.time.LocalDate tag = buchung.getStartZeit().toLocalDate();
+                    assertThat(i.link()).isEqualTo("/zeitbuchungen?mitarbeiterId=4711&jahr=" + tag.getYear()
+                            + "&monat=" + tag.getMonthValue() + "&tag=" + tag + "&anlass=ohne-feierabend&markiert=1903");
                 });
     }
 
@@ -359,11 +363,18 @@ class BenachrichtigungServiceTest {
         given(zeitbuchungRepository
                 .findByAutomatischBeendetTrueAndStartZeitAfterOrderByStartZeitDesc(any(LocalDateTime.class)))
                 .willReturn(List.of());
+        echteZeitenQuellen();
 
         BenachrichtigungZusammenfassungDto summary = service.zusammenfassung(null, null);
 
         assertThat(summary.categories())
                 .noneMatch(c -> "ZEITEN_AUTO_BEENDET".equals(c.type()));
+    }
+
+    /** Die Zeiterfassungs-Quellen liegen in {@link ZeitenBenachrichtigungen}; hier echt, mit den Mocks oben. */
+    private void echteZeitenQuellen() {
+        ZeitenBenachrichtigungen echt = new ZeitenBenachrichtigungen(zeitbuchungRepository, ueberschneidungService);
+        given(zeitenBenachrichtigungen.automatischBeendet()).willAnswer(inv -> echt.automatischBeendet());
     }
 
     // ── Helper ────────────────────────────────────────────────────────────

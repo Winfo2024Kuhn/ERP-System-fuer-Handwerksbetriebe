@@ -1407,6 +1407,12 @@ Lohnabrechnungen, die vom Steuerberater kommen.
 | `POST` | `/erledigt` | Einzelne Einträge erledigen (Mails gelten dann als gelesen) |
 | `POST` | `/erledigt/kategorien` | Ganze Kategorien erledigen |
 
+Einträge der Typen `ZEIT_UEBERSCHNEIDUNG` und `ZEIT_AUTO_BEENDET` verlinken direkt auf den Tag im Zeitkalender
+(`ZeitkalenderLink`): `/zeitbuchungen?mitarbeiterId=7&jahr=2026&monat=11&tag=2026-11-18&anlass=ueberschneidung&markiert=12,31`
+(`anlass` = `ueberschneidung` bzw. `ohne-feierabend`; `markiert` = höchstens 10 noch vorhandene Buchungs-IDs nach Startzeit,
+fehlt ohne Treffer). Der Text einer Überschneidung nennt jede Handy-Buchung einzeln („Vom Handy: Arbeit 11:27–12:00,
+Pause 12:00–13:34.“), Details in `ZEITERFASSUNG_WORKFLOWS.md`, Abschnitt 11.
+
 ---
 
 ## 14. Buchhaltung, Belege und Kasse

@@ -4,22 +4,23 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import org.example.kalkulationsprogramm.domain.BuchungsTyp;
 import org.example.kalkulationsprogramm.domain.ErfassungsQuelle;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.UeberschneidungErgebnis;
 import org.example.kalkulationsprogramm.domain.Zeitbuchung;
 import org.example.kalkulationsprogramm.domain.ZeitbuchungUeberschneidung;
+import org.example.kalkulationsprogramm.domain.ZeitbuchungUeberschneidungHandyZeit;
 import org.example.kalkulationsprogramm.repository.ZeitbuchungRepository;
 import org.example.kalkulationsprogramm.repository.ZeitbuchungUeberschneidungRepository;
+import org.example.kalkulationsprogramm.service.ueberschneidung.UeberschneidungAnzeige;
+import org.example.kalkulationsprogramm.service.ueberschneidung.UeberschneidungHandyZeiten;
+import org.example.kalkulationsprogramm.service.ueberschneidung.UeberschneidungStand;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,6 +43,10 @@ import lombok.extern.slf4j.Slf4j;
  * Eigene Handy-Buchungen und vom Auto-Stop beendete Buchungen werden hier nie angefasst.
  * Liegt ein Büro-Eintrag in einem festgeschriebenen Monat, bleibt er unverändert – die
  * Meldung bittet dann ums Klären im Büro.
+ *
+ * <p>Je Meldung werden die Handy-Buchungen festgehalten, die Vorrang hatten
+ * ({@link ZeitbuchungUeberschneidungHandyZeit}), mit Art und Zeitraum so, wie das Handy sie
+ * geschickt hat. Die Texte dazu baut {@link UeberschneidungAnzeige}.
  */
 @Slf4j
 @Service
@@ -58,26 +63,30 @@ public class ZeitbuchungUeberschneidungService {
     /** So weit reicht eine gerade angestochene Handy-Buchung fürs Erste (Ende noch offen). */
     static final Duration NEUE_BUCHUNG_VORLAUF = Duration.ofMinutes(1);
 
-    private static final DateTimeFormatter TAG = DateTimeFormatter.ofPattern("dd.MM.yyyy");
-    private static final DateTimeFormatter UHRZEIT = DateTimeFormatter.ofPattern("HH:mm");
-
     private final ZeitbuchungRepository zeitbuchungRepository;
     private final ZeitbuchungUeberschneidungRepository ueberschneidungRepository;
     private final ZeitbuchungAuditService auditService;
     private final MonatsSaldoService monatsSaldoService;
     private final ApplicationEventPublisher eventPublisher;
+    private final UeberschneidungHandyZeiten handyZeiten;
 
     /** Nach dem Commit: Push ans Handy des Mitarbeiters (siehe {@code UeberschneidungPushListener}). */
     public record UeberschneidungGemeldet(Long mitarbeiterId, String titel, String text) {
     }
 
-    /** Was in den Glocken angezeigt wird. */
-    public record Anzeige(String titel, String text) {
-    }
-
     /** Ist die Buchung im Büro entstanden (und darf damit vom Handy überstimmt werden)? */
     public static boolean istBueroEintrag(Zeitbuchung buchung) {
         return buchung.getErfasstVia() != null && buchung.getErfasstVia() != ErfassungsQuelle.MOBILE_APP;
+    }
+
+    /**
+     * Hat die Buchung nach {@code von} UND an einem späteren Kalendertag begonnen? Dann kam eine
+     * Handy-Buchung ab {@code von} verspätet an (Offline-Stempel vom Vortag) – ein heute im Büro
+     * gestarteter Eintrag weicht ihr nicht.
+     */
+    public static boolean laeuftSeitSpaeteremTag(Zeitbuchung buchung, LocalDateTime von) {
+        LocalDateTime start = buchung.getStartZeit();
+        return start != null && start.isAfter(von) && !start.toLocalDate().equals(von.toLocalDate());
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -103,9 +112,11 @@ public class ZeitbuchungUeberschneidungService {
                     ueberschneidungRepository.save(meldung);
                 }
             }
+            // Festgehaltene Handy-Zeiten aus dem Anstechen (auch in Meldungen, deren erste
+            // Handy-Buchung eine andere war) bekommen ihr Ende. Neue Meldungen hält weichen() fest.
+            handyZeiten.endeNachtragen(handyBuchung);
         }
-        return aufloesen(mitarbeiter, handyBuchung.getId(), handyBuchung.getStartZeit(), handyBuchung.getEndeZeit(),
-                false);
+        return aufloesen(mitarbeiter, handyBuchung, handyBuchung.getStartZeit(), handyBuchung.getEndeZeit(), false);
     }
 
     /**
@@ -119,32 +130,44 @@ public class ZeitbuchungUeberschneidungService {
         return aufloesen(mitarbeiter, null, start, start.plus(NEUE_BUCHUNG_VORLAUF), true);
     }
 
-    /** Trägt die inzwischen gespeicherte Handy-Buchung in Meldungen aus {@link #vorNeuerHandyBuchung} nach. */
+    /**
+     * Trägt die inzwischen gespeicherte Handy-Buchung in Meldungen aus {@link #vorNeuerHandyBuchung}
+     * nach und hält sie dort mit offenem Ende fest ("Arbeit ab 07:00"); das Ende kommt mit
+     * {@link #nachHandyBuchung}.
+     */
     @Transactional
-    public void handyBuchungZuordnen(Collection<ZeitbuchungUeberschneidung> meldungen, Long handyBuchungId) {
+    public void handyBuchungZuordnen(Collection<ZeitbuchungUeberschneidung> meldungen, Zeitbuchung handyBuchung) {
         for (ZeitbuchungUeberschneidung meldung : meldungen) {
             if (meldung.getHandyBuchungId() == null) {
-                meldung.setHandyBuchungId(handyBuchungId);
+                meldung.setHandyBuchungId(handyBuchung.getId());
                 ueberschneidungRepository.save(meldung);
             }
+            handyZeiten.festhalten(meldung, handyBuchung);
         }
     }
 
     /**
+     * @param handyBuchung          die abgeschlossene Handy-Buchung, die festgehalten wird;
+     *                              {@code null} beim Anstechen (noch nicht gespeichert)
      * @param auchSpaeterGestartete auch im Büro gestartete Buchungen, die NACH {@code von} begonnen
      *                              haben und noch laufen (die neue Handy-Buchung läuft seit
-     *                              {@code von} und deckt sie ab – und es darf nur eine laufen)
+     *                              {@code von} und deckt sie ab – und es darf nur eine laufen).
+     *                              Nur vom selben Kalendertag: Kommt ein Stempel vom Vortag erst
+     *                              heute an, bleibt ein heute gestarteter Eintrag stehen
+     *                              ({@link #laeuftSeitSpaeteremTag}).
      */
-    private List<ZeitbuchungUeberschneidung> aufloesen(Mitarbeiter mitarbeiter, Long handyBuchungId,
+    private List<ZeitbuchungUeberschneidung> aufloesen(Mitarbeiter mitarbeiter, Zeitbuchung handyBuchung,
             LocalDateTime von, LocalDateTime bis, boolean auchSpaeterGestartete) {
         if (mitarbeiter == null || mitarbeiter.getId() == null || !bis.isAfter(von)) {
             return List.of();
         }
+        Long handyBuchungId = handyBuchung != null ? handyBuchung.getId() : null;
         Stream<Zeitbuchung> kandidaten = zeitbuchungRepository.findUeberlappende(mitarbeiter.getId(), von, bis)
                 .stream();
         if (auchSpaeterGestartete) {
             kandidaten = Stream.concat(kandidaten,
-                    zeitbuchungRepository.findByMitarbeiterIdAndEndeZeitIsNull(mitarbeiter.getId()).stream());
+                    zeitbuchungRepository.findByMitarbeiterIdAndEndeZeitIsNull(mitarbeiter.getId()).stream()
+                            .filter(z -> !laeuftSeitSpaeteremTag(z, von)));
         }
         List<Zeitbuchung> bueroEintraege = kandidaten
                 .distinct()
@@ -156,14 +179,15 @@ public class ZeitbuchungUeberschneidungService {
         LocalDateTime handyBis = auchSpaeterGestartete ? null : bis;
         List<ZeitbuchungUeberschneidung> meldungen = new ArrayList<>();
         for (Zeitbuchung eintrag : bueroEintraege) {
-            meldungen.add(weichen(eintrag, mitarbeiter, handyBuchungId, von, bis, handyBis));
+            meldungen.add(weichen(eintrag, mitarbeiter, handyBuchung, von, bis, handyBis));
         }
         return meldungen;
     }
 
     /** Lässt einen Büro-Eintrag der Handy-Zeit [von, bis) weichen und schreibt die Meldung. */
-    private ZeitbuchungUeberschneidung weichen(Zeitbuchung eintrag, Mitarbeiter mitarbeiter, Long handyBuchungId,
+    private ZeitbuchungUeberschneidung weichen(Zeitbuchung eintrag, Mitarbeiter mitarbeiter, Zeitbuchung handyBuchung,
             LocalDateTime von, LocalDateTime bis, LocalDateTime handyBis) {
+        Long handyBuchungId = handyBuchung != null ? handyBuchung.getId() : null;
         Optional<ZeitbuchungUeberschneidung> vorhanden = ueberschneidungRepository.findZuBuchung(eintrag.getId())
                 .stream().findFirst();
         ZeitbuchungUeberschneidung meldung = vorhanden.orElseGet(() -> neueMeldung(eintrag, mitarbeiter));
@@ -186,11 +210,15 @@ public class ZeitbuchungUeberschneidungService {
         // Neuer Stand → am Handy wieder als ungelesen zeigen.
         meldung.setMitarbeiterGesehenAm(null);
         ZeitbuchungUeberschneidung gespeichert = ueberschneidungRepository.save(meldung);
+        if (handyBuchung != null) {
+            handyZeiten.festhalten(gespeichert, handyBuchung);
+        }
 
         log.info("Überschneidung: Büro-Eintrag {} von Mitarbeiter {} -> {} (Handy {} - {})",
                 eintrag.getId(), mitarbeiter.getId(), schritt, von, bis);
         if (vorhanden.isEmpty()) {
-            Anzeige anzeige = anzeigeFuerMitarbeiter(gespeichert);
+            UeberschneidungAnzeige.Anzeige anzeige = UeberschneidungAnzeige.fuerMitarbeiter(gespeichert,
+                    stand(List.of(gespeichert)));
             eventPublisher.publishEvent(new UeberschneidungGemeldet(mitarbeiter.getId(), anzeige.titel(),
                     anzeige.text()));
         }
@@ -203,7 +231,7 @@ public class ZeitbuchungUeberschneidungService {
         meldung.setBueroBuchungId(eintrag.getId());
         meldung.setBueroVon(eintrag.getStartZeit());
         meldung.setBueroBis(eintrag.getEndeZeit());
-        meldung.setBueroBezeichnung(bezeichnung(eintrag));
+        meldung.setBueroBezeichnung(UeberschneidungAnzeige.bezeichnung(eintrag));
         meldung.setErstelltAm(LocalDateTime.now());
         return meldung;
     }
@@ -218,7 +246,8 @@ public class ZeitbuchungUeberschneidungService {
         LocalDateTime start = eintrag.getStartZeit();
         LocalDateTime ende = eintrag.getEndeZeit();
         boolean beginntDavor = start.isBefore(von.minus(START_TOLERANZ));
-        String grund = "Überschneidung mit Handy-Buchung " + zeitraum(von, bis) + " - das Handy hat Vorrang";
+        String grund = "Überschneidung mit Handy-Buchung " + UeberschneidungAnzeige.zeitraum(von, bis)
+                + " - das Handy hat Vorrang";
 
         if (ende == null) {
             if (beginntDavor) {
@@ -347,7 +376,7 @@ public class ZeitbuchungUeberschneidungService {
         Zeitbuchung gespeichert = zeitbuchungRepository.saveAndFlush(rest);
         auditService.protokolliereErstellung(gespeichert, bearbeiter, ErfassungsQuelle.SYSTEM);
         log.info("Büro-Eintrag {} geteilt, Rest {} ({}): {}", eintrag.getId(), gespeichert.getId(),
-                zeitraum(start, ende), grund);
+                UeberschneidungAnzeige.zeitraum(start, ende), grund);
         return gespeichert;
     }
 
@@ -385,78 +414,23 @@ public class ZeitbuchungUeberschneidungService {
                 .orElse(false);
     }
 
-    /** Text für die Glocke am PC ("Max Mustermann am 28.10.2026"). */
+    /** Siehe {@link UeberschneidungHandyZeiten#stand}. */
     @Transactional(readOnly = true)
-    public Anzeige anzeigeFuerBuero(ZeitbuchungUeberschneidung meldung) {
-        Mitarbeiter ma = meldung.getMitarbeiter();
-        String name = ma != null ? ma.getVorname() + " " + ma.getNachname() : "Mitarbeiter";
-        return new Anzeige(name + " am " + meldung.getBueroVon().format(TAG),
-                "Handy-Buchung " + zeitraum(meldung.getHandyVon(), meldung.getHandyBis()) + " hatte Vorrang. "
-                        + bueroText(meldung));
+    public UeberschneidungStand stand(Collection<ZeitbuchungUeberschneidung> meldungen) {
+        return handyZeiten.stand(meldungen);
     }
 
-    /** Text für das Handy des Mitarbeiters. */
+    /** Eine Meldung mit ihrem Text fürs Handy. */
+    public record MeldungMitAnzeige(ZeitbuchungUeberschneidung meldung, UeberschneidungAnzeige.Anzeige anzeige) {
+    }
+
+    /** Für die Nachrichten am Handy: ungelesene Meldungen samt Text, Stand in zwei Abfragen für die Liste. */
     @Transactional(readOnly = true)
-    public Anzeige anzeigeFuerMitarbeiter(ZeitbuchungUeberschneidung meldung) {
-        return new Anzeige("Überschneidung am " + meldung.getBueroVon().format(TAG),
-                "Deine Handy-Buchung " + zeitraum(meldung.getHandyVon(), meldung.getHandyBis())
-                        + " hatte Vorrang. " + bueroText(meldung));
-    }
-
-    /** "Büro-Eintrag „Musterhaus · Montage“ 07:00–16:00 → jetzt 07:00–10:00 und 12:00–16:00." */
-    private String bueroText(ZeitbuchungUeberschneidung meldung) {
-        String eintrag = "Büro-Eintrag"
-                + (meldung.getBueroBezeichnung() != null ? " „" + meldung.getBueroBezeichnung() + "“" : "")
-                + " " + zeitraum(meldung.getBueroVon(), meldung.getBueroBis());
-        if (meldung.getErgebnis() == UeberschneidungErgebnis.NICHT_GEAENDERT) {
-            return eintrag + " wurde nicht geändert, weil der Monat schon abgeschlossen ist. "
-                    + "Bitte im Büro klären.";
-        }
-        if (meldung.getErgebnis() == UeberschneidungErgebnis.ZEIT_BELEGT) {
-            return eintrag + " wurde nicht geändert, weil danach schon ein anderer Eintrag beginnt. "
-                    + "Bitte im Büro klären.";
-        }
-        List<String> jetzt = Stream.of(meldung.getBueroBuchungId(), meldung.getRestBuchungId())
-                .filter(java.util.Objects::nonNull)
-                .map(zeitbuchungRepository::findById)
-                .flatMap(Optional::stream)
-                .map(z -> zeitraum(z.getStartZeit(), z.getEndeZeit()))
-                .collect(Collectors.toList());
-        if (jetzt.isEmpty()) {
-            return eintrag + " wurde entfernt.";
-        }
-        return eintrag + " → jetzt " + String.join(" und ", jetzt) + ".";
-    }
-
-    private static String bezeichnung(Zeitbuchung eintrag) {
-        if (eintrag.getTyp() == BuchungsTyp.PAUSE) {
-            return "Pause";
-        }
-        List<String> teile = new ArrayList<>();
-        if (eintrag.getProjekt() != null && eintrag.getProjekt().getBauvorhaben() != null) {
-            teile.add(eintrag.getProjekt().getBauvorhaben());
-        }
-        if (eintrag.getArbeitsgang() != null && eintrag.getArbeitsgang().getBeschreibung() != null) {
-            teile.add(eintrag.getArbeitsgang().getBeschreibung());
-        }
-        String text = String.join(" · ", teile);
-        if (text.isBlank()) {
-            return null;
-        }
-        return text.length() > 500 ? text.substring(0, 500) : text;
-    }
-
-    /** "07:00–16:00"; über Mitternacht mit Datum, noch offen: "ab 07:00". */
-    static String zeitraum(LocalDateTime von, LocalDateTime bis) {
-        if (von == null) {
-            return "";
-        }
-        if (bis == null) {
-            return "ab " + von.format(UHRZEIT);
-        }
-        String ende = von.toLocalDate().equals(bis.toLocalDate())
-                ? bis.format(UHRZEIT)
-                : bis.format(TAG) + " " + bis.format(UHRZEIT);
-        return von.format(UHRZEIT) + "–" + ende;
+    public List<MeldungMitAnzeige> ungeleseneMitAnzeige(Long mitarbeiterId) {
+        List<ZeitbuchungUeberschneidung> meldungen = ungeleseneFuerMitarbeiter(mitarbeiterId);
+        UeberschneidungStand stand = stand(meldungen);
+        return meldungen.stream()
+                .map(m -> new MeldungMitAnzeige(m, UeberschneidungAnzeige.fuerMitarbeiter(m, stand)))
+                .toList();
     }
 }

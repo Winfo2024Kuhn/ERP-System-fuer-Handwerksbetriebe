@@ -321,6 +321,19 @@ Heute gearbeitet = Server-Minuten (abgeschlossene Buchungen, GET /api/zeiterfass
 - Buchungszeitfenster der am Buchungstag gültigen Zeitkonto-Version überschritten (`buchungEndeZeit`) → Buchung endet zu dieser Uhrzeit.
 - Ohne Zeitfenster: Buchung läuft über Mitternacht → Ende 23:59 des Starttags.
 - Solche Buchungen bekommen `automatischBeendet = true` (Audit-Quelle `SYSTEM`), erscheinen in der Benachrichtigungs-Glocke am PC als Prüffall und dürfen durch einen verspäteten Feierabend-Stop vom Handy noch verkürzt werden (Abschnitt 2).
+- Der Auto-Stop verdrängt bewusst keine anderen Einträge. Überlappt die geschätzte Endezeit andere Buchungen, zählen Stunden doppelt; die Glocke sagt das dazu („Kein Feierabend gestempelt, automatisch auf 20:00 Uhr gesetzt. Überschneidet sich mit einem anderen Eintrag.“) und markiert im Zeitkalender die Buchung samt allen, die ihren Zeitraum überlappen (`ZeitenBenachrichtigungen`).
+
+---
+
+## 11. Handy gewinnt: Überschneidungen mit Büro-Einträgen (Server)
+
+**Dateien:** `service/ZeitbuchungUeberschneidungService.java`, Texte in `service/ueberschneidung/UeberschneidungAnzeige.java`, festgehaltene Handy-Zeiten in `service/ueberschneidung/UeberschneidungHandyZeiten.java`, Glocke in `service/benachrichtigung/ZeitenBenachrichtigungen.java`.
+
+- Kommt eine (oft offline gestempelte) Handy-Buchung an, weichen Büro-Einträge, die ihre Zeit überlappen: kürzen, teilen oder stornieren, jeweils mit GoBD-Protokoll. Dazu entsteht je Büro-Eintrag eine Meldung (`zeitbuchung_ueberschneidung`) für die Glocke am PC, die Nachrichten der Handy-App und einen Push.
+- Je Meldung hält der Server jede Handy-Buchung fest, die Vorrang hatte (`zeitbuchung_ueberschneidung_handy_zeit`, V449): Art (Arbeit/Pause), von, bis – Stand beim Auflösen, nicht live. Ändert das Büro die Handy-Buchung später, zeigt die Meldung weiter, was das Handy damals geschickt hat. Beim Anstechen steht sie mit offenem Ende drin („Arbeit ab 07:00“), das Ende kommt mit dem Stop/Wechsel. Der vorläufige Ein-Minuten-Zeitraum beim Anstechen wird nie festgehalten.
+- Text am PC: „Vom Handy: Arbeit 11:27–12:00, Pause 12:00–13:34. Büro-Eintrag „Pause“ 12:00–13:00 wurde deshalb entfernt.“ bzw. „… → jetzt 10:30–11:27.“; am Handy „Deine Handy-Zeiten: …“. Höchstens drei Handy-Zeiten, danach „und 2 weitere“. Altmeldungen ohne festgehaltene Zeiten nennen die gemerkte Spanne („Vom Handy: 11:27–13:34.“).
+- „Öffnen“ in der Glocke führt zum Tag im Zeitkalender und markiert Büro-Eintrag, abgeteilten Rest und die Handy-Buchungen, soweit es sie noch gibt (`ZeitkalenderLink`, siehe `API_REFERENZ.md` → NotificationController).
+- **Tageswechsel:** Beim Anstechen weichen auch im Büro gestartete, noch laufende Einträge, die nach der Handy-Zeit begonnen haben – aber nur vom selben Kalendertag. Kommt ein Offline-Stempel vom Vortag erst heute an, bleibt ein heute im Büro gestarteter Eintrag stehen; der Server lehnt die Handy-Buchung mit `409` ab („Diese Buchung vom 18.11.2026 kam verspätet an. Im Büro läuft gerade schon ein Eintrag. Bitte im Büro nachtragen lassen.“), das Handy legt sie in die Reparatur-Liste (Abschnitt 7).
 
 ---
 
@@ -377,3 +390,4 @@ Auf dem Dashboard erscheinen außerdem nur lesend:
 | 12.10.2026 | Doku an den Code angeglichen: `originalZeit` + `idempotencyKey`, Reparatur-Liste statt stillem Löschen bei 4xx, Erreichbarkeitsprüfung, Stop-/Start-Cooldown und Frisch-Guard, „Arbeit fortsetzen“, Auftragswechsel erst beim Bestätigen, Zeitkonto-Prüfung, `X-Auth-Token`, Auto-Stop mit Nachtrag, weitere Seiten. |
 | 12.10.2026 | Fix Frontend: Tätigkeitswechsel nutzt das über „Ändern“ gewählte Projekt (Online und Offline), Kategorie fällt beim Projektwechsel weg. |
 | 12.10.2026 | Fix Frontend: Neue Buchung wird bei jedem Netzwerkfehler von `fetch` offline gespeichert, nicht nur bei Timeout oder `navigator.onLine = false`. |
+| 22.11.2026 | Handy gewinnt (Abschnitt 11): Meldungen nennen jede Handy-Buchung einzeln, Glocke verlinkt auf den Tag mit markierten Buchungen, verspätete Buchung vom Vortag storniert keinen heute laufenden Büro-Eintrag mehr (409). Auto-Stop-Meldung nennt Überschneidungen (Abschnitt 10). |

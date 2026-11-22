@@ -6,6 +6,7 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -68,6 +69,8 @@ public class ZeiterfassungApiService {
      * einer früheren Buchung zugerechnet wird – Handy-Uhren gehen oft ein wenig falsch.
      */
     private static final Duration UHR_ABWEICHUNG_TOLERANZ = Duration.ofMinutes(5);
+    /** Datum in Meldungen an den Mitarbeiter: "18.11.2026". */
+    private static final DateTimeFormatter TAG_FORMAT = DateTimeFormatter.ofPattern("dd.MM.yyyy");
 
     private final ProjektRepository projektRepository;
     private final MitarbeiterRepository mitarbeiterRepository;
@@ -317,7 +320,7 @@ public class ZeiterfassungApiService {
         buchung.setArbeitsgangStundensatz(stundensatz);
 
         Zeitbuchung gespeichert = zeitbuchungRepository.save(buchung);
-        ueberschneidungService.handyBuchungZuordnen(meldungen, gespeichert.getId());
+        ueberschneidungService.handyBuchungZuordnen(meldungen, gespeichert);
 
         // Audit-Protokoll: Erfassung loggen
         auditService.protokolliereErstellung(gespeichert, mitarbeiter, ErfassungsQuelle.MOBILE_APP);
@@ -635,7 +638,7 @@ public class ZeiterfassungApiService {
         }
 
         Zeitbuchung gespeichert = zeitbuchungRepository.save(pauseBuchung);
-        ueberschneidungService.handyBuchungZuordnen(meldungen, gespeichert.getId());
+        ueberschneidungService.handyBuchungZuordnen(meldungen, gespeichert);
         auditService.protokolliereErstellung(gespeichert, mitarbeiter, ErfassungsQuelle.MOBILE_APP);
         // MonatsSaldo-Cache fuer den Monat der Pause invalidieren
         monatsSaldoService.invalidiereFuerDateTime(mitarbeiter.getId(), gespeichert.getStartZeit());
@@ -712,9 +715,17 @@ public class ZeiterfassungApiService {
 
         // Konnte ein Büro-Eintrag nicht weichen (Monat abgeschlossen, Zeit belegt), scheiterte das Speichern
         // gleich an den Unique-Indizes. Lieber eine klare Meldung als ein Datenbankfehler.
+        List<Zeitbuchung> nochOffen = zeitbuchungRepository.findByMitarbeiterIdAndEndeZeitIsNull(mitarbeiter.getId());
+        // Tageswechsel: Die Buchung vom Vortag kam erst heute an, im Büro läuft schon ein heute
+        // gestarteter Eintrag. Der bleibt stehen (siehe vorNeuerHandyBuchung); das Handy legt die
+        // abgelehnte Buchung in seine Reparatur-Liste.
+        if (nochOffen.stream().anyMatch(z -> ZeitbuchungUeberschneidungService.laeuftSeitSpaeteremTag(z, zeit))) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Diese Buchung vom "
+                    + zeit.format(TAG_FORMAT) + " kam verspätet an. Im Büro läuft "
+                    + "gerade schon ein Eintrag. Bitte im Büro nachtragen lassen.");
+        }
         if (zeitbuchungRepository.existsByMitarbeiterIdAndStartZeit(mitarbeiter.getId(), zeit)
-                || zeitbuchungRepository.findByMitarbeiterIdAndEndeZeitIsNull(mitarbeiter.getId()).stream()
-                        .anyMatch(z -> z.getEndeZeit() == null)) {
+                || nochOffen.stream().anyMatch(z -> z.getEndeZeit() == null)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Zu dieser Zeit steht im Büro schon ein "
                     + "Eintrag, der nicht automatisch angepasst werden kann. Bitte im Büro klären.");
         }

@@ -46,7 +46,8 @@ import jakarta.persistence.EntityManager;
         "spring.flyway.enabled=true", "spring.flyway.baseline-on-migrate=true", "spring.flyway.out-of-order=true",
         "spring.flyway.validate-on-migrate=false", "spring.jpa.show-sql=false" })
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({ FlywayStartSetupConfig.class, ZeitbuchungUeberschneidungService.class, ZeitbuchungAuditService.class })
+@Import({ FlywayStartSetupConfig.class, ZeitbuchungUeberschneidungService.class, ZeitbuchungAuditService.class,
+        org.example.kalkulationsprogramm.service.ueberschneidung.UeberschneidungHandyZeiten.class })
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @EnabledIfSystemProperty(named = "kompat.db.url", matches = "jdbc:postgresql:.*")
 class ZeitbuchungUeberschneidungPostgresTest {
@@ -125,7 +126,7 @@ class ZeitbuchungUeberschneidungPostgresTest {
                 service.vorNeuerHandyBuchung(em.find(Mitarbeiter.class, mitarbeiterId), start));
         Long id = buchung(start, null, ErfassungsQuelle.MOBILE_APP, typ);
         tx.executeWithoutResult(status -> service.handyBuchungZuordnen(
-                meldungen.stream().map(m -> em.merge(m)).toList(), id));
+                meldungen.stream().map(m -> em.merge(m)).toList(), em.find(Zeitbuchung.class, id)));
         return id;
     }
 
@@ -168,9 +169,9 @@ class ZeitbuchungUeberschneidungPostgresTest {
             assertThat(m.getHandyVon()).isEqualTo(um(7, 30));
             assertThat(m.getHandyBis()).isEqualTo(um(10, 30));
         });
-        String text = tx.execute(status -> service.anzeigeFuerMitarbeiter(meldungen.getFirst()).text());
-        assertThat(text).isEqualTo("Deine Handy-Buchung 07:30–10:30 hatte Vorrang. Büro-Eintrag 07:00–16:00 "
-                + "→ jetzt 07:00–07:30 und 10:30–16:00.");
+        String text = tx.execute(status -> service.ungeleseneMitAnzeige(mitarbeiterId).getFirst().anzeige().text());
+        assertThat(text).isEqualTo("Deine Handy-Zeiten: Arbeit 07:30–10:00, Pause 10:00–10:30. Büro-Eintrag "
+                + "07:00–16:00 → jetzt 07:00–07:30 und 10:30–16:00.");
     }
 
     @Test

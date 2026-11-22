@@ -3,7 +3,6 @@ package org.example.kalkulationsprogramm.service.benachrichtigung;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -30,13 +29,10 @@ import org.example.kalkulationsprogramm.domain.KalenderEintrag;
 import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
 import org.example.kalkulationsprogramm.domain.LieferantReklamation;
-import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.ProjektGeschaeftsdokument;
 import org.example.kalkulationsprogramm.domain.ProjektNotiz;
 import org.example.kalkulationsprogramm.domain.ReklamationStatus;
 import org.example.kalkulationsprogramm.domain.Urlaubsantrag;
-import org.example.kalkulationsprogramm.domain.Zeitbuchung;
-import org.example.kalkulationsprogramm.domain.ZeitbuchungUeberschneidung;
 import org.example.kalkulationsprogramm.dto.Benachrichtigung.BenachrichtigungEintragDto;
 import org.example.kalkulationsprogramm.dto.Benachrichtigung.BenachrichtigungKategorieDto;
 import org.example.kalkulationsprogramm.dto.Benachrichtigung.BenachrichtigungZusammenfassungDto;
@@ -53,7 +49,6 @@ import org.example.kalkulationsprogramm.repository.MonatsSaldoRepository;
 import org.example.kalkulationsprogramm.repository.ProjektDokumentRepository;
 import org.example.kalkulationsprogramm.repository.ProjektNotizRepository;
 import org.example.kalkulationsprogramm.repository.UrlaubsantragRepository;
-import org.example.kalkulationsprogramm.repository.ZeitbuchungRepository;
 import org.example.kalkulationsprogramm.service.AnfrageFunnelService;
 import org.example.kalkulationsprogramm.service.EmailGelesenService;
 import org.example.kalkulationsprogramm.service.FreigabeArbeitsbeginn;
@@ -64,7 +59,6 @@ import org.example.kalkulationsprogramm.service.ZeiterfassungSichtbarkeitService
 import org.example.kalkulationsprogramm.service.PostfachSichtbarkeit;
 import org.example.kalkulationsprogramm.service.PostfachSichtbarkeitService;
 import org.example.kalkulationsprogramm.service.ZeiterfassungEinstellungService;
-import org.example.kalkulationsprogramm.service.ZeitbuchungUeberschneidungService;
 import org.example.kalkulationsprogramm.service.telefon.TelefonBenachrichtigungService;
 import org.example.kalkulationsprogramm.service.telefon.TelefonBerechtigungService;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
@@ -96,10 +90,6 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class BenachrichtigungService {
 
-    /** Datum in Handwerker-Schreibweise: "29.07.2026". */
-    private static final DateTimeFormatter TAG_FORMAT = DateTimeFormatter.ofPattern("dd.MM.yyyy");
-    /** Uhrzeit ohne Sekunden: "20:00". */
-    private static final DateTimeFormatter UHRZEIT_FORMAT = DateTimeFormatter.ofPattern("HH:mm");
     /** So viele Einträge gehen höchstens an die Glocke (Kurzfassung ohne {@code alle}). */
     private static final int MAX_EINTRAEGE = 60;
     /** Seite „Benachrichtigungen“: so viele Einträge je Kategorie; der Zähler nennt trotzdem alle. */
@@ -127,7 +117,6 @@ public class BenachrichtigungService {
     private final AusgangsGeschaeftsDokumentRepository ausgangsGeschaeftsDokumentRepository;
     private final AnfrageDokumentRepository anfrageDokumentRepository;
     private final AnfrageRepository anfrageRepository;
-    private final ZeitbuchungRepository zeitbuchungRepository;
     private final MonatsSaldoRepository monatsSaldoRepository;
     private final MonatsabschlussBerechtigungService monatsabschlussBerechtigungService;
     private final ZeiterfassungSichtbarkeitService zeiterfassungSichtbarkeitService;
@@ -136,7 +125,7 @@ public class BenachrichtigungService {
     private final PostfachSichtbarkeitService postfachSichtbarkeitService;
     private final EmailGelesenService emailGelesenService;
     private final ZeiterfassungEinstellungService zeiterfassungEinstellungService;
-    private final ZeitbuchungUeberschneidungService ueberschneidungService;
+    private final ZeitenBenachrichtigungen zeitenBenachrichtigungen;
     private final FrontendUserProfileService frontendUserProfileService;
     private final BenachrichtigungErledigtService erledigtService;
     private final BetriebsstatusService betriebsstatusService;
@@ -415,8 +404,8 @@ public class BenachrichtigungService {
         quellen.add(new QuellenAufruf("REKLAMATIONEN", this::reklamationen));
         quellen.add(new QuellenAufruf("FREIGABEN_ANGENOMMEN", this::freigaben));
         if (zeiterfassung) {
-            quellen.add(new QuellenAufruf("ZEITEN_AUTO_BEENDET", this::zeitenAutomatischBeendet));
-            quellen.add(new QuellenAufruf("ZEITEN_UEBERSCHNEIDUNG", this::zeitenUeberschneidung));
+            quellen.add(new QuellenAufruf("ZEITEN_AUTO_BEENDET", zeitenBenachrichtigungen::automatischBeendet));
+            quellen.add(new QuellenAufruf("ZEITEN_UEBERSCHNEIDUNG", zeitenBenachrichtigungen::ueberschneidungen));
         }
 
         // Only the authenticated session decides who receives closure reminders. Ohne Zeiterfassungs-Recht
@@ -740,45 +729,6 @@ public class BenachrichtigungService {
                             "Von: " + kunde + (beginn == null ? "" : " · " + beginn),
                             f.getAkzeptiertAm() != null ? f.getAkzeptiertAm().toString() : "",
                             freigabeZuInstanzLink(f));
-                }, 5);
-    }
-
-    /**
-     * Automatisch beendete Zeitbuchungen (letzte 30 Tage). Der Auto-Stop hat hier eine
-     * geschätzte Endezeit eingetragen, weil der Mitarbeiter nicht abgestochen hat. Diese Stunden
-     * fließen ungeprüft in den Monatssaldo – sie müssen sichtbar sein.
-     */
-    private Quelle<?> zeitenAutomatischBeendet() {
-        List<Zeitbuchung> autoBeendet = zeitbuchungRepository
-                .findByAutomatischBeendetTrueAndStartZeitAfterOrderByStartZeitDesc(LocalDateTime.now().minusDays(30));
-        return Quelle.von("ZEITEN_AUTO_BEENDET", "Zeiten ohne Feierabend", "Clock", "/zeitbuchungen", autoBeendet,
-                z -> "ZEIT_AUTO_BEENDET:" + z.getId(),
-                z -> {
-                    Mitarbeiter ma = z.getMitarbeiter();
-                    String name = ma != null ? ma.getVorname() + " " + ma.getNachname() : "Mitarbeiter";
-                    String bis = z.getEndeZeit() != null ? z.getEndeZeit().format(UHRZEIT_FORMAT) : "?";
-                    return new BenachrichtigungEintragDto("ZEIT_AUTO_BEENDET:" + z.getId(), "ZEIT_AUTO_BEENDET",
-                            name + " am " + z.getStartZeit().format(TAG_FORMAT),
-                            "Kein Feierabend gestempelt – automatisch auf " + bis + " Uhr gesetzt",
-                            z.getStartZeit().toString(),
-                            "/zeitbuchungen?mitarbeiterId=" + (ma != null ? ma.getId() : ""));
-                }, 5);
-    }
-
-    /**
-     * Überschneidungen: Eine (oft offline gestempelte) Handy-Buchung hatte Vorrang vor einem
-     * Eintrag im Büro, der deshalb gekürzt, geteilt oder entfernt wurde – das Büro soll es wissen.
-     */
-    private Quelle<?> zeitenUeberschneidung() {
-        List<ZeitbuchungUeberschneidung> meldungen = ueberschneidungService.fuerBuero();
-        return Quelle.von("ZEITEN_UEBERSCHNEIDUNG", "Überschneidungen Handy/Büro", "CalendarClock", "/zeitbuchungen",
-                meldungen,
-                u -> "ZEIT_UEBERSCHNEIDUNG:" + u.getId(),
-                u -> {
-                    ZeitbuchungUeberschneidungService.Anzeige anzeige = ueberschneidungService.anzeigeFuerBuero(u);
-                    return new BenachrichtigungEintragDto("ZEIT_UEBERSCHNEIDUNG:" + u.getId(), "ZEIT_UEBERSCHNEIDUNG",
-                            anzeige.titel(), anzeige.text(), u.getGeaendertAm().toString(),
-                            "/zeitbuchungen?mitarbeiterId=" + u.getMitarbeiter().getId());
                 }, 5);
     }
 

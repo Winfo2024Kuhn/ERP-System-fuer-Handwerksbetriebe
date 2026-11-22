@@ -46,6 +46,11 @@ public class ZeitbuchungUeberschneidung {
     @Column(name = "handy_buchung_id")
     private Long handyBuchungId;
 
+    /**
+     * Gesamtspanne aller Handy-Buchungen der Meldung (frühester Start, spätestes Ende). Die
+     * einzelnen Handy-Zeiten stehen in {@link ZeitbuchungUeberschneidungHandyZeit}; die Spanne
+     * bleibt für Altmeldungen und als Rückfall im Text.
+     */
     @Column(name = "handy_von", nullable = false)
     private LocalDateTime handyVon;
 
