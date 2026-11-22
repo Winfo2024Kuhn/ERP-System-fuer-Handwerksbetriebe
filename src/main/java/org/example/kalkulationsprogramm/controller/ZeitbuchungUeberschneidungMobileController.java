@@ -6,6 +6,7 @@ import org.example.kalkulationsprogramm.config.MobilePrincipal;
 import org.example.kalkulationsprogramm.domain.ZeitbuchungUeberschneidung;
 import org.example.kalkulationsprogramm.dto.Benachrichtigung.UeberschneidungMeldungDto;
 import org.example.kalkulationsprogramm.service.ZeitbuchungUeberschneidungService;
+import org.example.kalkulationsprogramm.service.ueberschneidung.UeberschneidungAnzeige;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -33,7 +34,9 @@ public class ZeitbuchungUeberschneidungMobileController {
     @GetMapping
     public List<UeberschneidungMeldungDto> ungelesene() {
         Long mitarbeiterId = eigenerMitarbeiter();
-        return service.ungeleseneFuerMitarbeiter(mitarbeiterId).stream().map(this::alsDto).toList();
+        return service.ungeleseneMitAnzeige(mitarbeiterId).stream()
+                .map(m -> alsDto(m.meldung(), m.anzeige()))
+                .toList();
     }
 
     /** „Gelesen“ an einer eigenen Meldung. */
@@ -54,8 +57,8 @@ public class ZeitbuchungUeberschneidungMobileController {
         return mobile.mitarbeiterId();
     }
 
-    private UeberschneidungMeldungDto alsDto(ZeitbuchungUeberschneidung u) {
-        ZeitbuchungUeberschneidungService.Anzeige anzeige = service.anzeigeFuerMitarbeiter(u);
+    private static UeberschneidungMeldungDto alsDto(ZeitbuchungUeberschneidung u,
+            UeberschneidungAnzeige.Anzeige anzeige) {
         return new UeberschneidungMeldungDto(u.getId(), u.getHandyVon().toString(),
                 u.getHandyBis() != null ? u.getHandyBis().toString() : null,
                 anzeige.titel(), anzeige.text(), u.getErstelltAm().toString());

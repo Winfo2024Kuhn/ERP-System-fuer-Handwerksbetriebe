@@ -38,6 +38,10 @@ Im Monatsraster zeigt jeder Tag seine Buchungen (z. B. Projektname, „URLAUB“
 
 Jede Buchung braucht ein Projekt. Eine Buchung ohne „Bis“ gilt als laufend; das Programm beendet sie spätestens zum eingestellten Feierabend bzw. um 23:59 und meldet das in der Glocke. „Schließen“ verwirft nicht gespeicherte Änderungen.
 
+## Meldungen „Zeiten prüfen“ öffnen
+
+Unter **Benachrichtigungen → Zeiten prüfen** stehen „Überschneidung Handy/Büro“ und „Zeiten ohne Feierabend“. „Öffnen“ führt direkt in die Tageserfassung des Mitarbeiters an diesem Tag. Die betroffenen Buchungen sind gelb umrandet und tragen „Aus Meldung“; darüber erklärt ein Hinweis, was passiert ist (mehr über das (i) daneben). Korrigiert wird wie gewohnt. Nach „Schließen“ bleibt der Kalender auf Mitarbeiter und Monat stehen; neu laden öffnet den Tag nicht noch einmal. Liegt der Tag in einem abgeschlossenen Monat, kommt erst die Rückfrage zum Monatsabschluss, „Nur ansehen“ zeigt die Markierung schreibgeschützt.
+
 ## Buchung löschen
 
 In **Zeiterfassung → Kalender** den Tag doppelklicken und in der „Tageserfassung“ bei der Buchung auf den Papierkorb klicken, Rückfrage bestätigen. Die Buchung ist sofort gelöscht, ohne „Alle Speichern“. Das Programm hält jede Änderung und Löschung im Hintergrund fest.

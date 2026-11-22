@@ -17,9 +17,9 @@ class UeberschneidungPushListenerTest {
     @Test
     void schicktPushAnsHandyDesMitarbeiters() {
         listener.beiNeuerMeldung(new ZeitbuchungUeberschneidungService.UeberschneidungGemeldet(7L,
-                "Überschneidung am 28.10.2026", "Deine Handy-Buchung 10:00–12:00 hatte Vorrang."));
+                "Überschneidung am 28.10.2026", "Deine Handy-Zeiten: Arbeit 10:00–12:00."));
 
         verify(webPushService).notifyMitarbeiter(7L, "Überschneidung am 28.10.2026",
-                "Deine Handy-Buchung 10:00–12:00 hatte Vorrang.", "/zeiterfassung/tagesbuchungen", "ZEIT_UEBERSCHNEIDUNG");
+                "Deine Handy-Zeiten: Arbeit 10:00–12:00.", "/zeiterfassung/tagesbuchungen", "ZEIT_UEBERSCHNEIDUNG");
     }
 }

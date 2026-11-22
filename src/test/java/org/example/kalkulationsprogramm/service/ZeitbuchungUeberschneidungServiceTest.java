@@ -26,8 +26,11 @@ import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.domain.UeberschneidungErgebnis;
 import org.example.kalkulationsprogramm.domain.Zeitbuchung;
 import org.example.kalkulationsprogramm.domain.ZeitbuchungUeberschneidung;
+import org.example.kalkulationsprogramm.domain.ZeitbuchungUeberschneidungHandyZeit;
 import org.example.kalkulationsprogramm.repository.ZeitbuchungRepository;
+import org.example.kalkulationsprogramm.repository.ZeitbuchungUeberschneidungHandyZeitRepository;
 import org.example.kalkulationsprogramm.repository.ZeitbuchungUeberschneidungRepository;
+import org.example.kalkulationsprogramm.service.ueberschneidung.UeberschneidungAnzeige;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -54,17 +57,21 @@ class ZeitbuchungUeberschneidungServiceTest {
     @Mock private ZeitbuchungAuditService auditService;
     @Mock private MonatsSaldoService monatsSaldoService;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private ZeitbuchungUeberschneidungHandyZeitRepository handyZeitRepository;
 
     private ZeitbuchungUeberschneidungService service;
     private Mitarbeiter max;
     private final Map<Long, Zeitbuchung> buchungen = new HashMap<>();
     private final List<ZeitbuchungUeberschneidung> meldungen = new ArrayList<>();
+    private final List<ZeitbuchungUeberschneidungHandyZeit> handyZeiten = new ArrayList<>();
     private long naechsteId = 500;
 
     @BeforeEach
     void setUp() {
         service = new ZeitbuchungUeberschneidungService(zeitbuchungRepository, ueberschneidungRepository,
-                auditService, monatsSaldoService, eventPublisher);
+                auditService, monatsSaldoService, eventPublisher,
+                new org.example.kalkulationsprogramm.service.ueberschneidung.UeberschneidungHandyZeiten(
+                        handyZeitRepository, zeitbuchungRepository));
         max = new Mitarbeiter();
         max.setId(MAX_ID);
         max.setVorname("Max");
@@ -115,6 +122,43 @@ class ZeitbuchungUeberschneidungServiceTest {
                 .filter(u -> inv.getArgument(0).equals(u.getHandyBuchungId()))
                 .toList());
         when(monatsSaldoService.isMonatFestgeschrieben(anyLong(), anyInt(), anyInt())).thenReturn(false);
+
+        when(zeitbuchungRepository.findAllById(any())).thenAnswer(inv -> {
+            List<Zeitbuchung> treffer = new ArrayList<>();
+            ((Iterable<Long>) inv.getArgument(0)).forEach(id -> {
+                if (buchungen.containsKey(id)) {
+                    treffer.add(buchungen.get(id));
+                }
+            });
+            return treffer;
+        });
+        when(handyZeitRepository.save(any(ZeitbuchungUeberschneidungHandyZeit.class))).thenAnswer(inv -> {
+            ZeitbuchungUeberschneidungHandyZeit h = inv.getArgument(0);
+            if (h.getId() == null) {
+                h.setId((long) handyZeiten.size() + 1);
+                handyZeiten.add(h);
+            }
+            return h;
+        });
+        when(handyZeitRepository.findByUeberschneidungIdAndHandyBuchungId(anyLong(), anyLong())).thenAnswer(inv ->
+                handyZeiten.stream()
+                        .filter(h -> h.getUeberschneidung().getId().equals(inv.getArgument(0))
+                                && h.getHandyBuchungId().equals(inv.getArgument(1)))
+                        .findFirst());
+        when(handyZeitRepository.findByHandyBuchungId(anyLong())).thenAnswer(inv -> handyZeiten.stream()
+                .filter(h -> h.getHandyBuchungId().equals(inv.getArgument(0)))
+                .toList());
+        when(handyZeitRepository.findZuMeldungen(any())).thenAnswer(inv -> handyZeiten.stream()
+                .filter(h -> ((java.util.Collection<?>) inv.getArgument(0)).contains(h.getUeberschneidung().getId()))
+                .toList());
+    }
+
+    private String textHandy(ZeitbuchungUeberschneidung meldung) {
+        return UeberschneidungAnzeige.fuerMitarbeiter(meldung, service.stand(List.of(meldung))).text();
+    }
+
+    private String textBuero(ZeitbuchungUeberschneidung meldung) {
+        return UeberschneidungAnzeige.fuerBuero(meldung, service.stand(List.of(meldung))).text();
     }
 
     private static LocalDateTime um(int stunde, int minute) {
@@ -192,7 +236,7 @@ class ZeitbuchungUeberschneidungServiceTest {
         assertThat(eintrag.getStartZeit()).isEqualTo(um(11, 0));
         assertThat(meldungen).singleElement().extracting(ZeitbuchungUeberschneidung::getErgebnis)
                 .isEqualTo(UeberschneidungErgebnis.ZEIT_BELEGT);
-        assertThat(service.anzeigeFuerMitarbeiter(meldungen.getFirst()).text())
+        assertThat(textHandy(meldungen.getFirst()))
                 .contains("weil danach schon ein anderer Eintrag beginnt")
                 .doesNotContain("Monat");
     }
@@ -208,9 +252,9 @@ class ZeitbuchungUeberschneidungServiceTest {
         verify(auditService).protokolliereStorno(eq(eintrag), eq(max), eq(ErfassungsQuelle.SYSTEM), anyString());
         assertThat(meldungen).singleElement().extracting(ZeitbuchungUeberschneidung::getErgebnis)
                 .isEqualTo(UeberschneidungErgebnis.ENTFERNT);
-        assertThat(service.anzeigeFuerMitarbeiter(meldungen.getFirst()).text())
-                .isEqualTo("Deine Handy-Buchung 10:00–12:00 hatte Vorrang. Büro-Eintrag „Musterhaus · Montage“ "
-                        + "10:30–11:30 wurde entfernt.");
+        assertThat(textHandy(meldungen.getFirst()))
+                .isEqualTo("Deine Handy-Zeiten: Arbeit 10:00–12:00. Büro-Eintrag „Musterhaus · Montage“ "
+                        + "10:30–11:30 wurde deshalb entfernt.");
     }
 
     @Test
@@ -231,9 +275,9 @@ class ZeitbuchungUeberschneidungServiceTest {
         assertThat(rest.getProjekt()).isSameAs(eintrag.getProjekt());
         verify(auditService).protokolliereErstellung(rest, max, ErfassungsQuelle.SYSTEM);
 
-        assertThat(service.anzeigeFuerBuero(meldung)).satisfies(a -> {
+        assertThat(UeberschneidungAnzeige.fuerBuero(meldung, service.stand(List.of(meldung)))).satisfies(a -> {
             assertThat(a.titel()).isEqualTo("Max Mustermann am 28.10.2026");
-            assertThat(a.text()).isEqualTo("Handy-Buchung 10:00–12:00 hatte Vorrang. Büro-Eintrag "
+            assertThat(a.text()).isEqualTo("Vom Handy: Arbeit 10:00–12:00. Büro-Eintrag "
                     + "„Musterhaus · Montage“ 07:00–16:00 → jetzt 07:00–10:00 und 12:00–16:00.");
         });
     }
@@ -246,8 +290,7 @@ class ZeitbuchungUeberschneidungServiceTest {
 
         // Direkter Wechsel um 12:00: neue Handy-Buchung beginnt, Rest rückt nach hinten …
         List<ZeitbuchungUeberschneidung> vorher = service.vorNeuerHandyBuchung(max, um(12, 0));
-        handy(3, um(12, 0), null);
-        service.handyBuchungZuordnen(vorher, 3L);
+        service.handyBuchungZuordnen(vorher, handy(3, um(12, 0), null));
         assertThat(buchungen.get(restId).getStartZeit()).isEqualTo(um(12, 1));
         // … und bei Feierabend um 14:00 auf 14:00.
         buchungen.get(3L).setEndeZeit(um(14, 0));
@@ -260,6 +303,7 @@ class ZeitbuchungUeberschneidungServiceTest {
         assertThat(meldung.getHandyBis()).isEqualTo(um(14, 0));
         assertThat(meldung.getErgebnis()).isEqualTo(UeberschneidungErgebnis.GETEILT);
         assertThat(meldung.getHandyBuchungId()).isEqualTo(2L);
+        assertThat(textBuero(meldung)).startsWith("Vom Handy: Arbeit 10:00–12:00, Arbeit 12:00–14:00. ");
         // Nur ein Push für die erste Meldung, nicht für jede Aktualisierung.
         verify(eventPublisher, org.mockito.Mockito.times(1)).publishEvent(any(Object.class));
     }
@@ -274,9 +318,9 @@ class ZeitbuchungUeberschneidungServiceTest {
         assertThat(ergebnis).singleElement().extracting(ZeitbuchungUeberschneidung::getErgebnis)
                 .isEqualTo(UeberschneidungErgebnis.BEENDET);
         assertThat(ergebnis.getFirst().getHandyBuchungId()).isNull();
-        service.handyBuchungZuordnen(ergebnis, 42L);
+        service.handyBuchungZuordnen(ergebnis, handy(42, um(10, 0), null));
         assertThat(ergebnis.getFirst().getHandyBuchungId()).isEqualTo(42L);
-        assertThat(service.anzeigeFuerMitarbeiter(ergebnis.getFirst()).text())
+        assertThat(textHandy(ergebnis.getFirst()))
                 .endsWith("Büro-Eintrag „Musterhaus · Montage“ ab 08:00 → jetzt 08:00–10:00.");
     }
 
@@ -286,18 +330,19 @@ class ZeitbuchungUeberschneidungServiceTest {
 
         List<ZeitbuchungUeberschneidung> ergebnis = service.vorNeuerHandyBuchung(max, um(10, 0));
         Zeitbuchung handy = handy(2, um(10, 0), null);
-        service.handyBuchungZuordnen(ergebnis, 2L);
+        service.handyBuchungZuordnen(ergebnis, handy);
 
         ZeitbuchungUeberschneidung meldung = ergebnis.getFirst();
         assertThat(meldung.getErgebnis()).isEqualTo(UeberschneidungErgebnis.ENTFERNT);
         assertThat(meldung.getHandyBis()).isNull();
-        assertThat(service.anzeigeFuerMitarbeiter(meldung).text()).startsWith("Deine Handy-Buchung ab 10:00 hatte");
+        assertThat(textHandy(meldung)).startsWith("Deine Handy-Zeiten: Arbeit ab 10:00. ");
 
         // Feierabend um 12:00: Der Büro-Eintrag ist schon weg, die Meldung bekommt trotzdem das Ende.
         handy.setEndeZeit(um(12, 0));
         service.nachHandyBuchung(handy, max);
         assertThat(meldung.getHandyBis()).isEqualTo(um(12, 0));
-        assertThat(service.anzeigeFuerMitarbeiter(meldung).text()).startsWith("Deine Handy-Buchung 10:00–12:00");
+        assertThat(textHandy(meldung)).startsWith("Deine Handy-Zeiten: Arbeit 10:00–12:00. ");
+        assertThat(handyZeiten).singleElement().satisfies(h -> assertThat(h.getBis()).isEqualTo(um(12, 0)));
     }
 
     @Test
@@ -333,7 +378,7 @@ class ZeitbuchungUeberschneidungServiceTest {
         verify(auditService, never()).protokolliereAenderung(any(), any(), any(), anyString());
         ZeitbuchungUeberschneidung meldung = meldungen.getFirst();
         assertThat(meldung.getErgebnis()).isEqualTo(UeberschneidungErgebnis.NICHT_GEAENDERT);
-        assertThat(service.anzeigeFuerMitarbeiter(meldung).text()).contains("Monat schon abgeschlossen");
+        assertThat(textHandy(meldung)).contains("Monat schon abgeschlossen");
     }
 
     @Test
@@ -398,23 +443,132 @@ class ZeitbuchungUeberschneidungServiceTest {
         verify(eventPublisher).publishEvent(captor.capture());
         assertThat(captor.getValue().mitarbeiterId()).isEqualTo(MAX_ID);
         assertThat(captor.getValue().titel()).isEqualTo("Überschneidung am 28.10.2026");
-        assertThat(captor.getValue().text()).contains("→ jetzt 09:00–10:00");
-    }
-
-    @Test
-    void zeitraumUeberMitternachtNenntDasDatum() {
-        assertThat(ZeitbuchungUeberschneidungService.zeitraum(um(22, 0), um(22, 0).plusHours(3)))
-                .isEqualTo("22:00–29.10.2026 01:00");
-        assertThat(ZeitbuchungUeberschneidungService.zeitraum(null, null)).isEmpty();
+        assertThat(captor.getValue().text()).isEqualTo("Deine Handy-Zeiten: Arbeit 10:00–12:00. Büro-Eintrag "
+                + "„Musterhaus · Montage“ 09:00–11:00 → jetzt 09:00–10:00.");
     }
 
     @Test
     void buchungenFuerBueroUndHandyKommenAusDemRepository() {
+        ZeitbuchungUeberschneidung u = new ZeitbuchungUeberschneidung();
+        u.setId(9L);
+        u.setHandyVon(um(10, 0));
+        u.setBueroVon(um(9, 0));
+        u.setBueroBis(um(11, 0));
+        u.setErgebnis(UeberschneidungErgebnis.ENTFERNT);
         when(ueberschneidungRepository.findByMitarbeiterIdAndMitarbeiterGesehenAmIsNullOrderByGeaendertAmDesc(MAX_ID))
-                .thenReturn(List.of(new ZeitbuchungUeberschneidung()));
+                .thenReturn(List.of(u));
         when(ueberschneidungRepository.findGeaendertAb(any())).thenReturn(List.of());
 
-        assertThat(service.ungeleseneFuerMitarbeiter(MAX_ID)).hasSize(1);
+        assertThat(service.ungeleseneMitAnzeige(MAX_ID)).singleElement().satisfies(m -> {
+            assertThat(m.meldung()).isNotNull();
+            assertThat(m.anzeige().text()).startsWith("Deine Handy-Zeiten: ");
+        });
         assertThat(service.fuerBuero()).isEmpty();
+    }
+
+    /**
+     * Echter Fall (Dummy-Daten): Das Büro trägt den Tag von Hand ein, am Folgetag schickt das
+     * Handy gepuffert Arbeit 11:27–12:00, Pause 12:00–13:34, Arbeit 13:35–17:57 – so, wie
+     * {@code ZeiterfassungApiService} die Schritte aufruft. Jede Meldung nennt genau die
+     * Handy-Zeiten, die ihren Büro-Eintrag verdrängt haben, keine zusammengezogene Spanne.
+     */
+    @Test
+    void gepufferteHandyBuchungenStehenEinzelnInDerMeldung() {
+        buero(1, um(10, 30), um(12, 0));
+        Zeitbuchung bueroPause = buero(2, um(12, 0), um(13, 0));
+        bueroPause.setTyp(BuchungsTyp.PAUSE);
+        buero(3, um(13, 0), um(15, 30));
+        buero(4, um(15, 30), um(16, 45));
+
+        service.handyBuchungZuordnen(service.vorNeuerHandyBuchung(max, um(11, 27)), handy(30, um(11, 27), null));
+        Zeitbuchung arbeit = buchungen.get(30L);
+        arbeit.setEndeZeit(um(12, 0));
+        service.nachHandyBuchung(arbeit, max);
+        List<ZeitbuchungUeberschneidung> vorPause = service.vorNeuerHandyBuchung(max, um(12, 0));
+        Zeitbuchung pause = handy(31, um(12, 0), null);
+        pause.setTyp(BuchungsTyp.PAUSE);
+        service.handyBuchungZuordnen(vorPause, pause);
+        pause.setEndeZeit(um(13, 34));
+        service.nachHandyBuchung(pause, max);
+        List<ZeitbuchungUeberschneidung> vorArbeit = service.vorNeuerHandyBuchung(max, um(13, 35));
+        Zeitbuchung nachmittag = handy(32, um(13, 35), null);
+        service.handyBuchungZuordnen(vorArbeit, nachmittag);
+        nachmittag.setEndeZeit(um(17, 57));
+        service.nachHandyBuchung(nachmittag, max);
+
+        assertThat(meldungen).hasSize(4);
+        assertThat(textBuero(meldungZu(1L))).isEqualTo("Vom Handy: Arbeit 11:27–12:00. Büro-Eintrag "
+                + "„Musterhaus · Montage“ 10:30–12:00 → jetzt 10:30–11:27.");
+        assertThat(textBuero(meldungZu(2L))).isEqualTo("Vom Handy: Pause 12:00–13:34. Büro-Eintrag „Pause“ "
+                + "12:00–13:00 wurde deshalb entfernt.");
+        assertThat(textBuero(meldungZu(3L))).isEqualTo("Vom Handy: Pause 12:00–13:34, Arbeit 13:35–17:57. "
+                + "Büro-Eintrag „Musterhaus · Montage“ 13:00–15:30 wurde deshalb entfernt.");
+        assertThat(textBuero(meldungZu(4L))).isEqualTo("Vom Handy: Arbeit 13:35–17:57. Büro-Eintrag "
+                + "„Musterhaus · Montage“ 15:30–16:45 wurde deshalb entfernt.");
+        // Je Meldung und Handy-Buchung genau eine Zeile, kein vorläufiger Ein-Minuten-Zeitraum.
+        assertThat(handyZeiten).hasSize(5)
+                .allSatisfy(h -> assertThat(h.getBis()).isNotNull())
+                .noneSatisfy(h -> assertThat(java.time.Duration.between(h.getVon(), h.getBis()))
+                        .isEqualTo(java.time.Duration.ofMinutes(1)));
+        // Gespeichert wird nur, was sich ändert: 5 neue Zeilen, 3 Mal ein nachgetragenes Ende.
+        verify(handyZeitRepository, org.mockito.Mockito.times(8)).save(any(ZeitbuchungUeberschneidungHandyZeit.class));
+    }
+
+    private ZeitbuchungUeberschneidung meldungZu(Long bueroId) {
+        return meldungen.stream().filter(u -> bueroId.equals(u.getBueroBuchungId())).findFirst().orElseThrow();
+    }
+
+    @Test
+    void festgehalteneHandyZeitBleibtStandVonDamals() {
+        buero(1, um(9, 0), um(11, 0));
+        Zeitbuchung handy = handy(2, um(10, 0), um(12, 0));
+        service.nachHandyBuchung(handy, max);
+
+        // Das Büro ändert die Handy-Buchung später – die Meldung zeigt weiter, was das Handy schickte.
+        handy.setStartZeit(um(10, 30));
+
+        assertThat(textBuero(meldungen.getFirst())).startsWith("Vom Handy: Arbeit 10:00–12:00. ");
+    }
+
+    @Test
+    void altmeldungOhneFestgehalteneZeitenNenntDieSpanne() {
+        ZeitbuchungUeberschneidung alt = new ZeitbuchungUeberschneidung();
+        alt.setId(99L);
+        alt.setMitarbeiter(max);
+        alt.setHandyVon(um(11, 27));
+        alt.setHandyBis(um(13, 34));
+        alt.setBueroVon(um(12, 0));
+        alt.setBueroBis(um(13, 0));
+        alt.setBueroBezeichnung("Pause");
+        alt.setErgebnis(UeberschneidungErgebnis.ENTFERNT);
+
+        assertThat(textBuero(alt)).isEqualTo("Vom Handy: 11:27–13:34. Büro-Eintrag „Pause“ 12:00–13:00 "
+                + "wurde deshalb entfernt.");
+    }
+
+    /**
+     * Tageswechsel: Ein Offline-Anstempeln vom Vortag kommt erst heute an. Der heute im Büro
+     * gestartete, noch laufende Eintrag bleibt stehen (ZeiterfassungApiService lehnt die
+     * verspätete Buchung dann mit 409 ab), statt still storniert zu werden.
+     */
+    @Test
+    void verspaeteteBuchungVomVortagLaesstHeuteLaufendenBueroEintragStehen() {
+        Zeitbuchung heute = buero(1, um(8, 0).plusDays(1), null);
+
+        List<ZeitbuchungUeberschneidung> ergebnis = service.vorNeuerHandyBuchung(max, um(11, 27));
+
+        assertThat(ergebnis).isEmpty();
+        assertThat(buchungen).containsKey(1L);
+        assertThat(heute.getEndeZeit()).isNull();
+        verify(auditService, never()).protokolliereStorno(any(), any(), any(), anyString());
+    }
+
+    @Test
+    void vorDerHandyBuchungGestarteterLaufenderEintragVomVortagEndetWeiterhin() {
+        Zeitbuchung gestern = buero(1, um(6, 0), null);
+
+        service.vorNeuerHandyBuchung(max, um(6, 0).plusDays(1));
+
+        assertThat(gestern.getEndeZeit()).isEqualTo(um(6, 0).plusDays(1));
     }
 }

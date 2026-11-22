@@ -1,5 +1,5 @@
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ZeiterfassungKalender from './ZeiterfassungKalender';
 const { toast, confirm } = vi.hoisted(() => ({ toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn(), info: vi.fn() }, confirm: vi.fn() }));
@@ -741,6 +741,17 @@ describe('Tageserfassung: Schließen, Uhrzeiten, Vorbelegung, Verlauf (#269)', (
         expect(screen.getByText('4:15h')).toBeVisible();
     });
 
+    it('prüft auch gespeicherte Arbeitszeit, die der Server mit Typ „ARBEIT“ schickt', async () => {
+        tage = [arbeitstag(3, 1, [{ ...gespeichert, typ: 'ARBEIT' }])];
+        await oeffneTag();
+        fireEvent.change(screen.getByRole('textbox', { name: 'Bis Buchung 1' }), { target: { value: '07:00' } });
+
+        expect(screen.getByText('Ende vor Beginn')).toBeVisible();
+        fireEvent.click(screen.getByRole('button', { name: 'Alle Speichern' }));
+        expect(toast.error).toHaveBeenCalledWith('Bei einer Buchung liegt das Ende vor dem Beginn. Buchungen über Mitternacht bitte auf zwei Tage aufteilen.');
+        expect(mockFetch.mock.calls.filter(call => call[1]?.method === 'PUT')).toHaveLength(0);
+    });
+
     it('zeigt die Ablehnung des Servers (400) als Meldung', async () => {
         tage = [arbeitstag(3, 1, [gespeichert])];
         const meldung = 'Das Ende der Buchung muss nach dem Beginn liegen.';
@@ -820,5 +831,82 @@ describe('Tageserfassung: Schließen, Uhrzeiten, Vorbelegung, Verlauf (#269)', (
         fireEvent.click(await screen.findByRole('button', { name: 'Mehr zu: Tipps zur Bedienung' }));
         expect(screen.getByText(/mit gedrückter Umschalttaste/)).toBeVisible();
         expect(screen.getByText(/Tage ohne Soll-Stunden/)).toBeVisible();
+    });
+});
+
+describe('Öffnen aus einer Meldung (Tag, Markierung, Anlass im Link)', () => {
+    const handy = { id: 7, projektId: 1, arbeitsgangId: 1, projektName: 'Testprojekt', arbeitsgangName: 'Montage', startZeit: '11:27:00', endeZeit: '12:00:00', dauerMinuten: 33, dauerFormatiert: '0:33', notiz: '', typ: 'ARBEIT' };
+    const buero = { ...handy, id: 8, startZeit: '13:34:00', endeZeit: '16:00:00', dauerMinuten: 146, dauerFormatiert: '2:26' };
+    const link = `/zeitbuchungen?jahr=${year}&monat=8&mitarbeiterId=1&tag=${year}-08-03&anlass=ueberschneidung&markiert=8,99`;
+
+    function Adresse() {
+        const location = useLocation();
+        return <output data-testid="adresse">{location.search}</output>;
+    }
+    const mountMitAdresse = (url: string) => render(
+        <MemoryRouter initialEntries={[url]}><ZeiterfassungKalender /><Adresse /></MemoryRouter>
+    );
+
+    it('öffnet die Tagesansicht des Tages, markiert die betroffene Buchung und erklärt den Anlass', async () => {
+        tage = [arbeitstag(3, 1, [handy, buero]), arbeitstag(4, 2)];
+        mountMitAdresse(link);
+
+        const dialog = await screen.findByRole('dialog', { name: 'Tageserfassung' });
+        expect(within(dialog).getByText(/ 3\. August/)).toBeVisible();
+        expect(within(dialog).getByText('Hier haben sich Handy- und Büro-Zeiten überschnitten. Die betroffenen Einträge sind markiert.')).toBeVisible();
+        // Nur Buchung 8 ist markiert; die unbekannte ID 99 wird still übergangen.
+        expect(within(dialog).getAllByText('Aus Meldung')).toHaveLength(1);
+        const markiert = dialog.querySelector('[data-markiert]') as HTMLElement;
+        expect(within(markiert).getByRole('textbox', { name: 'Von Buchung 2' })).toHaveValue('13:34');
+
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Mehr zu: Überschneidung Handy/Büro' }));
+        expect(screen.getByText(/hat das Programm die Handy-Zeit behalten/)).toBeVisible();
+    });
+
+    it('nimmt beim Schließen Tag, Markierung und Anlass aus der Adresse', async () => {
+        tage = [arbeitstag(3, 1, [handy, buero])];
+        mountMitAdresse(link);
+        await screen.findByRole('dialog', { name: 'Tageserfassung' });
+
+        fireEvent.click(screen.getByRole('button', { name: 'Tageserfassung schließen' }));
+        await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Tageserfassung' })).not.toBeInTheDocument());
+        expect(screen.getByTestId('adresse')).toHaveTextContent(`?jahr=${year}&monat=8&mitarbeiterId=1`);
+        expect(screen.getByTestId('adresse').textContent).not.toMatch(/tag=|markiert=|anlass=/);
+    });
+
+    it('zeigt beim fehlenden Feierabend den passenden Hinweis', async () => {
+        tage = [arbeitstag(3, 1, [handy])];
+        mountMitAdresse(link.replace('anlass=ueberschneidung', 'anlass=ohne-feierabend'));
+        expect(await screen.findByText('Hier fehlt ein Feierabend. Das Ende wurde automatisch gesetzt.')).toBeVisible();
+    });
+
+    it('öffnet ohne Tag im Link nichts von selbst', async () => {
+        tage = [arbeitstag(3, 1, [handy])];
+        mountMitAdresse(`/zeitbuchungen?jahr=${year}&monat=8&mitarbeiterId=1`);
+        await screen.findByText('3', { selector: 'span' });
+        expect(screen.queryByRole('dialog', { name: 'Tageserfassung' })).not.toBeInTheDocument();
+    });
+
+    it('fragt im abgeschlossenen Monat erst nach und markiert dann im Nur-Lesen-Modus', async () => {
+        closed = true;
+        tage = [arbeitstag(3, 1, [handy, buero])];
+        mountMitAdresse(link);
+
+        expect(await screen.findByRole('dialog', { name: 'Monatsabschluss ist festgeschrieben' })).toBeVisible();
+        expect(screen.queryByRole('dialog', { name: 'Tageserfassung' })).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: /Nur ansehen/ }));
+
+        const dialog = screen.getByRole('dialog', { name: 'Tageserfassung' });
+        expect(within(dialog).getByRole('textbox', { name: 'Von Buchung 2' })).toBeDisabled();
+        expect(within(dialog).getByText('Aus Meldung')).toBeVisible();
+    });
+
+    it('nimmt den Link auch beim Abbrechen der Rückfrage im abgeschlossenen Monat aus der Adresse', async () => {
+        closed = true;
+        tage = [arbeitstag(3, 1, [handy])];
+        mountMitAdresse(link);
+        await screen.findByRole('dialog', { name: 'Monatsabschluss ist festgeschrieben' });
+        fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
+        await waitFor(() => expect(screen.getByTestId('adresse').textContent).not.toMatch(/tag=/));
     });
 });

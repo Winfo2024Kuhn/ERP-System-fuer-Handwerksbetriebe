@@ -18,6 +18,7 @@ import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.UeberschneidungErgebnis;
 import org.example.kalkulationsprogramm.domain.ZeitbuchungUeberschneidung;
 import org.example.kalkulationsprogramm.service.ZeitbuchungUeberschneidungService;
+import org.example.kalkulationsprogramm.service.ueberschneidung.UeberschneidungAnzeige;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -73,9 +74,8 @@ class ZeitbuchungUeberschneidungMobileControllerTest {
     void listeLiefertEigeneUngeleseneMeldungen() throws Exception {
         alsHandy(MAX_ID);
         ZeitbuchungUeberschneidung u = meldung("<script>alert(1)</script>");
-        when(service.ungeleseneFuerMitarbeiter(MAX_ID)).thenReturn(List.of(u));
-        when(service.anzeigeFuerMitarbeiter(u)).thenReturn(
-                new ZeitbuchungUeberschneidungService.Anzeige("Überschneidung am 28.10.2026", "Text"));
+        when(service.ungeleseneMitAnzeige(MAX_ID)).thenReturn(List.of(new ZeitbuchungUeberschneidungService
+                .MeldungMitAnzeige(u, new UeberschneidungAnzeige.Anzeige("Überschneidung am 28.10.2026", "Text"))));
 
         mockMvc.perform(get("/api/zeiterfassung/ueberschneidungen"))
                 .andExpect(status().isOk())
@@ -92,8 +92,8 @@ class ZeitbuchungUeberschneidungMobileControllerTest {
         alsHandy(MAX_ID);
         ZeitbuchungUeberschneidung u = meldung("Musterhaus · Montage");
         u.setHandyBis(null);
-        when(service.ungeleseneFuerMitarbeiter(MAX_ID)).thenReturn(List.of(u));
-        when(service.anzeigeFuerMitarbeiter(u)).thenReturn(new ZeitbuchungUeberschneidungService.Anzeige("t", "x"));
+        when(service.ungeleseneMitAnzeige(MAX_ID)).thenReturn(List.of(new ZeitbuchungUeberschneidungService
+                .MeldungMitAnzeige(u, new UeberschneidungAnzeige.Anzeige("t", "x"))));
 
         mockMvc.perform(get("/api/zeiterfassung/ueberschneidungen"))
                 .andExpect(status().isOk())
@@ -106,7 +106,7 @@ class ZeitbuchungUeberschneidungMobileControllerTest {
                 .andExpect(status().isUnauthorized());
         mockMvc.perform(put("/api/zeiterfassung/ueberschneidungen/3/gesehen"))
                 .andExpect(status().isUnauthorized());
-        verify(service, never()).ungeleseneFuerMitarbeiter(anyLong());
+        verify(service, never()).ungeleseneMitAnzeige(anyLong());
     }
 
     @Test

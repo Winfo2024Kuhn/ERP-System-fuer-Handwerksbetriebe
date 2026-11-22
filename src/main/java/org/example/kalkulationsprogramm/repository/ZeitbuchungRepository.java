@@ -124,9 +124,12 @@ public interface ZeitbuchungRepository extends JpaRepository<Zeitbuchung, Long> 
 
         /**
          * Alle automatisch beendeten Buchungen ab einem Stichtag – die offenen
-         * Prüffälle für die Benachrichtigungs-Glocke.
+         * Prüffälle für die Benachrichtigungs-Glocke. Mit Mitarbeiter (Name im Text, ohne Nachladen je Eintrag).
          */
-        List<Zeitbuchung> findByAutomatischBeendetTrueAndStartZeitAfterOrderByStartZeitDesc(LocalDateTime ab);
+        @Query("SELECT z FROM Zeitbuchung z LEFT JOIN FETCH z.mitarbeiter "
+                        + "WHERE z.automatischBeendet = true AND z.startZeit > :ab ORDER BY z.startZeit DESC")
+        List<Zeitbuchung> findByAutomatischBeendetTrueAndStartZeitAfterOrderByStartZeitDesc(
+                        @Param("ab") LocalDateTime ab);
 
         /**
          * Alle Buchungen eines Mitarbeiters, die den Zeitraum [von, bis) berühren – auch noch
@@ -136,6 +139,17 @@ public interface ZeitbuchungRepository extends JpaRepository<Zeitbuchung, Long> 
                         + "AND z.startZeit < :bis AND (z.endeZeit IS NULL OR z.endeZeit > :von) "
                         + "ORDER BY z.startZeit ASC")
         List<Zeitbuchung> findUeberlappende(@Param("mitarbeiterId") Long mitarbeiterId,
+                        @Param("von") LocalDateTime von, @Param("bis") LocalDateTime bis);
+
+        /**
+         * Wie {@link #findUeberlappende}, aber für mehrere Mitarbeiter in einer Abfrage (Glocke
+         * „Zeiten ohne Feierabend“: ein Zeitraum über alle Einträge, gefiltert wird danach je Buchung).
+         */
+        @Query("SELECT z FROM Zeitbuchung z WHERE z.mitarbeiter.id IN :mitarbeiterIds "
+                        + "AND z.startZeit < :bis AND (z.endeZeit IS NULL OR z.endeZeit > :von) "
+                        + "ORDER BY z.startZeit ASC, z.id ASC")
+        List<Zeitbuchung> findUeberlappendeVonMitarbeitern(
+                        @Param("mitarbeiterIds") java.util.Collection<Long> mitarbeiterIds,
                         @Param("von") LocalDateTime von, @Param("bis") LocalDateTime bis);
 
         /** Beginnt beim Mitarbeiter schon eine Buchung genau zu dieser Zeit? (Unique-Index Mitarbeiter + Start) */
