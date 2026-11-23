@@ -95,12 +95,12 @@ COPY --chmod=0755 deployment/docker-image/app-start.sh /usr/local/bin/erp-start
 # Expose server port
 EXPOSE 8080
 
-# Health check. wget statt curl: das JRE-Image bringt kein curl mit, der
-# Healthcheck konnte deshalb nie gruen werden und der Container blieb
-# dauerhaft auf 'unhealthy', obwohl die App lief.
+# Health check ueber bash /dev/tcp: das JRE-Image (eclipse-temurin, Ubuntu)
+# bringt weder curl noch wget mit. Mit beiden blieb der Container dauerhaft
+# 'unhealthy', obwohl die App lief. bash ist im Image, braucht kein Paket.
 # /actuator/health meldet erst 200, wenn Datenbank + Flyway-Migrationen durch sind.
 HEALTHCHECK --interval=30s --timeout=10s --retries=5 --start-period=120s \
-    CMD wget -qO- http://localhost:8080/actuator/health >/dev/null 2>&1 || exit 1
+    CMD ["bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /actuator/health HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && head -n1 <&3 | grep -q ' 200 '"]
 
 # Profil per Umgebungsvariable (nicht als Startargument): so kann
 # docker-compose es ueberschreiben (deployment/docker-server setzt docker,postgres -
