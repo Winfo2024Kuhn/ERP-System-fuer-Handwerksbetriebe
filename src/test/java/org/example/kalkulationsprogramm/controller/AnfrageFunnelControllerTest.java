@@ -5,6 +5,9 @@ import org.example.kalkulationsprogramm.domain.Anfrage;
 import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageFunnelRequestDto;
 import org.example.kalkulationsprogramm.service.AnfrageFunnelService;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -29,6 +32,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(AnfrageFunnelController.class)
+@ExtendWith(OutputCaptureExtension.class)
 @AutoConfigureMockMvc(addFilters = false)
 class AnfrageFunnelControllerTest {
 
@@ -88,7 +92,7 @@ class AnfrageFunnelControllerTest {
                         .file(anfragePart("{\"datenschutzAkzeptiert\":true}")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.message").value("Die Anfrage ist unvollständig oder ungültig."))
+                .andExpect(jsonPath("$.message").value("Bitte prüfen Sie folgende Angaben: Leistung, Nachricht, Vorname, Nachname, E-Mail."))
                 .andExpect(jsonPath("$.felder", hasItems("vorname", "nachname", "email", "nachricht", "serviceTyp")));
 
         then(anfrageFunnelService).should(never()).verarbeiteFunnelAnfrage(any(), any());
@@ -102,7 +106,7 @@ class AnfrageFunnelControllerTest {
         mockMvc.perform(multipart("/api/internal/anfrage")
                         .file(anfragePart(objectMapper.writeValueAsString(dto))))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("Datenschutz muss akzeptiert werden."))
+                .andExpect(jsonPath("$.message").value("Bitte bestätigen Sie die Datenschutzerklärung."))
                 .andExpect(jsonPath("$.felder", hasItems("datenschutzAkzeptiert")));
 
         then(anfrageFunnelService).should(never()).verarbeiteFunnelAnfrage(any(), any());
@@ -210,5 +214,48 @@ class AnfrageFunnelControllerTest {
         dto.setProjektAnschrift("Musterstraße 1, 12345 Musterstadt");
         dto.setDatenschutzAkzeptiert(true);
         return dto;
+    }
+
+    @Test
+    void erfolgreicheAnfrageWirdMitCodeDerWebseiteGeloggt(CapturedOutput output) throws Exception {
+        Anfrage anfrage = new Anfrage();
+        anfrage.setId(4711L);
+        given(anfrageFunnelService.verarbeiteFunnelAnfrage(any(), any())).willReturn(anfrage);
+        MockMultipartFile bild = new MockMultipartFile("bilder", "tor.jpg", "image/jpeg", new byte[2048]);
+
+        mockMvc.perform(multipart("/api/internal/anfrage")
+                        .file(anfragePart(objectMapper.writeValueAsString(validDto())))
+                        .file(bild)
+                        .header("X-Anfrage-Code", "k3f9qa"))
+                .andExpect(status().isCreated());
+
+        assertThat(output.getOut()).contains("Funnel-Anfrage [k3f9qa] angelegt: anfrageId=4711, bilder=1 (2 KB)");
+    }
+
+    @Test
+    void abgelehnteAnfrageWirdMitCodeGeloggtUndOhneEingaben(CapturedOutput output) throws Exception {
+        mockMvc.perform(multipart("/api/internal/anfrage")
+                        .file(anfragePart("{\"datenschutzAkzeptiert\":true,\"vorname\":\"Geheim\"}"))
+                        .header("X-Anfrage-Code", "ab12cd"))
+                .andExpect(status().isBadRequest());
+
+        assertThat(output.getOut()).contains("Funnel-Anfrage [ab12cd] abgelehnt, ungültige Felder:");
+        assertThat(output.getOut()).doesNotContain("Geheim");
+    }
+
+    @Test
+    void codeAusDemHeaderLandetNurBereinigtImLog() {
+        assertThat(AnfrageFunnelController.codeFuerLog("k3f9qa")).isEqualTo("k3f9qa");
+        assertThat(AnfrageFunnelController.codeFuerLog(null)).isEqualTo("-");
+        assertThat(AnfrageFunnelController.codeFuerLog("x\nFAKE LOG")).isEqualTo("-");
+        assertThat(AnfrageFunnelController.codeFuerLog("<script>")).isEqualTo("-");
+    }
+
+    @Test
+    void meldungNenntFelderWieImFormular() {
+        assertThat(AnfrageFunnelController.meldungFuerFelder(List.of("email", "projektarten[0].<list element>")))
+                .isEqualTo("Bitte prüfen Sie folgende Angaben: Projektart, E-Mail.");
+        assertThat(AnfrageFunnelController.meldungFuerFelder(List.of("consentIp")))
+                .isEqualTo("Einige Angaben fehlen oder passen nicht. Bitte prüfen Sie das Formular.");
     }
 }
