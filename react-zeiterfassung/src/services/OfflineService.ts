@@ -3,6 +3,7 @@
 // PRINCIPLE: Client ALWAYS wins when pending entries exist.
 // The local session is NEVER deleted by sync logic.
 import { leseFehlermeldung } from '../lib/apiFehler'
+import type { LieferantAnsprechpartnerKurz } from '../features/lieferanten/ansprechpartner'
 import { istVollstaendigerZeitkontoStatus, type ZeitkontoStatus } from '../types/zeitkonto'
 import {
     arbeiteWarteschlangeAb,
@@ -418,7 +419,7 @@ export const OfflineService = {
             mobiltelefon?: string;
             kundenEmails?: string[];
             lieferantenTyp?: string;
-            vertreter?: string;
+            ansprechpartner?: LieferantAnsprechpartnerKurz[];
             eigeneKundennummer?: string;
         }>('/api/zeiterfassung/lieferanten?limit=15', 'lieferanten')
     },

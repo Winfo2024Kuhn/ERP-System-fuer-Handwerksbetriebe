@@ -4,7 +4,7 @@ Unter **Vorlagen & Stammdaten → Lieferanten** stehen alle Lieferanten mit ihre
 
 ## Lieferanten finden
 
-In **Vorlagen & Stammdaten → Lieferanten** wird beim Tippen sofort gefiltert: „Freitext“ (Name, zweiter Name, Telefon, Ort, Straße, Vertreter), „Name“, „Typ“ und „Ort“; „Filter zurücksetzen“ leert alle Felder. Nach E-Mail-Adressen sucht das Freitextfeld nicht. Die Lieferanten stehen als Karten nach Namen sortiert, 12 pro Seite. Ein Klick öffnet den Lieferanten, der Stift beim Drüberfahren öffnet gleich das Bearbeiten.
+In **Vorlagen & Stammdaten → Lieferanten** wird beim Tippen sofort gefiltert: „Freitext“ (Name, zweiter Name, Telefon, Ort, Straße, Ansprechpartner), „Name“, „Typ“ und „Ort“; „Filter zurücksetzen“ leert alle Felder. Nach E-Mail-Adressen sucht das Freitextfeld nicht. Die Lieferanten stehen als Karten nach Namen sortiert, 12 pro Seite. Auf der Karte steht der erste Ansprechpartner, bei mehreren mit „+2“ usw. Ein Klick öffnet den Lieferanten, der Stift beim Drüberfahren öffnet gleich das Bearbeiten.
 
 ## Neuen Lieferanten anlegen
 
@@ -16,9 +16,11 @@ In **Vorlagen & Stammdaten → Lieferanten** wird beim Tippen sofort gefiltert: 
    - „Eigene Kundennummer (beim Lieferanten)“.
    - „Standard-Kostenstelle“: neue Rechnungen dieses Lieferanten werden automatisch ganz auf diese Kostenstelle gebucht.
    - „Wird immer im Voraus bezahlt“: Rechnungen, die per E-Mail kommen, gelten sofort als bezahlt und stehen nicht in den Offenen Posten.
-   - Adresse, Telefon, Mobil, Vertreter.
+   - Adresse, Telefon, Mobil.
    - „E-Mail-Adressen“: Adresse eintragen und „Hinzufügen“. Das Programm ergänzt die info@-Adresse derselben Firma; sie lässt sich wieder entfernen.
 4. „Speichern“.
+
+Personen beim Lieferanten (Außendienst, Innendienst, Buchhaltung …) trägt man danach im Reiter „Ansprechpartner“ ein, siehe unten.
 
 ## Warum die E-Mail-Adressen eines Lieferanten wichtig sind
 
@@ -36,7 +38,20 @@ Ein Klick auf einen Lieferanten unter **Vorlagen & Stammdaten → Lieferanten** 
 - „Artikel“: Artikel, für die dieser Lieferant einen Preis hat,
 - „Lieferzeit Ø“: aus den Auftragsbestätigungen berechnet.
 
-Reiter: „E-Mail-Verlauf“ (alle E-Mails des Lieferanten nach Verläufen, zuerst 25, „Mehr laden“ holt die nächsten; Suche und Filter durchsuchen alle; nur lesen), „Anrufe“ (nur mit dem Recht „Anrufe & Anrufbeantworter“), „Dokumente“, „Notizen“ und „Reklamationen“. Rechts stehen die „Kontaktdaten“ mit „Standard-Kostenstelle“, „Bezahlung“ und einer Karte des Standorts.
+Reiter: „E-Mail-Verlauf“ (alle E-Mails des Lieferanten nach Verläufen, zuerst 25, „Mehr laden“ holt die nächsten; Suche und Filter durchsuchen alle; nur lesen), „Ansprechpartner“ (siehe unten), „Anrufe“ (nur mit dem Recht „Anrufe & Anrufbeantworter“), „Dokumente“, „Notizen“ und „Reklamationen“. Rechts stehen die „Kontaktdaten“ mit „Standard-Kostenstelle“, „Bezahlung“ und einer Karte des Standorts.
+
+## Ansprechpartner eines Lieferanten
+
+Ein Lieferant kann beliebig viele Ansprechpartner haben, z. B. „Max Mustermann, Außendienst“ und „Erika Musterfrau, Innendienst“. In der Lieferantenansicht, Reiter „Ansprechpartner“:
+- „Ansprechpartner hinzufügen“ öffnet das Formular: Anrede, Vorname, „Nachname“ (Pflicht), „Aufgabe“ (freier Text, z. B. Außendienst, Buchhaltung), Telefon, Handy, E-Mail und Notiz. „Speichern“ bleibt gesperrt, bis ein Nachname da ist; eine falsch geschriebene E-Mail-Adresse wird vorher angemerkt.
+- Der Stift neben einer Person öffnet dasselbe Formular zum Ändern, der Papierkorb löscht sie nach einer Rückfrage.
+- Wer das Recht „Anrufe & Anrufbeantworter“ hat, ruft mit dem Hörer-Knopf neben der Nummer über die FRITZ!Box an: erst klingelt das eigene Telefon, nach dem Abheben wird verbunden. Die Nummer selbst öffnet das Telefonprogramm des Rechners, die E-Mail-Adresse das E-Mail-Programm.
+
+Was im Hintergrund passiert: Telefon- und Handynummern der Ansprechpartner kennt auch die Anruferkennung. Ruft jemand von einer dieser Nummern an, zeigt das Anruf-Fenster den Lieferanten und den Namen der Person. Teilen sich mehrere Personen eine Nummer, etwa die Zentrale, erscheint nur der Lieferant. Ist das FRITZ!Box-Telefonbuch eingeschaltet, stehen die Ansprechpartner aktiver Lieferanten dort ebenfalls. Wird ein Ansprechpartner gelöscht, verschwindet er auch dort; frühere Anrufe bleiben beim Lieferanten.
+
+Früher gab es beim Lieferanten nur ein Feld „Vertreter“. Was dort stand, steht jetzt als Ansprechpartner mit der Aufgabe „Vertreter“ im Reiter.
+
+In der Handy-App stehen die Ansprechpartner beim Lieferanten unter „Ansprechpartner“ mit Knöpfen zum Anrufen und Mailen. Angezeigt werden Name, Aufgabe, Telefon und E-Mail; sie werden für die Nutzung ohne Netz auf dem Gerät gespeichert, Notizen nicht. Ändern lassen sich die Ansprechpartner nur am PC.
 
 ## Belege eines Lieferanten finden
 

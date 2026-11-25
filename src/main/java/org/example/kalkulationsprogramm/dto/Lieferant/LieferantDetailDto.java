@@ -18,7 +18,6 @@ public class LieferantDetailDto {
     private String eigeneKundennummer;
     private String lieferantenTyp;
     private Set<LieferantRolle> rollen;
-    private String vertreter;
     private String strasse;
     private String plz;
     private String ort;
@@ -42,5 +41,7 @@ public class LieferantDetailDto {
      */
     private Long emailAnzahl;
     private Long notizenAnzahl;
+    /** Zähler für den Reiter „Ansprechpartner“ ({@code GET /api/lieferanten/{id}/ansprechpartner}). */
+    private Long ansprechpartnerAnzahl;
     private List<LieferantNotizDto> notizen;
 }

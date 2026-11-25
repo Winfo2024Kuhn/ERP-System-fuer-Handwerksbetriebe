@@ -34,9 +34,6 @@ public class LieferantCreateRequestDto {
 
     private Set<LieferantRolle> rollen;
 
-    @Size(max = 255, message = "Vertreter ist zu lang.")
-    private String vertreter;
-
     @Size(max = 255, message = "Straße ist zu lang.")
     private String strasse;
 

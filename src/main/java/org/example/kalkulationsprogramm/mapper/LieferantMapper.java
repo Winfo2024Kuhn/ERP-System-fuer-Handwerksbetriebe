@@ -1,19 +1,22 @@
 package org.example.kalkulationsprogramm.mapper;
 
+import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantListItemDto;
-import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
+import org.example.kalkulationsprogramm.service.lieferantansprechpartner.LieferantAnsprechpartnerUebersicht;
 import org.springframework.stereotype.Component;
-import lombok.RequiredArgsConstructor;
+
+import java.util.List;
+import java.util.Map;
 
 @Component
 @RequiredArgsConstructor
 public class LieferantMapper {
 
-    private final LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
+    private final LieferantAnsprechpartnerUebersicht ansprechpartnerUebersicht;
 
     /**
-     * Basis-Mapping ohne Berechnungen (für Listen)
+     * Basis-Mapping ohne Berechnungen und ohne Ansprechpartner-Hinweis (z. B. Antwort beim Anlegen).
      */
     public LieferantListItemDto toListItem(Lieferanten lieferant) {
         if (lieferant == null) {
@@ -25,7 +28,6 @@ public class LieferantMapper {
         dto.setAliasName(lieferant.getAliasName());
         dto.setLieferantenTyp(lieferant.getLieferantenTyp());
         dto.setRollen(lieferant.getRollen());
-        dto.setVertreter(lieferant.getVertreter());
         dto.setStrasse(lieferant.getStrasse());
         dto.setPlz(lieferant.getPlz());
         dto.setOrt(lieferant.getOrt());
@@ -42,32 +44,18 @@ public class LieferantMapper {
     }
 
     /**
-     * Mapping MIT Berechnungen (für Detailansicht)
+     * Eine Seite der Lieferantenliste samt Ansprechpartner-Hinweis („Max Mustermann +2“),
+     * die Hinweise für alle Lieferanten der Seite in einer Abfrage geladen.
      */
-    public LieferantListItemDto toDetailItem(Lieferanten lieferant) {
-        LieferantListItemDto dto = toListItem(lieferant);
-        if (dto == null) return null;
-        
-        // Berechne durchschnittliche Lieferzeit aus Auftragsbestätigungen
-        try {
-            Double avgLieferzeit = geschaeftsdokumentRepository.calculateAverageLieferzeitByLieferantId(lieferant.getId());
-            if (avgLieferzeit != null && avgLieferzeit > 0) {
-                dto.setLieferzeit(avgLieferzeit.intValue());
-            }
-        } catch (Exception e) {
-            System.err.println("[LieferantMapper] Fehler bei Lieferzeit-Berechnung: " + e.getMessage());
+    public List<LieferantListItemDto> toListItems(List<Lieferanten> seite) {
+        if (seite.isEmpty()) {
+            return List.of();
         }
-        
-        // Berechne Anzahl der Bestellungen (Auftragsbestätigungen)
-        try {
-            Long bestellungen = geschaeftsdokumentRepository.countBestellungenByLieferantId(lieferant.getId());
-            if (bestellungen != null) {
-                dto.setBestellungen(bestellungen.intValue());
-            }
-        } catch (Exception e) {
-            System.err.println("[LieferantMapper] Fehler bei Bestellungen-Zählung: " + e.getMessage());
-        }
-        
-        return dto;
+        Map<Long, String> hinweise = ansprechpartnerUebersicht.hinweise(seite.stream().map(Lieferanten::getId).toList());
+        return seite.stream().map(l -> {
+            LieferantListItemDto dto = toListItem(l);
+            dto.setAnsprechpartnerHinweis(hinweise.get(l.getId()));
+            return dto;
+        }).toList();
     }
 }

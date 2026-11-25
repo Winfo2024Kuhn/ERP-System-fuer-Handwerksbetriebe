@@ -756,7 +756,7 @@ export default function MitarbeiterEditor() {
     // Karte, OBWOHL der Wert selbst gar nicht ueberzulaufen scheint
     // (scrollWidth == clientWidth des <p>, siehe kriterien.md "Layout: zwei
     // Fallen, die kein Test von selbst findet"). Gleiches Muster wie
-    // LieferantenEditor.tsx Z. 315/324 und Kundeneditor.tsx Z. 497/509:
+    // KontaktZeile in features/lieferanten/LieferantKontaktSpalte.tsx und Kundeneditor.tsx Z. 497/509:
     // min-w-0 flex-1 am umschliessenden <div>, break-words am Wert. Auf ALLE
     // Zeilen der Spalte angewandt, nicht nur auf E-Mail (Befund von Design- und
     // Code-Reviewer aus Abschnitt 5: Abteilung war schon vorher betroffen,

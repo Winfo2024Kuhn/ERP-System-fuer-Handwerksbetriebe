@@ -69,6 +69,13 @@ public interface LieferantenRepository extends JpaRepository<Lieferanten, Long>,
     List<Lieferanten> searchByNameOrEmail(@Param("query") String query);
 
     /**
+     * E-Mail-Adressen mehrerer Lieferanten in einer Abfrage (Handy-Liste, kein Nachladen je Lieferant):
+     * je Zeile {@code [lieferantId, email]}, nach Lieferant geordnet.
+     */
+    @Query("SELECT l.id, e FROM Lieferanten l JOIN l.kundenEmails e WHERE l.id IN :ids ORDER BY l.id ASC")
+    List<Object[]> findeEmailsFuerLieferanten(@Param("ids") java.util.Collection<Long> ids);
+
+    /**
      * Schlanke Zeilen für das Rufnummern-Verzeichnis der Telefon-Zuordnung:
      * [id, lieferantenname, ort, telefon, mobiltelefon].
      */

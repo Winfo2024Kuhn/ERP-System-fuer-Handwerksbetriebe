@@ -12,6 +12,7 @@ import org.example.kalkulationsprogramm.repository.EmailReiterRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenArtikelPreiseRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.LieferantNotizRepository;
+import org.example.kalkulationsprogramm.service.lieferantansprechpartner.LieferantAnsprechpartnerUebersicht;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,6 +38,7 @@ public class LieferantenDetailService {
     private final LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
     private final LieferantNotizRepository notizRepository;
     private final LieferantenArtikelPreiseRepository artikelpreisRepository;
+    private final LieferantAnsprechpartnerUebersicht ansprechpartnerUebersicht;
 
     /** Alles auf einmal – für Aufrufer, die den kompletten Lieferanten brauchen (z. B. Bestellungen). */
     @Transactional(readOnly = true)
@@ -93,7 +95,6 @@ public class LieferantenDetailService {
         dto.setEigeneKundennummer(lieferant.getEigeneKundennummer());
         dto.setLieferantenTyp(lieferant.getLieferantenTyp());
         dto.setRollen(lieferant.getRollen());
-        dto.setVertreter(lieferant.getVertreter());
         dto.setStrasse(lieferant.getStrasse());
         dto.setPlz(lieferant.getPlz());
         dto.setOrt(lieferant.getOrt());
@@ -107,6 +108,7 @@ public class LieferantenDetailService {
             dto.setStandardKostenstelleId(lieferant.getStandardKostenstelle().getId());
             dto.setStandardKostenstelleName(lieferant.getStandardKostenstelle().getBezeichnung());
         }
+        dto.setAnsprechpartnerAnzahl(ansprechpartnerUebersicht.anzahl(lieferant.getId()));
         return dto;
     }
 

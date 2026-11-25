@@ -15,6 +15,7 @@ import org.example.kalkulationsprogramm.repository.LieferantNotizRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenArtikelPreiseRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantStatistikDto;
+import org.example.kalkulationsprogramm.service.lieferantansprechpartner.LieferantAnsprechpartnerUebersicht;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.never;
@@ -39,6 +40,7 @@ class LieferantenDetailServiceTest {
     @Mock private LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
     @Mock private LieferantNotizRepository notizRepository;
     @Mock private LieferantenArtikelPreiseRepository artikelpreisRepository;
+    @Mock private LieferantAnsprechpartnerUebersicht ansprechpartnerUebersicht;
 
     private LieferantenDetailService service;
 
@@ -46,7 +48,7 @@ class LieferantenDetailServiceTest {
     void setUp() {
         service = new LieferantenDetailService(lieferantenRepository, emailRepository, emailReiterRepository,
                 artikelpreisMapper, lieferantDokumentService, geschaeftsdokumentRepository, notizRepository,
-                artikelpreisRepository);
+                artikelpreisRepository, ansprechpartnerUebersicht);
     }
 
     private Lieferanten erstelleLieferant(Long id) {
@@ -73,6 +75,7 @@ class LieferantenDetailServiceTest {
             when(emailReiterRepository.anzahlVerlaeufe(EmailBezug.LIEFERANT, 1L)).thenReturn(12L);
             when(lieferantDokumentService.zaehleDokumente(1L)).thenReturn(3L);
             when(notizRepository.countByLieferantId(1L)).thenReturn(2L);
+            when(ansprechpartnerUebersicht.anzahl(1L)).thenReturn(4L);
 
             LieferantDetailDto result = service.loadStammdaten(1L);
 
@@ -80,6 +83,7 @@ class LieferantenDetailServiceTest {
             assertThat(result.getEmailAnzahl()).isEqualTo(12L);
             assertThat(result.getDokumenteAnzahl()).isEqualTo(3L);
             assertThat(result.getNotizenAnzahl()).isEqualTo(2L);
+            assertThat(result.getAnsprechpartnerAnzahl()).isEqualTo(4L);
             assertThat(result.getArtikelpreise()).isNull();
             assertThat(result.getDokumente()).isNull();
             assertThat(result.getNotizen()).isNull();

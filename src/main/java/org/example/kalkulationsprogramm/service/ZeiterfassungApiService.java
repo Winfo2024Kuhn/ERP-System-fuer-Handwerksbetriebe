@@ -27,7 +27,6 @@ import org.example.kalkulationsprogramm.domain.ArbeitsgangStundensatz;
 import org.example.kalkulationsprogramm.domain.BuchungsTyp;
 import org.example.kalkulationsprogramm.domain.DokumentGruppe;
 import org.example.kalkulationsprogramm.domain.ErfassungsQuelle;
-import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.MonatsSaldo;
 import org.example.kalkulationsprogramm.domain.Produktkategorie;
@@ -42,7 +41,6 @@ import org.example.kalkulationsprogramm.mapper.ArbeitsgangMapper;
 import org.example.kalkulationsprogramm.repository.AbwesenheitRepository;
 import org.example.kalkulationsprogramm.repository.ArbeitsgangRepository;
 import org.example.kalkulationsprogramm.repository.ArbeitsgangStundensatzRepository;
-import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.repository.ProduktkategorieRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
@@ -81,7 +79,6 @@ public class ZeiterfassungApiService {
     private final ArbeitsgangStundensatzRepository arbeitsgangStundensatzRepository;
     private final ArbeitsgangMapper arbeitsgangMapper;
     private final DateiSpeicherService dateiSpeicherService;
-    private final LieferantenRepository lieferantenRepository;
     private final FeiertagService feiertagService;
     private final ZeitbuchungAuditService auditService;
     private final TagesSollService tagesSollService;
@@ -184,46 +181,6 @@ public class ZeiterfassungApiService {
                             .map(arbeitsgangMapper::toArbeitsgangResponseDto)
                             .collect(Collectors.toList());
                 });
-    }
-
-    /**
-     * Gibt alle aktiven Lieferanten als einfache Liste zurück.
-     */
-    @Transactional(readOnly = true)
-    public List<Map<String, Object>> getLieferanten(Integer limit, String search) {
-        List<Lieferanten> lieferanten;
-        if (search != null && !search.isBlank()) {
-            lieferanten = lieferantenRepository.searchByNameOrEmail(search);
-        } else {
-            lieferanten = lieferantenRepository.findByIstAktivTrueOrderByLieferantennameAsc();
-        }
-
-        return lieferanten.stream()
-                .limit(limit != null && limit > 0 ? limit : Long.MAX_VALUE)
-                .map(l -> {
-                    Map<String, Object> map = new HashMap<>();
-                    map.put("id", l.getId());
-                    map.put("firmenname", l.getLieferantenname());
-                    map.put("aliasName", l.getAliasName());
-
-                    // Adressdaten
-                    map.put("strasse", l.getStrasse());
-                    map.put("plz", l.getPlz());
-                    map.put("ort", l.getOrt());
-
-                    // Kontaktdaten
-                    map.put("telefon", l.getTelefon());
-                    map.put("mobiltelefon", l.getMobiltelefon());
-                    map.put("kundenEmails", l.getKundenEmails());
-
-                    // Zusatzinfos
-                    map.put("lieferantenTyp", l.getLieferantenTyp());
-                    map.put("vertreter", l.getVertreter());
-                    map.put("eigeneKundennummer", l.getEigeneKundennummer());
-
-                    return map;
-                })
-                .collect(Collectors.toList());
     }
 
     // ==================== Zeiterfassung Start/Stop ====================

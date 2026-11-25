@@ -7,6 +7,7 @@ package org.example.kalkulationsprogramm.domain;
 public enum TelefonbuchQuelle {
     KUNDE,
     LIEFERANT,
+    LIEFERANT_ANSPRECHPARTNER,
     MITARBEITER,
     STEUERBERATER,
     STEUERBERATER_ANSPRECHPARTNER

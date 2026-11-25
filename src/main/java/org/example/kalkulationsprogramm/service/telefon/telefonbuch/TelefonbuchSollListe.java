@@ -5,6 +5,7 @@ import org.example.kalkulationsprogramm.domain.Anrede;
 import org.example.kalkulationsprogramm.domain.TelefonbuchQuelle;
 import org.example.kalkulationsprogramm.repository.KontaktRufnummerRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
+import org.example.kalkulationsprogramm.repository.LieferantAnsprechpartnerRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.repository.SteuerberaterKontaktRepository;
@@ -24,9 +25,10 @@ import java.util.Map;
 /**
  * Berechnet aus der Datenbank, was im FRITZ!Box-Telefonbuch „ERP-Kontakte“ stehen soll.
  * <p>
- * Dabei sind: Kunden (ohne gesperrte und anonymisierte), aktive Lieferanten, aktive
- * Mitarbeiter, aktive und nicht abgelaufene Steuerberater samt Ansprechpartnern
- * (eigener Eintrag je Person). Gemerkte Zusatznummern hängen am jeweiligen Kunden,
+ * Dabei sind: Kunden (ohne gesperrte und anonymisierte), aktive Lieferanten samt
+ * Ansprechpartnern (eigener Eintrag je Person, „Max Mustermann (Lieferant Würth)“, mit
+ * Telefon und Handy), aktive Mitarbeiter, aktive und nicht abgelaufene Steuerberater samt
+ * Ansprechpartnern (eigener Eintrag je Person). Gemerkte Zusatznummern hängen am jeweiligen Kunden,
  * Lieferanten oder Steuerberater. Ein Eintrag je Kontakt mit allen Nummern, ohne
  * Doppelte; Kontakte ohne gültige Nummer fehlen.
  * <p>
@@ -47,6 +49,7 @@ public class TelefonbuchSollListe {
 
     private final KundeRepository kundeRepository;
     private final LieferantenRepository lieferantenRepository;
+    private final LieferantAnsprechpartnerRepository lieferantAnsprechpartnerRepository;
     private final MitarbeiterRepository mitarbeiterRepository;
     private final SteuerberaterKontaktRepository steuerberaterRepository;
     private final KontaktRufnummerRepository kontaktRufnummerRepository;
@@ -57,7 +60,7 @@ public class TelefonbuchSollListe {
     public record Schluessel(TelefonbuchQuelle quelle, long id) {
     }
 
-    /** Soll-Einträge in fester Reihenfolge (Kunden, Lieferanten, Mitarbeiter, Steuerberater). */
+    /** Soll-Einträge in fester Reihenfolge (Kunden, Lieferanten samt Ansprechpartnern, Mitarbeiter, Steuerberater). */
     @Transactional(readOnly = true)
     public Map<Schluessel, TelefonbuchEintrag> berechne() {
         Sammler s = new Sammler(telefonEinstellungen.landesvorwahl(), telefonEinstellungen.ortsvorwahl());
@@ -81,6 +84,14 @@ public class TelefonbuchSollListe {
         for (Object[] z : kontaktRufnummerRepository.findeLieferantenNummernFuerTelefonbuch()) {
             s.nummer(new Schluessel(TelefonbuchQuelle.LIEFERANT, (Long) z[0]), (String) z[1], "Lieferant",
                     (String) z[2], NummerArt.GESCHAEFTLICH);
+        }
+        for (Object[] z : lieferantAnsprechpartnerRepository.findeFuerTelefonbuch()) {
+            Schluessel p = new Schluessel(TelefonbuchQuelle.LIEFERANT_ANSPRECHPARTNER, (Long) z[0]);
+            String person = vollerName((String) z[1], (String) z[2]);
+            String lieferant = bereinige((String) z[5]);
+            String art = lieferant.isEmpty() ? "Lieferant" : "Lieferant " + lieferant;
+            s.nummer(p, person, art, (String) z[3], NummerArt.GESCHAEFTLICH);
+            s.nummer(p, person, art, (String) z[4], NummerArt.MOBIL);
         }
         for (Object[] z : mitarbeiterRepository.findeFuerTelefonbuch()) {
             Schluessel m = new Schluessel(TelefonbuchQuelle.MITARBEITER, (Long) z[0]);

@@ -190,10 +190,10 @@ async function stubKundenUebersicht(page: Page): Promise<void> {
 // ==================== LIEFERANTEN ====================
 
 const LIEFERANTEN_MIX = [
-    { id: 601, lieferantenname: 'Stahlbau Nord', lieferantenTyp: 'STAHL', rollen: [] as string[], ort: 'Hannover', telefon: '0511 1111111', vertreter: 'Hans Nord' },
-    { id: 602, lieferantenname: 'Stahlhandel Beispiel GmbH und Co. KG', lieferantenTyp: 'STAHL', rollen: [] as string[], ort: 'Hannover', telefon: '0511 2222222', vertreter: 'Hans Beispiel' },
-    { id: 603, lieferantenname: 'Baustoffhandel Beispielstadt Nord und Umgebung GmbH', lieferantenTyp: 'STAHL', rollen: [] as string[], ort: 'Hannover', telefon: '0511 3333333', vertreter: 'Petra Beispiel' },
-    { id: 604, lieferantenname: 'Elektrogroßhandel Mustertal Handelsgesellschaft mbH', lieferantenTyp: 'STAHL', rollen: [] as string[], ort: 'Hannover', telefon: '0511 4444444', vertreter: 'Jonas Mustertal' },
+    { id: 601, lieferantenname: 'Stahlbau Nord', lieferantenTyp: 'STAHL', rollen: [] as string[], ort: 'Hannover', telefon: '0511 1111111', ansprechpartnerHinweis: 'Hans Nord' },
+    { id: 602, lieferantenname: 'Stahlhandel Beispiel GmbH und Co. KG', lieferantenTyp: 'STAHL', rollen: [] as string[], ort: 'Hannover', telefon: '0511 2222222', ansprechpartnerHinweis: 'Hans Beispiel +2' },
+    { id: 603, lieferantenname: 'Baustoffhandel Beispielstadt Nord und Umgebung GmbH', lieferantenTyp: 'STAHL', rollen: [] as string[], ort: 'Hannover', telefon: '0511 3333333', ansprechpartnerHinweis: 'Petra Beispiel' },
+    { id: 604, lieferantenname: 'Elektrogroßhandel Mustertal Handelsgesellschaft mbH', lieferantenTyp: 'STAHL', rollen: [] as string[], ort: 'Hannover', telefon: '0511 4444444', ansprechpartnerHinweis: 'Jonas Mustertal +1' },
 ];
 
 async function stubLieferantenUebersicht(page: Page): Promise<void> {
@@ -355,8 +355,8 @@ test.describe('Uebersichten-Abnahme (Task 9): Projekte, Anfragen, Kunden, Liefer
         // wiederholte Mutationsprobe).
         await pruefeGleicheKartenhoeheUndTrennlinie(
             page,
-            LIEFERANTEN_MIX[0].lieferantenname, LIEFERANTEN_MIX[0].vertreter,
-            LIEFERANTEN_MIX[2].lieferantenname, LIEFERANTEN_MIX[2].vertreter,
+            LIEFERANTEN_MIX[0].lieferantenname, LIEFERANTEN_MIX[0].ansprechpartnerHinweis,
+            LIEFERANTEN_MIX[2].lieferantenname, LIEFERANTEN_MIX[2].ansprechpartnerHinweis,
         );
 
         await keinHorizontalerUeberlauf(page);

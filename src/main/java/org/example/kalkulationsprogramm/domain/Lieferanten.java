@@ -46,7 +46,6 @@ public class Lieferanten {
     private String plz;
     private String telefon;
     private String mobiltelefon;
-    private String vertreter;
 
     /**
      * @deprecated Abgeloest durch {@link #rollen}. Bleibt vorerst bestehen, bis Frontend/DTOs

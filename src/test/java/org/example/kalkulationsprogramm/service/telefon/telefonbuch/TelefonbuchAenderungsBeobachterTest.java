@@ -106,4 +106,12 @@ class TelefonbuchAenderungsBeobachterTest {
         when(insert.getPersister()).thenReturn(kundePersister);
         assertThatCode(() -> beobachter.onPostInsert(insert)).doesNotThrowAnyException();
     }
+
+    @Test
+    @DisplayName("Lieferanten-Ansprechpartner werden wie Steuerberater-Ansprechpartner beobachtet")
+    void lieferantenAnsprechpartnerBeobachtet() {
+        assertThat(TelefonbuchAenderungsBeobachter.RELEVANTE_FELDER)
+                .containsEntry(org.example.kalkulationsprogramm.domain.LieferantAnsprechpartner.class,
+                        java.util.Set.of("vorname", "nachname", "telefon", "mobiltelefon", "lieferant"));
+    }
 }

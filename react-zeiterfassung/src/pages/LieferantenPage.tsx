@@ -3,6 +3,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Truck, MapPin, Phone, Loader2, Navigation, ChevronRight, Smartphone, FileText, ArrowLeft, Search, X, RefreshCw, AlertTriangle } from 'lucide-react'
 import { OfflineService } from '../services/OfflineService'
 import { anrufbareNummer } from '../lib/telefon'
+import { AnsprechpartnerKarte } from '../features/lieferanten/AnsprechpartnerKarte'
+import type { LieferantAnsprechpartnerKurz } from '../features/lieferanten/ansprechpartner'
 
 
 interface Lieferant {
@@ -15,7 +17,8 @@ interface Lieferant {
     plz?: string
     telefon?: string
     mobiltelefon?: string
-    vertreter?: string
+    /** Leer, wenn der Lieferant keine hat (oder ein alter Offline-Stand ohne das Feld). */
+    ansprechpartner?: LieferantAnsprechpartnerKurz[]
     eigeneKundennummer?: string
     lieferantenTyp?: string
     kundenEmails?: string[]
@@ -350,6 +353,8 @@ export default function LieferantenPage({ syncStatus, onSync }: LieferantenPageP
 
 
                         </div>
+
+                        <AnsprechpartnerKarte ansprechpartner={selectedLieferant.ansprechpartner ?? []} />
 
                     </div>
                 ) : (

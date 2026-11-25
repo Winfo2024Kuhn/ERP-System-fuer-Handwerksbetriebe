@@ -17,7 +17,7 @@ export interface KontaktKurz {
     /** Kundennummer (nur bei Kunden). */
     nummer: string | null;
     ort: string | null;
-    /** Nur bei Steuerberatern: die Person, bei der genau diese Nummer hinterlegt ist. */
+    /** Bei Steuerberatern und Lieferanten: die Person, bei der genau diese Nummer hinterlegt ist. */
     ansprechpartner?: string | null;
 }
 
@@ -65,7 +65,7 @@ export interface KontaktUeberblick {
     name: string;
     /** Kundennummer (nur bei Kunden). */
     nummer: string | null;
-    /** Beim Kunden der Ansprechpartner, beim Lieferanten der Vertreter. */
+    /** Beim Kunden der Ansprechpartner, beim Lieferanten und Steuerberater ein Hinweis auf die Ansprechpartner (z. B. „Max Mustermann +2“). */
     ansprechpartner: string | null;
     strasse: string | null;
     plz: string | null;

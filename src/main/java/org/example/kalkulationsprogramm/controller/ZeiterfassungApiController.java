@@ -5,7 +5,9 @@ import java.util.List;
 import java.util.Map;
 
 import org.example.kalkulationsprogramm.dto.Arbeitsgang.ArbeitsgangResponseDto;
+import org.example.kalkulationsprogramm.dto.Lieferant.ZeiterfassungLieferantDto;
 import org.example.kalkulationsprogramm.service.ZeiterfassungApiService;
+import org.example.kalkulationsprogramm.service.ZeiterfassungLieferantenService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -27,6 +29,7 @@ import lombok.RequiredArgsConstructor;
 public class ZeiterfassungApiController {
 
     private final ZeiterfassungApiService service;
+    private final ZeiterfassungLieferantenService lieferantenService;
 
     // ==================== Daten abrufen ====================
 
@@ -68,13 +71,14 @@ public class ZeiterfassungApiController {
     }
 
     /**
-     * Gibt alle aktiven Lieferanten zurück
+     * Aktive Lieferanten (bzw. Suchtreffer) samt Ansprechpartnern für die Handy-App;
+     * Standard 15, höchstens 50 (siehe {@link ZeiterfassungLieferantenService}).
      */
     @GetMapping("/lieferanten")
-    public ResponseEntity<List<Map<String, Object>>> getLieferanten(
+    public ResponseEntity<List<ZeiterfassungLieferantDto>> getLieferanten(
             @RequestParam(required = false) Integer limit,
             @RequestParam(required = false) String search) {
-        return ResponseEntity.ok(service.getLieferanten(limit, search));
+        return ResponseEntity.ok(lieferantenService.getLieferanten(limit, search));
     }
 
     // ==================== Zeiterfassung Start/Stop ====================

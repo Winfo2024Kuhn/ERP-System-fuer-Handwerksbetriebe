@@ -13,9 +13,11 @@ import org.example.kalkulationsprogramm.domain.TelefonZuordnung;
 import org.example.kalkulationsprogramm.dto.Telefon.KontaktKurzDto;
 import org.example.kalkulationsprogramm.repository.KontaktRufnummerRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
+import org.example.kalkulationsprogramm.repository.LieferantAnsprechpartnerRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.SteuerberaterKontaktRepository;
 import org.example.kalkulationsprogramm.service.KundeDatenschutzService;
+import org.example.kalkulationsprogramm.util.PersonenName;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,10 +34,15 @@ import java.util.Objects;
  * Ordnet Rufnummern Kunden, Lieferanten oder Steuerberatern zu.
  * <p>
  * Gesucht wird in {@code telefon}/{@code mobiltelefon} von Kunden und Lieferanten,
- * in der Kanzleinummer und den Ansprechpartner-Nummern der Steuerberater sowie in
- * den gemerkten {@link KontaktRufnummer}n. Genau ein Treffer → automatisch
- * zugeordnet; mehrere → Kandidaten zur Auswahl; keiner → "Unbekannt".
- * Von Hand gesetzte Zuordnungen werden nie überschrieben.
+ * in Telefon und Handy der Lieferanten-Ansprechpartner, in der Kanzleinummer und den
+ * Ansprechpartner-Nummern der Steuerberater sowie in den gemerkten {@link KontaktRufnummer}n.
+ * Genau ein Treffer → automatisch zugeordnet; mehrere → Kandidaten zur Auswahl;
+ * keiner → "Unbekannt". Von Hand gesetzte Zuordnungen werden nie überschrieben.
+ * <p>
+ * <b>Ansprechpartner:</b> Nummern von Ansprechpartnern gehören zum Lieferanten bzw. zur
+ * Kanzlei. Ruft genau diese Nummer an, nennt {@link Verzeichnis#mitAnsprechpartner} die
+ * Person dazu; teilen sich mehrere Personen (oder Firma und Person) eine Nummer, ist
+ * keine Person gemeint. Über eine andere Durchwahl wird nur die Firma erkannt.
  * <p>
  * <b>Durchwahlen:</b> Ist eine Nummer in Durchwahl-Schreibweise hinterlegt
  * ("09721 5555-0", "0931 4444-12"), gehört jeder Anruf von dieser Stammnummer
@@ -52,6 +59,7 @@ public class RufnummernZuordnungService {
 
     private final KundeRepository kundeRepository;
     private final LieferantenRepository lieferantenRepository;
+    private final LieferantAnsprechpartnerRepository lieferantAnsprechpartnerRepository;
     private final SteuerberaterKontaktRepository steuerberaterRepository;
     private final KontaktRufnummerRepository kontaktRufnummerRepository;
     private final TelefonEinstellungenService einstellungen;
@@ -110,11 +118,11 @@ public class RufnummernZuordnungService {
         }
 
         /**
-         * Ergänzt einen Steuerberater um den Ansprechpartner, bei dem genau diese
-         * Nummer hinterlegt ist. Andere Kontakte bleiben unverändert.
+         * Ergänzt einen Steuerberater oder Lieferanten um den Ansprechpartner, bei dem genau
+         * diese Nummer hinterlegt ist. Kunden bleiben unverändert.
          */
         public KontaktKurzDto mitAnsprechpartner(KontaktKurzDto kontakt, String normalisiert) {
-            if (kontakt == null || !KontaktKurzDto.STEUERBERATER.equals(kontakt.typ()) || normalisiert == null) {
+            if (kontakt == null || KontaktKurzDto.KUNDE.equals(kontakt.typ()) || normalisiert == null) {
                 return kontakt;
             }
             return eintraege.getOrDefault(normalisiert, List.of()).stream()
@@ -357,15 +365,23 @@ public class RufnummernZuordnungService {
             trageEin(v, (String) z[3], l, land, ort);
             v.fuegeHinzu(RufnummerNormalisierer.normalisiere((String) z[4], land, ort), l);
         }
+        // Die genaue Nummer nennt die Person; über die Stammnummer (andere Durchwahl) nur den Lieferanten.
+        for (Object[] z : lieferantAnsprechpartnerRepository.findeTelefonverzeichnis()) {
+            KontaktKurzDto lieferant = new KontaktKurzDto(KontaktKurzDto.LIEFERANT, (Long) z[0], (String) z[1], null,
+                    (String) z[2]);
+            KontaktKurzDto mitPerson = lieferant.mitAnsprechpartner(personOderNull((String) z[5], (String) z[6]));
+            v.fuegeHinzu(RufnummerNormalisierer.normalisiere((String) z[3], land, ort), mitPerson);
+            v.fuegeStammnummerHinzu(RufnummerNormalisierer.stammnummer((String) z[3], land, ort), lieferant);
+            v.fuegeHinzu(RufnummerNormalisierer.normalisiere((String) z[4], land, ort), mitPerson);
+        }
         for (Object[] z : steuerberaterRepository.findeTelefonverzeichnis()) {
             trageEin(v, (String) z[2], steuerberaterKurz((Long) z[0], (String) z[1]), land, ort);
         }
         // Die genaue Nummer nennt die Person; über die Stammnummer (andere Durchwahl) nur die Kanzlei.
         for (Object[] z : steuerberaterRepository.findeAnsprechpartnerTelefone()) {
             KontaktKurzDto kanzlei = steuerberaterKurz((Long) z[0], (String) z[1]);
-            String person = AnrufKontaktUeberblickService.vollerName((String) z[3], (String) z[4]);
             v.fuegeHinzu(RufnummerNormalisierer.normalisiere((String) z[2], land, ort),
-                    kanzlei.mitAnsprechpartner(person.isBlank() ? null : person));
+                    kanzlei.mitAnsprechpartner(personOderNull((String) z[3], (String) z[4])));
             v.fuegeStammnummerHinzu(RufnummerNormalisierer.stammnummer((String) z[2], land, ort), kanzlei);
         }
         for (KontaktRufnummer r : kontaktRufnummerRepository.findAllMitKontakt()) {
@@ -376,6 +392,11 @@ public class RufnummernZuordnungService {
             }
         }
         return v;
+    }
+
+    private static String personOderNull(String vorname, String nachname) {
+        String person = PersonenName.vollerName(vorname, nachname);
+        return person.isBlank() ? null : person;
     }
 
     /**

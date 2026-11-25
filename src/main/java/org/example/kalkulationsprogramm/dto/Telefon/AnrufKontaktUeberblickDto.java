@@ -7,7 +7,9 @@ import java.util.List;
  * Projekte und Anfragen, in die man direkt springen kann.
  *
  * @param nummer          Kundennummer (nur bei Kunden)
- * @param ansprechpartner beim Kunden der Ansprechpartner, beim Lieferanten der Vertreter
+ * @param ansprechpartner beim Kunden der Ansprechpartner; beim Lieferanten der erste seiner
+ *                        Ansprechpartner, bei mehreren mit „ +N“ (z. B. „Max Mustermann +2“), sonst null;
+ *                        beim Steuerberater alle Ansprechpartner mit Komma getrennt
  * @param projekte        offene zuerst, dann die neuesten; höchstens {@code MAX_EINTRAEGE} (nur bei Kunden)
  * @param projekteGesamt  alle Projekte des Kunden, auch die nicht mitgelieferten
  * @param anfragen        offene zuerst, dann die neuesten; höchstens {@code MAX_EINTRAEGE} (nur bei Kunden)

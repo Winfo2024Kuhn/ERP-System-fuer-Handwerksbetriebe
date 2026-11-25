@@ -16,6 +16,8 @@ import { useTelefonBerechtigung } from './useTelefonBerechtigung';
  *   kleines Symbol mit Tooltip (Tabellenzeile).
  * @param onStart beim Klick – z. B. damit das Anruf-Fenster offen bleibt.
  * @param onGestartet nach erfolgreichem Start des Anrufs.
+ * @param anrufen beschriftet den Knopf mit „Anrufen“ statt „Zurückrufen“, wenn
+ *   man von sich aus wählt (z. B. Ansprechpartner eines Lieferanten).
  */
 
 interface ZurueckrufenKnopfProps {
@@ -25,11 +27,13 @@ interface ZurueckrufenKnopfProps {
     gross?: boolean;
     onStart?: () => void;
     onGestartet?: () => void;
+    anrufen?: boolean;
 }
 
-export function ZurueckrufenKnopf({ nummer, wer, gross = false, onStart, onGestartet }: ZurueckrufenKnopfProps) {
+export function ZurueckrufenKnopf({ nummer, wer, gross = false, onStart, onGestartet, anrufen: vonSichAus = false }: ZurueckrufenKnopfProps) {
     const darf = useTelefonBerechtigung();
     const anrufen = useAnrufen(onGestartet);
+    const verb = vonSichAus ? 'Anrufen' : 'Zurückrufen';
 
     if (darf !== true || !nummer.trim()) return null;
 
@@ -37,7 +41,7 @@ export function ZurueckrufenKnopf({ nummer, wer, gross = false, onStart, onGesta
         onStart?.();
         anrufen.anrufen(nummer);
     };
-    const beschriftung = `${wer} zurückrufen`;
+    const beschriftung = `${wer} ${verb.toLowerCase()}`;
     const Symbol = anrufen.laeuft ? Loader2 : PhoneOutgoing;
     const symbolKlasse = cn(gross ? 'h-5 w-5' : 'h-4 w-4', anrufen.laeuft && 'motion-safe:animate-spin');
 
@@ -54,7 +58,7 @@ export function ZurueckrufenKnopf({ nummer, wer, gross = false, onStart, onGesta
                     className="px-5 py-3 text-base"
                 >
                     <Symbol aria-hidden="true" className={symbolKlasse} />
-                    Zurückrufen
+                    {verb}
                 </Button>
             ) : (
                 <Button
@@ -65,7 +69,7 @@ export function ZurueckrufenKnopf({ nummer, wer, gross = false, onStart, onGesta
                     disabled={anrufen.laeuft}
                     aria-busy={anrufen.laeuft}
                     aria-label={beschriftung}
-                    title={anrufen.laeuft ? 'Anruf wird gestartet …' : 'Zurückrufen'}
+                    title={anrufen.laeuft ? 'Anruf wird gestartet …' : verb}
                     // Nur-Symbol-Knopf: quadratisch statt Text-Abstände der Größe „sm“.
                     className="h-8 w-8 shrink-0 rounded-lg p-0 focus:outline-none focus:ring-2 focus:ring-rose-500 disabled:cursor-wait"
                 >

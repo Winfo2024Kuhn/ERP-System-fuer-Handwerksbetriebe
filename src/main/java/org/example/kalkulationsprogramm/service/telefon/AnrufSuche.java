@@ -11,6 +11,7 @@ import jakarta.persistence.criteria.Root;
 import jakarta.persistence.criteria.Subquery;
 import org.example.kalkulationsprogramm.domain.Anfrage;
 import org.example.kalkulationsprogramm.domain.Kunde;
+import org.example.kalkulationsprogramm.domain.LieferantAnsprechpartner;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.domain.Sprachnachricht;
@@ -37,8 +38,9 @@ import java.util.Locale;
  * Max Mustermann aus Würzburg. Durchsucht werden Nummer und FRITZ!Box-Name,
  * beim Kunden Name, Ansprechpartner, Kundennummer, Adresse, Telefon und
  * E-Mail, dazu Bauvorhaben, Auftragsnummer und Baustellen-Adresse seiner
- * Projekte und Anfragen; beim Lieferanten Name, Kurzname, Vertreter,
- * Adresse, unsere Kundennummer, Telefon und E-Mail; beim Steuerberater
+ * Projekte und Anfragen; beim Lieferanten Name, Kurzname, Adresse, unsere
+ * Kundennummer, Telefon und E-Mail sowie seine Ansprechpartner (Name, Aufgabe,
+ * Telefon, Handy, E-Mail); beim Steuerberater
  * Kanzlei, Ansprechpartner (Name, Telefon, E-Mail), Telefon und E-Mail.</p>
  */
 final class AnrufSuche {
@@ -167,10 +169,11 @@ final class AnrufSuche {
         felder(treffer, cb, muster, anruf, "nummerRoh", "nummerNormalisiert", "nameFritzbox");
         felder(treffer, cb, muster, kunde, "name", "ansprechspartner", "kundennummer", "strasse", "plz", "ort",
                 "telefon", "mobiltelefon");
-        felder(treffer, cb, muster, lieferant, "lieferantenname", "aliasName", "vertreter", "strasse", "plz", "ort",
+        felder(treffer, cb, muster, lieferant, "lieferantenname", "aliasName", "strasse", "plz", "ort",
                 "eigeneKundennummer", "telefon", "mobiltelefon");
         felder(treffer, cb, muster, steuerberater, "name", "ansprechpartner", "telefon", "email");
         treffer.add(cb.exists(ansprechpartnerTrifft(steuerberater, muster, query, cb)));
+        treffer.add(cb.exists(lieferantAnsprechpartnerTrifft(lieferant, muster, query, cb)));
         treffer.add(cb.exists(emailTrifft(Kunde.class, kunde, muster, query, cb)));
         treffer.add(cb.exists(emailTrifft(Lieferanten.class, lieferant, muster, query, cb)));
         treffer.add(cb.exists(projektTrifft(kunde, muster, query, cb)));
@@ -207,6 +210,21 @@ final class AnrufSuche {
                 cb.or(wie(cb, a.get("vorname"), muster),
                         wie(cb, a.get("nachname"), muster),
                         wie(cb, a.get("telefon"), muster),
+                        wie(cb, a.get("email"), muster)));
+    }
+
+    private static Subquery<Integer> lieferantAnsprechpartnerTrifft(Join<TelefonAnruf, Lieferanten> lieferant,
+                                                                    String muster, CriteriaQuery<?> query,
+                                                                    CriteriaBuilder cb) {
+        Subquery<Integer> sq = query.subquery(Integer.class);
+        Root<LieferantAnsprechpartner> a = sq.from(LieferantAnsprechpartner.class);
+        return sq.select(cb.literal(1)).where(
+                cb.equal(a.get("lieferant"), lieferant),
+                cb.or(wie(cb, a.get("vorname"), muster),
+                        wie(cb, a.get("nachname"), muster),
+                        wie(cb, a.get("aufgabe"), muster),
+                        wie(cb, a.get("telefon"), muster),
+                        wie(cb, a.get("mobiltelefon"), muster),
                         wie(cb, a.get("email"), muster)));
     }
 

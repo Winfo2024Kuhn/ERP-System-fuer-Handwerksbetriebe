@@ -86,7 +86,6 @@ const LIEFERANT_LANG = 'Stahlhandel Beispiel GmbH und Co. KG';
 // Wort ohne Trennstellen").
 const TELEFON_LANG = '05119876543212345678901234567890';
 const MOBIL_FAX_LANG = '01711234567890123456789012345678901234';
-const VERTRETER_LANG = 'Handelsvertretungsbevollmaechtigterrepraesentant';
 const STANDARD_KOSTENSTELLE_LANG = 'Kostenstellenverwaltungsabteilungfuerzentraleinkaufsbeschaffung';
 
 function json(route: Route, body: unknown, status = 200) {
@@ -104,7 +103,6 @@ const DUMMY_LIEFERANT = {
     ort: 'Hannover',
     telefon: TELEFON_LANG,
     mobiltelefon: MOBIL_FAX_LANG,
-    vertreter: VERTRETER_LANG,
     vorauskasse: false,
     kundenEmails: ['bestellung@beispiel-stahl.example'],
     standardKostenstelleName: STANDARD_KOSTENSTELLE_LANG,
@@ -202,7 +200,7 @@ async function stubLieferantenUebersichtApi(page: Page) {
                 rollen: [],
                 ort: 'Hannover',
                 telefon: '0511 1234567',
-                vertreter: 'Hans Beispiel',
+                ansprechpartnerHinweis: 'Hans Beispiel +2',
             }));
             return json(route, { lieferanten, gesamt: lieferanten.length });
         }
@@ -280,7 +278,7 @@ test.describe('Lieferanten-Detailseite: Kopfzeile mit langem Lieferantennamen (S
         const reiterY = await leiste.locator('button').evaluateAll((buttons) =>
             buttons.map((b) => b.getBoundingClientRect().y),
         );
-        expect(reiterY.length, 'Reiterleiste: vier Reiter-Knoepfe erwartet').toBe(4);
+        expect(reiterY.length, 'Reiterleiste: fuenf Reiter-Knoepfe erwartet (ohne Telefon-Recht kein "Anrufe")').toBe(5);
         const reiterSpanne = Math.max(...reiterY) - Math.min(...reiterY);
         expect(reiterSpanne, `Reiter liegen auf unterschiedlichen Zeilen: ${JSON.stringify(reiterY)}`).toBeLessThanOrEqual(2);
 
@@ -309,12 +307,11 @@ test.describe('Lieferanten-Detailseite: Kopfzeile mit langem Lieferantennamen (S
 
         // Task 11 (Abschnitt 7), Gruppe 3 (Code-Reviewer, Abschnitt 6, Fundstelle
         // 3): dieselbe Luecke wie beim E-Mail-Fix (Z. 315/324) an den
-        // Nachbarzeilen "Telefon"/"Mobil / Fax"/"Vertreter"/
-        // "Standard-Kostenstelle" (LieferantenEditor.tsx Z. 297/306/345/356) --
-        // nacktes <div> ohne min-w-0, Wert-<p> ohne break-words. Gescoped auf
-        // die Kontaktdaten-Karte, weil die Kopfzeile (Z. 126) denselben
-        // Vertreter-Text im Untertitel wiederholt -- ein ungegrenztes
-        // getByText(exact) waere sonst mehrdeutig (zwei Treffer).
+        // Nachbarzeilen "Telefon"/"Mobil / Fax"/"Standard-Kostenstelle"
+        // (heute features/lieferanten/LieferantKontaktSpalte.tsx) -- nacktes
+        // <div> ohne min-w-0, Wert-<p> ohne break-words. Gescoped auf die
+        // Kontaktdaten-Karte, damit kein Text aus dem Kopf mitgezaehlt wird.
+        // Den "Vertreter" gibt es nicht mehr, er ist jetzt ein Ansprechpartner im Reiter.
         const kontaktKarte = page.getByRole('heading', { name: 'Kontaktdaten' }).locator(
             'xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " shadow-sm ")][1]',
         );
@@ -346,7 +343,6 @@ test.describe('Lieferanten-Detailseite: Kopfzeile mit langem Lieferantennamen (S
         };
         await pruefeWertBleibtImKontaktKasten(TELEFON_LANG, 'Telefon');
         await pruefeWertBleibtImKontaktKasten(MOBIL_FAX_LANG, 'Mobil / Fax');
-        await pruefeWertBleibtImKontaktKasten(VERTRETER_LANG, 'Vertreter');
         await pruefeWertBleibtImKontaktKasten(STANDARD_KOSTENSTELLE_LANG, 'Standard-Kostenstelle');
 
         // Ebene 2: Screenshot + designPruefung inkl. strengePruefungen, muss vor
@@ -455,26 +451,24 @@ test.describe('Lieferanten-Uebersicht: vier lange Lieferantennamen (Spec-Befund 
 
 /**
  * Nacharbeit Abschnitt 9 (Code-Review Abschnitt 8, Fundstelle 9): der
- * Kopf-Untertitel (Alias, Vertreter, Adresse) trug die Rezeptur nicht --
+ * Kopf-Untertitel (Alias, Adresse) trug die Rezeptur nicht --
  * dasselbe Muster, das Task 12 bei Projekt, Anfrage und Kunde schon
- * geschlossen hat, hier vom Agenten uebersehen. Vertreter/Adresse waren
- * zudem nackte Textknoten in einem "<p className='flex ...'>" -- anonyme
- * Flex-Items, an die keine Klasse haengt und die kein elementbasierter Check
+ * geschlossen hat, hier vom Agenten uebersehen. Die Adresse war
+ * zudem ein nackter Textknoten in einem "<p className='flex ...'>" -- ein anonymes
+ * Flex-Item, an die keine Klasse haengt und die kein elementbasierter Check
  * (z.B. keinTextLaeuftUeber) je gesehen hat. Eigene, deutlich laengere Werte
- * als VERTRETER_LANG: der Code-Review-Fund war ausdruecklich, dass die
+ * als die Kontaktdaten-Werte: der Code-Review-Fund war ausdruecklich, dass die
  * 46-Zeichen-Fixture im Kopf latent bleibt, weil der Titelblock dort breit
  * genug ist ("nicht akut").
  */
-test.describe('Lieferanten-Kopf-Untertitel: Alias/Vertreter/Adresse (Nacharbeit Abschnitt 9)', () => {
+test.describe('Lieferanten-Kopf-Untertitel: Alias/Adresse (Nacharbeit Abschnitt 9)', () => {
     const ALIAS_LANG = spacelosesWort(140, 'Alias');
-    const VERTRETER_KOPF_LANG = spacelosesWort(140, 'Vertreterkopf');
     const STRASSE_KOPF_LANG = spacelosesWort(140, 'Strassekopf');
 
-    test('Alias, Vertreter und Adresse sprengen die Kopf-Untertitelzeile nicht', async ({ page }) => {
+    test('Alias und Adresse sprengen die Kopf-Untertitelzeile nicht', async ({ page }) => {
         await stubLieferantDetailApi(page, {
             overrides: {
                 aliasName: ALIAS_LANG,
-                vertreter: VERTRETER_KOPF_LANG,
                 strasse: STRASSE_KOPF_LANG,
                 plz: '99999',
                 ort: 'Musterstadt',
@@ -484,8 +478,7 @@ test.describe('Lieferanten-Kopf-Untertitel: Alias/Vertreter/Adresse (Nacharbeit 
 
         const ueberschrift = page.getByRole('heading', { name: LIEFERANT_LANG });
         await expect(ueberschrift).toBeVisible();
-        // Scoped auf die Kopf-Karte: "vertreter" steht ein zweites Mal in der
-        // Kontaktdaten-Karte -- ein ungegrenztes getByText waere mehrdeutig.
+        // Scoped auf die Kopf-Karte, damit nichts aus der Kontaktdaten-Karte mitzaehlt.
         const kopfKarte = page.locator('main').getByRole('heading', { name: LIEFERANT_LANG }).locator('xpath=ancestor::div[contains(@class, "p-6")][1]');
 
         // Alias: reiner Block-<p> (kein Flex-Item) -- ohne break-words liefe er
@@ -499,7 +492,7 @@ test.describe('Lieferanten-Kopf-Untertitel: Alias/Vertreter/Adresse (Nacharbeit 
             `Alias-Zeile laeuft ${aliasUeberstand}px ueber -- braucht break-words am <p>`,
         ).toBeLessThanOrEqual(2);
 
-        // Vertreter/Adresse: nackte Textknoten in "<p class='flex ...'>" --
+        // Adresse: nackter Textknoten in "<p class='flex ...'>" --
         // anonyme Flex-Items. Playwright matcht bei exact:false das am
         // engsten umschliessende Element (hier der neue <span>) -- von dort
         // auf das umschliessende "<p class='flex'>" hochlaufen und DESSEN
@@ -517,7 +510,6 @@ test.describe('Lieferanten-Kopf-Untertitel: Alias/Vertreter/Adresse (Nacharbeit 
                 `${feldname}-Zeile laeuft ${ueberstand}px ueber -- braucht min-w-0 am umschliessenden <span> und break-words`,
             ).toBeLessThanOrEqual(2);
         };
-        await pruefeUntertitelZeile(VERTRETER_KOPF_LANG, 'Vertreter (Kopf-Untertitel)');
         await pruefeUntertitelZeile(STRASSE_KOPF_LANG, 'Adresse (Kopf-Untertitel)');
 
         await keinHorizontalerUeberlauf(page);

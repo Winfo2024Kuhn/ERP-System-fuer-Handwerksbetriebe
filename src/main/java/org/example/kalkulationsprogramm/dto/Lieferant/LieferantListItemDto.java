@@ -15,7 +15,6 @@ public class LieferantListItemDto {
     private String aliasName;
     private String lieferantenTyp;
     private Set<LieferantRolle> rollen;
-    private String vertreter;
     private String strasse;
     private String plz;
     private String ort;
@@ -29,4 +28,9 @@ public class LieferantListItemDto {
     private String standardKostenstelleName;
     /** true = Rechnungen dieses Lieferanten gelten beim Import sofort als bezahlt. */
     private Boolean vorauskasse;
+    /**
+     * Erster Ansprechpartner („Vorname Nachname“), bei mehreren mit „ +N“ (z. B. „Max Mustermann +2“);
+     * {@code null}, wenn der Lieferant keinen hat.
+     */
+    private String ansprechpartnerHinweis;
 }

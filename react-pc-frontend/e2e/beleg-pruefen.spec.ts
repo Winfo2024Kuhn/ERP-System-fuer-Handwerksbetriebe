@@ -37,7 +37,7 @@ test('Beleg prüfen führt in fester Reihenfolge durch Zahlung, Zuordnung und Ü
     expect(headings.filter(h => h !== 'Beleg prüfen & validieren')).toEqual(['Wie viel und wann?', 'Wie wurde bezahlt?', 'Ist die Rechnung schon bezahlt?', 'Wofür war das?', 'Für welche Baustelle / welchen Bereich?', 'Von wem war der Beleg?']);
     await expect(dialog.getByText('Am Handy gewählt: Am Handy GmbH. Die KI hat gelesen: KI Baustoffe GmbH.')).toBeVisible();
     await dialog.getByRole('button', { name: 'Übernehmen', exact: true }).click();
-    await expect(page.getByPlaceholder('Suche nach Name, Ort, Typ, Vertreter...')).toHaveValue('KI Baustoffe GmbH');
+    await expect(page.getByPlaceholder('Suche nach Name, Ort, Typ, Ansprechpartner …')).toHaveValue('KI Baustoffe GmbH');
     await page.keyboard.press('Escape');
     await dialog.getByRole('button', { name: 'Konto übernehmen' }).click();
     await expect(dialog.getByRole('combobox', { name: /konto/i })).toContainText('4930 Bürobedarf');

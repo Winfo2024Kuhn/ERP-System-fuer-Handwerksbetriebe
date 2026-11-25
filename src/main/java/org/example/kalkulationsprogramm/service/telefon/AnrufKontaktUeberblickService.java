@@ -14,6 +14,8 @@ import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.example.kalkulationsprogramm.repository.SteuerberaterKontaktRepository;
+import org.example.kalkulationsprogramm.service.lieferantansprechpartner.LieferantAnsprechpartnerUebersicht;
+import org.example.kalkulationsprogramm.util.PersonenName;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,9 +24,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
-import java.util.Objects;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import java.util.function.LongSupplier;
 
 import static org.example.kalkulationsprogramm.dto.Telefon.AnrufKontaktUeberblickDto.MAX_EINTRAEGE;
@@ -49,6 +49,7 @@ public class AnrufKontaktUeberblickService {
     private final AnfrageRepository anfrageRepository;
     private final AusgangsGeschaeftsDokumentRepository dokumentRepository;
     private final SteuerberaterKontaktRepository steuerberaterRepository;
+    private final LieferantAnsprechpartnerUebersicht lieferantAnsprechpartner;
 
     @Transactional(readOnly = true)
     public AnrufKontaktUeberblickDto ueberblick(Long kundeId, Long lieferantId, Long steuerberaterId) {
@@ -82,11 +83,13 @@ public class AnrufKontaktUeberblickService {
                 gesamt(anfragen.size(), () -> anfrageRepository.countByKundeId(k.getId())));
     }
 
+    /** Lieferant: erster Ansprechpartner, bei mehreren mit „ +N“ („Max Mustermann +2“), keine Projekte. */
     private AnrufKontaktUeberblickDto lieferant(Long id) {
         Lieferanten l = lieferantenRepository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("Lieferant nicht gefunden"));
         return new AnrufKontaktUeberblickDto(KontaktKurzDto.LIEFERANT, l.getId(), l.getLieferantenname(), null,
-                l.getVertreter(), l.getStrasse(), l.getPlz(), l.getOrt(), List.of(), 0, List.of(), 0);
+                lieferantAnsprechpartner.hinweis(l.getId()), l.getStrasse(), l.getPlz(), l.getOrt(),
+                List.of(), 0, List.of(), 0);
     }
 
     /** Kanzlei: Ansprechpartner aus der Liste (sonst das alte Einzelfeld), keine Adresse, keine Projekte. */
@@ -105,16 +108,7 @@ public class AnrufKontaktUeberblickService {
     }
 
     static String vollerName(SteuerberaterAnsprechpartner a) {
-        return vollerName(a.getVorname(), a.getNachname());
-    }
-
-    /** „Vorname Nachname" ohne überzählige Leerzeichen; leer, wenn beides fehlt. */
-    static String vollerName(String vorname, String nachname) {
-        return Stream.of(vorname, nachname)
-                .filter(Objects::nonNull)
-                .map(String::trim)
-                .filter(teil -> !teil.isEmpty())
-                .collect(Collectors.joining(" "));
+        return PersonenName.vollerName(a.getVorname(), a.getNachname());
     }
 
     /** Nur wenn die Liste voll ist, kann es mehr geben – dann erst zählen. */

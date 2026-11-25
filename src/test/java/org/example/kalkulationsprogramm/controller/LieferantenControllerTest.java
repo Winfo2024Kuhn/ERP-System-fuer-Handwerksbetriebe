@@ -279,6 +279,18 @@ class LieferantenControllerTest {
   }
 
   @Test
+  @DisplayName("Anlegen: ein altes Feld „vertreter“ im JSON stört nicht (Ansprechpartner haben einen eigenen Reiter)")
+  void createLieferantIgnoriertAltesVertreterFeld() throws Exception {
+    when(lieferantenRepository.findByLieferantennameIgnoreCase("Stahlbau Mustermann")).thenReturn(Optional.empty());
+    when(lieferantenRepository.save(any(Lieferanten.class))).thenAnswer(inv -> inv.getArgument(0));
+
+    mockMvc.perform(post("/api/lieferanten")
+        .contentType(MediaType.APPLICATION_JSON)
+        .content("{\"lieferantenname\": \"Stahlbau Mustermann\", \"vertreter\": \"Max Mustermann\"}"))
+        .andExpect(status().isCreated());
+  }
+
+  @Test
   @DisplayName("Ändern: eine gespeicherte reine Vorwahl wird beim nächsten Speichern geleert")
   void updateLieferantLeertReineVorwahl() throws Exception {
     Lieferanten entity = new Lieferanten();

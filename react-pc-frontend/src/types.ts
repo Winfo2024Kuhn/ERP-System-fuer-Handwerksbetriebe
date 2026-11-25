@@ -248,6 +248,8 @@ export interface LieferantDetail extends Lieferant {
   emailAnzahl?: number;
   notizenAnzahl?: number;
   notizen?: LieferantNotiz[];
+  /** Zahl der Ansprechpartner für die Reiter-Beschriftung; die Liste lädt der Reiter selbst. */
+  ansprechpartnerAnzahl?: number;
 }
 
 
@@ -292,7 +294,8 @@ export interface Lieferant {
   ort?: string;
   telefon?: string;
   mobiltelefon?: string;
-  vertreter?: string;
+  /** Fertiger Anzeigetext aus der Liste/Suche, z. B. „Max Mustermann +2“; null = keine Ansprechpartner. */
+  ansprechpartnerHinweis?: string | null;
   rabatt?: number;
   lieferzeit?: number;
   istAktiv?: boolean;

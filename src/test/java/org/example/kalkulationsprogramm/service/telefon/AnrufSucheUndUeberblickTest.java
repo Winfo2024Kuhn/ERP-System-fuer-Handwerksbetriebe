@@ -4,6 +4,7 @@ import org.example.kalkulationsprogramm.domain.Anfrage;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp;
 import org.example.kalkulationsprogramm.domain.Kunde;
+import org.example.kalkulationsprogramm.domain.LieferantAnsprechpartner;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.domain.Sprachnachricht;
@@ -16,11 +17,13 @@ import org.example.kalkulationsprogramm.dto.Telefon.AnrufKontaktUeberblickDto;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
+import org.example.kalkulationsprogramm.repository.LieferantAnsprechpartnerRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.example.kalkulationsprogramm.repository.SprachnachrichtRepository;
 import org.example.kalkulationsprogramm.repository.SteuerberaterKontaktRepository;
 import org.example.kalkulationsprogramm.repository.TelefonAnrufRepository;
+import org.example.kalkulationsprogramm.service.lieferantansprechpartner.LieferantAnsprechpartnerUebersicht;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -45,7 +48,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * für das Anruf-Fenster – auf H2 mit echten Abfragen.
  */
 @DataJpaTest
-@Import(AnrufKontaktUeberblickService.class)
+@Import({AnrufKontaktUeberblickService.class, LieferantAnsprechpartnerUebersicht.class})
 class AnrufSucheUndUeberblickTest {
 
     private static final LocalDateTime ZEIT = LocalDateTime.of(2026, 9, 29, 8, 0);
@@ -53,6 +56,7 @@ class AnrufSucheUndUeberblickTest {
     @Autowired TelefonAnrufRepository anrufe;
     @Autowired KundeRepository kunden;
     @Autowired LieferantenRepository lieferanten;
+    @Autowired LieferantAnsprechpartnerRepository lieferantenAnsprechpartner;
     @Autowired ProjektRepository projekte;
     @Autowired SteuerberaterKontaktRepository steuerberater;
     @Autowired AnfrageRepository anfragen;
@@ -73,12 +77,13 @@ class AnrufSucheUndUeberblickTest {
 
         stahl = new Lieferanten();
         stahl.setLieferantenname("Stahl Muster KG");
-        stahl.setVertreter("Hans Beispiel");
         stahl.setOrt("Kitzingen");
         stahl.setStrasse("Industriestraße 9");
         stahl.setPlz("97318");
         stahl.setEigeneKundennummer("KD-4711");
         stahl = lieferanten.save(stahl);
+        lieferantenAnsprechpartner.save(ansprechpartner(stahl, "Hans", "Beispiel", "Außendienst", "0171 2345678"));
+        lieferantenAnsprechpartner.save(ansprechpartner(stahl, "Moritz", "Lagerfrau", "Innendienst", null));
 
         projekt(mustermann, "Wintergarten Mustermann", "2026-001", false, LocalDate.of(2026, 3, 1));
         projekt(mustermann, "Carport", "2025-017", true, LocalDate.of(2025, 5, 1));
@@ -137,9 +142,12 @@ class AnrufSucheUndUeberblickTest {
         }
 
         @Test
-        @DisplayName("findet Lieferanten über Vertreter, Ort und unsere Kundennummer")
+        @DisplayName("findet Lieferanten über Ansprechpartner (Name, Aufgabe, Handy), Ort und unsere Kundennummer")
         void lieferantenAttribute() {
             assertThat(nummern("hans")).containsExactly("093215555");
+            assertThat(nummern("lagerfrau")).containsExactly("093215555");
+            assertThat(nummern("innendienst")).containsExactly("093215555");
+            assertThat(nummern("0171 2345")).containsExactly("093215555");
             assertThat(nummern("kitzingen")).containsExactly("093215555");
             assertThat(nummern("KD-4711")).containsExactly("093215555");
             assertThat(nummern("beispiel")).containsExactlyInAnyOrder("09311234567", "093215555", "0931444412");
@@ -350,12 +358,12 @@ class AnrufSucheUndUeberblickTest {
         }
 
         @Test
-        @DisplayName("Lieferant: Vertreter als Ansprechpartner, keine Kundennummer")
+        @DisplayName("Lieferant: erster Ansprechpartner mit „+N“, keine Kundennummer")
         void lieferant() {
             AnrufKontaktUeberblickDto dto = ueberblickService.ueberblick(null, stahl.getId(), null);
             assertThat(dto.typ()).isEqualTo("LIEFERANT");
             assertThat(dto.name()).isEqualTo("Stahl Muster KG");
-            assertThat(dto.ansprechpartner()).isEqualTo("Hans Beispiel");
+            assertThat(dto.ansprechpartner()).isEqualTo("Hans Beispiel +1");
             assertThat(dto.ort()).isEqualTo("Kitzingen");
             assertThat(dto.nummer()).isNull();
             assertThat(dto.projekte()).isEmpty();
@@ -454,5 +462,16 @@ class AnrufSucheUndUeberblickTest {
         a.setZuordnung(kunde != null || lieferant != null ? TelefonZuordnung.AUTOMATISCH : TelefonZuordnung.KEINE);
         a.setAngelegtAm(ZEIT);
         anrufe.save(a);
+    }
+
+    private static LieferantAnsprechpartner ansprechpartner(Lieferanten l, String vorname, String nachname,
+                                                           String aufgabe, String mobil) {
+        LieferantAnsprechpartner a = new LieferantAnsprechpartner();
+        a.setLieferant(l);
+        a.setVorname(vorname);
+        a.setNachname(nachname);
+        a.setAufgabe(aufgabe);
+        a.setMobiltelefon(mobil);
+        return a;
     }
 }

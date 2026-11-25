@@ -5,6 +5,7 @@ import jakarta.persistence.EntityManagerFactory;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.domain.KontaktRufnummer;
 import org.example.kalkulationsprogramm.domain.Kunde;
+import org.example.kalkulationsprogramm.domain.LieferantAnsprechpartner;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.SteuerberaterAnsprechpartner;
@@ -47,6 +48,7 @@ public class TelefonbuchAenderungsBeobachter
     static final Map<Class<?>, Set<String>> RELEVANTE_FELDER = Map.of(
             Kunde.class, Set.of("name", "anrede", "telefon", "mobiltelefon", "gesperrtAm", "anonymisiertAm"),
             Lieferanten.class, Set.of("lieferantenname", "telefon", "mobiltelefon", "istAktiv"),
+            LieferantAnsprechpartner.class, Set.of("vorname", "nachname", "telefon", "mobiltelefon", "lieferant"),
             Mitarbeiter.class, Set.of("vorname", "nachname", "telefon", "festnetz", "aktiv", "art"),
             SteuerberaterKontakt.class, Set.of("name", "telefon", "aktiv", "gueltigBis"),
             SteuerberaterAnsprechpartner.class, Set.of("vorname", "nachname", "telefon", "steuerberater"),

@@ -5,7 +5,8 @@ import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { ToastProvider } from '../components/ui/toast';
 import { ConfirmProvider } from '../components/ui/confirm-dialog';
 import { AuthProvider } from '../auth/AuthContext';
-import LieferantenEditor, { LieferantModal } from './LieferantenEditor';
+import LieferantenEditor from './LieferantenEditor';
+import { LieferantModal } from '../features/lieferanten/LieferantModal';
 
 // PAGE_SIZE im LieferantenEditor ist 12 – bei 40 Treffern also 4 Seiten.
 const PAGE_SIZE = 12;
@@ -211,6 +212,7 @@ const DUMMY_DETAIL = {
     dokumente: [],
     notizen: [],
     kundenEmails: [],
+    ansprechpartnerAnzahl: 3,
 };
 
 /**
@@ -319,6 +321,36 @@ describe('LieferantenEditor – Reiter in der Adresszeile', () => {
         expect(screen.getByText('Keine E-Mails vorhanden.')).toBeInTheDocument();
     });
 
+    it('zeigt den Reiter Ansprechpartner direkt nach den E-Mails mit Zähler vom Server', async () => {
+        renderMitAdresse(['/lieferanten?lieferantId=7&tab=ansprechpartner']);
+
+        const offenerReiter = await screen.findByRole('tab', { selected: true });
+        expect(offenerReiter).toHaveTextContent('Ansprechpartner3');
+        const namen = screen.getAllByRole('tab').map(tab => tab.textContent?.replace(/\d+$/, ''));
+        expect(namen.slice(0, 2)).toEqual(['E-Mail-Verlauf', 'Ansprechpartner']);
+        // Der Reiter lädt seine Liste erst jetzt; leer heißt Leer-Zustand und Zähler 0.
+        expect(await screen.findByText('Noch keine Ansprechpartner.')).toBeInTheDocument();
+        await waitFor(() => expect(screen.getByRole('tab', { selected: true })).toHaveTextContent('Ansprechpartner0'));
+        expect(fetchMock.mock.calls.map((aufruf: unknown[]) => aufruf[0])).toContain('/api/lieferanten/7/ansprechpartner');
+    });
+
+    it('meldet per Toast, wenn die Details nicht geladen werden können', async () => {
+        const basis = mockDetailApi();
+        fetchMock = vi.fn((url: string) => url === '/api/lieferanten/7?nurStammdaten=true'
+            ? Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}) })
+            : basis(url));
+        global.fetch = fetchMock as unknown as typeof fetch;
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        renderMitAdresse(['/lieferanten?lieferantId=7']);
+        expect(await screen.findByText('Lieferant konnte nicht geladen werden. Bitte Seite neu laden.')).toBeInTheDocument();
+    });
+
+    it('zeigt kein Feld „Vertreter“ mehr in der Detailansicht', async () => {
+        renderMitAdresse(['/lieferanten?lieferantId=7']);
+        await screen.findByRole('tab', { selected: true });
+        expect(screen.queryByText('Vertreter')).not.toBeInTheDocument();
+    });
+
     it('fällt bei unbekanntem Reiter auf den E-Mail-Verlauf zurück', async () => {
         renderMitAdresse(['/lieferanten?lieferantId=7&tab=quatsch']);
 
@@ -406,6 +438,11 @@ describe('LieferantModal – Name ist Pflicht', () => {
         );
         return onSave;
     }
+
+    it('hat kein Feld „Vertreter“ mehr', () => {
+        renderModal('Musterstahl GmbH');
+        expect(screen.queryByText('Vertreter')).not.toBeInTheDocument();
+    });
 
     it('speichert ohne Namen nicht, markiert das Feld und sagt warum', async () => {
         const user = userEvent.setup();
