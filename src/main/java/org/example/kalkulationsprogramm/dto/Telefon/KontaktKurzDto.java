@@ -3,8 +3,8 @@ package org.example.kalkulationsprogramm.dto.Telefon;
 /**
  * Kurzform eines Kunden, Lieferanten oder Steuerberaters für Anrufliste und Anruf-Fenster.
  *
- * @param ansprechpartner nur bei Steuerberatern: der Ansprechpartner, bei dem genau diese
- *                        Rufnummer hinterlegt ist – sonst null
+ * @param ansprechpartner bei Steuerberatern und Lieferanten: der Ansprechpartner, bei dem genau
+ *                        diese Rufnummer hinterlegt ist (Telefon oder Handy) – sonst null
  */
 public record KontaktKurzDto(String typ, Long id, String name, String nummer, String ort, String ansprechpartner) {
 

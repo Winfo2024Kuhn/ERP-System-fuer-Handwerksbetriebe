@@ -137,7 +137,7 @@ public class LieferantenController {
                 PageRequest.of(pageIndex, pageSize, LieferantenSuche.SORTIERUNG));
 
         LieferantSearchResponseDto response = new LieferantSearchResponseDto();
-        response.setLieferanten(result.stream().map(lieferantMapper::toListItem).toList());
+        response.setLieferanten(lieferantMapper.toListItems(result.getContent()));
         response.setGesamt(result.getTotalElements());
         response.setSeite(pageIndex);
         response.setSeitenGroesse(pageSize);
@@ -171,7 +171,6 @@ public class LieferantenController {
         lieferant.setEigeneKundennummer(trimToNull(request.getEigeneKundennummer()));
         lieferant.setLieferantenTyp(trimToNull(request.getLieferantenTyp()));
         lieferant.setRollen(request.getRollen() != null ? new HashSet<>(request.getRollen()) : new HashSet<>());
-        lieferant.setVertreter(trimToNull(request.getVertreter()));
         lieferant.setStrasse(trimToNull(request.getStrasse()));
         lieferant.setPlz(trimToNull(request.getPlz()));
         lieferant.setOrt(trimToNull(request.getOrt()));
@@ -218,7 +217,6 @@ public class LieferantenController {
         lieferant.setEigeneKundennummer(trimToNull(request.getEigeneKundennummer()));
         lieferant.setLieferantenTyp(trimToNull(request.getLieferantenTyp()));
         lieferant.setRollen(request.getRollen() != null ? new HashSet<>(request.getRollen()) : new HashSet<>());
-        lieferant.setVertreter(trimToNull(request.getVertreter()));
         lieferant.setStrasse(trimToNull(request.getStrasse()));
         lieferant.setPlz(trimToNull(request.getPlz()));
         lieferant.setOrt(trimToNull(request.getOrt()));

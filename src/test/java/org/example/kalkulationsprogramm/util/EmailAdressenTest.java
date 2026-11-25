@@ -136,4 +136,34 @@ class EmailAdressenTest {
         assertThat(EmailAdressen.hatAdresseAusDomain("", "kanzlei.example.org")).isFalse();
         assertThat(EmailAdressen.hatAdresseAusDomain(null, "kanzlei.example.org")).isFalse();
     }
+
+    @Test
+    @DisplayName("istEinzelneAdresse: genau eine Adresse ohne Anzeigenamen, auch bei langen Eingaben schnell")
+    void istEinzelneAdresse() {
+        assertThat(EmailAdressen.istEinzelneAdresse("max.mustermann@example.com")).isTrue();
+        assertThat(EmailAdressen.istEinzelneAdresse("max@sub.example.org")).isTrue();
+        assertThat(EmailAdressen.istEinzelneAdresse("max@example")).isFalse();
+        assertThat(EmailAdressen.istEinzelneAdresse("Max <max@example.com>")).isFalse();
+        assertThat(EmailAdressen.istEinzelneAdresse("max mustermann@example.com")).isFalse();
+        assertThat(EmailAdressen.istEinzelneAdresse("a@b@example.com")).isFalse();
+        assertThat(EmailAdressen.istEinzelneAdresse("")).isFalse();
+        assertThat(EmailAdressen.istEinzelneAdresse(null)).isFalse();
+        String angriff = "a@" + "b.".repeat(20_000) + ".";
+        assertTimeoutPreemptively(Duration.ofMillis(500), () ->
+                assertThat(EmailAdressen.istEinzelneAdresse(angriff)).isFalse());
+    }
+
+    @Test
+    @DisplayName("istKontaktAdresse: wie istEinzelneAdresse, aber ohne ? und & (kein mailto-Parameter einschleusbar)")
+    void istKontaktAdresse() {
+        assertThat(EmailAdressen.istKontaktAdresse("max.mustermann@example.com")).isTrue();
+        assertThat(EmailAdressen.istKontaktAdresse("max+bestellung@example.com")).isTrue();
+        assertThat(EmailAdressen.istKontaktAdresse("a?cc=chef@example.com")).isFalse();
+        assertThat(EmailAdressen.istKontaktAdresse("a&body=x@example.com")).isFalse();
+        assertThat(EmailAdressen.istKontaktAdresse("max@example.com?subject=x")).isFalse();
+        assertThat(EmailAdressen.istKontaktAdresse("Max <max@example.com>")).isFalse();
+        assertThat(EmailAdressen.istKontaktAdresse(null)).isFalse();
+        // Postfächer bleiben bei der bisherigen Prüfung.
+        assertThat(EmailAdressen.istEinzelneAdresse("a?b@example.com")).isTrue();
+    }
 }

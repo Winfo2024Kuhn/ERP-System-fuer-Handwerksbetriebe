@@ -29,6 +29,12 @@ public final class EmailAdressen {
      */
     static final int MAX_HEADER_LAENGE = 4096;
 
+    /**
+     * Genau eine Adresse ohne Anzeigenamen ("max@example.com"): ein {@code @}, Domain mit Punkt,
+     * kein Leerraum. Possessive Quantoren, damit lange Eingaben nicht zurückspringen (ReDoS).
+     */
+    private static final Pattern EINZELNE_ADRESSE = Pattern.compile("^[^@\\s]++@[^@\\s.]++(?:\\.[^@\\s.]++)++$");
+
     private EmailAdressen() {
     }
 
@@ -57,6 +63,20 @@ public final class EmailAdressen {
             if (at >= 0 && adresse.substring(at + 1).equalsIgnoreCase(domain)) return true;
         }
         return false;
+    }
+
+    /** Ist der Text genau eine E-Mail-Adresse (ohne Anzeigenamen, ohne Leerraum)? */
+    public static boolean istEinzelneAdresse(String text) {
+        return text != null && EINZELNE_ADRESSE.matcher(text).matches();
+    }
+
+    /**
+     * Strengere Prüfung für Adressen, die als {@code mailto:}-Link angezeigt werden (Ansprechpartner):
+     * eine einzelne Adresse wie {@link #istEinzelneAdresse}, zusätzlich ohne {@code ?} und {@code &},
+     * damit sich keine Link-Parameter wie {@code ?cc=…} oder {@code &body=…} einschleusen lassen.
+     */
+    public static boolean istKontaktAdresse(String text) {
+        return istEinzelneAdresse(text) && text.indexOf('?') < 0 && text.indexOf('&') < 0;
     }
 
     private static String gekappt(String raw) {

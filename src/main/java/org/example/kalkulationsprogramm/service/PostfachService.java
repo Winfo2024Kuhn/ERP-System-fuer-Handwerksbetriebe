@@ -13,7 +13,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import org.example.kalkulationsprogramm.domain.Abteilung;
@@ -32,6 +31,7 @@ import org.example.kalkulationsprogramm.repository.FrontendUserProfileRepository
 import org.example.kalkulationsprogramm.service.mail.MailSecretService;
 import org.example.kalkulationsprogramm.service.mail.PostfachZugang;
 import org.example.kalkulationsprogramm.service.mail.SpamOrdnerRegeln;
+import org.example.kalkulationsprogramm.util.EmailAdressen;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -54,9 +54,6 @@ import lombok.extern.slf4j.Slf4j;
 public class PostfachService {
 
     static final int MAX_FELD_LAENGE = 255;
-
-    /** Gleiche Prüfung wie bei den Absender-Adressen; possessiv gegen ReDoS. */
-    private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^@\\s]++@[^@\\s.]++(?:\\.[^@\\s.]++)++$");
 
     private final EmailAbsenderRepository repository;
     private final EmailPostfachZuordnungRepository zuordnungRepository;
@@ -271,7 +268,7 @@ public class PostfachService {
         if (adresse.isEmpty()) {
             throw new IllegalArgumentException("Bitte die E-Mail-Adresse des Postfachs eintragen.");
         }
-        if (!EMAIL_PATTERN.matcher(adresse).matches()) {
+        if (!EmailAdressen.istEinzelneAdresse(adresse)) {
             throw new IllegalArgumentException("Bitte eine gültige E-Mail-Adresse eintragen.");
         }
         repository.findByEmailAdresseIgnoreCase(adresse).ifPresent(vorhanden -> {
@@ -281,7 +278,7 @@ public class PostfachService {
         });
 
         String benutzername = gesetzt(request.benutzername()) ? request.benutzername().trim() : null;
-        if (benutzername != null && !EMAIL_PATTERN.matcher(benutzername).matches()) {
+        if (benutzername != null && !EmailAdressen.istEinzelneAdresse(benutzername)) {
             throw new IllegalArgumentException("Bitte als Benutzernamen die vollständige Adresse des Postfachs eintragen.");
         }
         if (benutzername != null && !domainVon(benutzername).equals(domainVon(adresse))) {

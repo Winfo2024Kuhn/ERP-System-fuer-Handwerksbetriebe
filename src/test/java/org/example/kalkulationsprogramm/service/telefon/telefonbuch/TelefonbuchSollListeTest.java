@@ -4,6 +4,7 @@ import org.example.kalkulationsprogramm.domain.Anrede;
 import org.example.kalkulationsprogramm.domain.TelefonbuchQuelle;
 import org.example.kalkulationsprogramm.repository.KontaktRufnummerRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
+import org.example.kalkulationsprogramm.repository.LieferantAnsprechpartnerRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.repository.SteuerberaterKontaktRepository;
@@ -40,6 +41,7 @@ class TelefonbuchSollListeTest {
 
     @Mock KundeRepository kunden;
     @Mock LieferantenRepository lieferanten;
+    @Mock LieferantAnsprechpartnerRepository lieferantenAnsprechpartner;
     @Mock MitarbeiterRepository mitarbeiter;
     @Mock SteuerberaterKontaktRepository steuerberater;
     @Mock KontaktRufnummerRepository zusatznummern;
@@ -51,7 +53,8 @@ class TelefonbuchSollListeTest {
     void setUp() {
         when(einstellungen.landesvorwahl()).thenReturn("49");
         when(einstellungen.ortsvorwahl()).thenReturn("123");
-        sollListe = new TelefonbuchSollListe(kunden, lieferanten, mitarbeiter, steuerberater, zusatznummern, einstellungen,
+        sollListe = new TelefonbuchSollListe(kunden, lieferanten, lieferantenAnsprechpartner, mitarbeiter, steuerberater,
+                zusatznummern, einstellungen,
                 Clock.fixed(Instant.parse("2026-10-21T08:00:00Z"), ZoneId.of("Europe/Berlin")));
     }
 
@@ -75,6 +78,9 @@ class TelefonbuchSollListeTest {
                 new Object[]{3L, "Erika Musterfrau", Anrede.FRAU, "+49 123 777777"}));
         when(lieferanten.findeFuerTelefonbuch()).thenReturn(zeilen(new Object[]{10L, "Würth", "0123 555555", "0151 2222222"}));
         when(zusatznummern.findeLieferantenNummernFuerTelefonbuch()).thenReturn(zeilen(new Object[]{10L, "Würth", "0123 555556"}));
+        when(lieferantenAnsprechpartner.findeFuerTelefonbuch()).thenReturn(zeilen(
+                new Object[]{40L, "Max", "Mustermann", "0123 555555-12", "0171 4444444", "Würth"},
+                new Object[]{41L, null, "Musterfrau", null, "0160 5555555", "  "}));
         when(mitarbeiter.findeFuerTelefonbuch()).thenReturn(zeilen(new Object[]{20L, "Max", "Mustermann", "0160 3333333", "0123 444444"}));
         when(steuerberater.findeFuerTelefonbuch(HEUTE)).thenReturn(zeilen(new Object[]{30L, "Kanzlei Beispiel", "0123 888888"}));
         when(zusatznummern.findeSteuerberaterNummernFuerTelefonbuch(HEUTE)).thenReturn(zeilen(new Object[]{30L, "Kanzlei Beispiel", "0123 888889"}));
@@ -93,6 +99,11 @@ class TelefonbuchSollListeTest {
         assertThat(soll.get(new Schluessel(TelefonbuchQuelle.LIEFERANT, 10L))).isEqualTo(new TelefonbuchEintrag(
                 "Würth (Lieferant)", List.of(n("0123555555", NummerArt.GESCHAEFTLICH), n("01512222222", NummerArt.MOBIL),
                 n("0123555556", NummerArt.GESCHAEFTLICH))));
+        assertThat(soll.get(new Schluessel(TelefonbuchQuelle.LIEFERANT_ANSPRECHPARTNER, 40L))).isEqualTo(
+                new TelefonbuchEintrag("Max Mustermann (Lieferant Würth)",
+                        List.of(n("012355555512", NummerArt.GESCHAEFTLICH), n("01714444444", NummerArt.MOBIL))));
+        assertThat(soll.get(new Schluessel(TelefonbuchQuelle.LIEFERANT_ANSPRECHPARTNER, 41L))).isEqualTo(
+                new TelefonbuchEintrag("Musterfrau (Lieferant)", List.of(n("01605555555", NummerArt.MOBIL))));
         assertThat(soll.get(new Schluessel(TelefonbuchQuelle.MITARBEITER, 20L))).isEqualTo(new TelefonbuchEintrag(
                 "Max Mustermann (Mitarbeiter)", List.of(n("01603333333", NummerArt.MOBIL), n("0123444444", NummerArt.PRIVAT))));
         assertThat(soll.get(new Schluessel(TelefonbuchQuelle.STEUERBERATER, 30L))).isEqualTo(new TelefonbuchEintrag(
@@ -102,7 +113,9 @@ class TelefonbuchSollListeTest {
                 new TelefonbuchEintrag("Erika Musterfrau (Steuerberater Kanzlei Beispiel)",
                         List.of(n("012388888812", NummerArt.GESCHAEFTLICH))));
         assertThat(soll.keySet()).extracting(Schluessel::quelle).containsExactly(TelefonbuchQuelle.KUNDE,
-                TelefonbuchQuelle.KUNDE, TelefonbuchQuelle.KUNDE, TelefonbuchQuelle.LIEFERANT, TelefonbuchQuelle.MITARBEITER,
+                TelefonbuchQuelle.KUNDE, TelefonbuchQuelle.KUNDE, TelefonbuchQuelle.LIEFERANT,
+                TelefonbuchQuelle.LIEFERANT_ANSPRECHPARTNER, TelefonbuchQuelle.LIEFERANT_ANSPRECHPARTNER,
+                TelefonbuchQuelle.MITARBEITER,
                 TelefonbuchQuelle.STEUERBERATER, TelefonbuchQuelle.STEUERBERATER_ANSPRECHPARTNER);
         verify(steuerberater).findeFuerTelefonbuch(HEUTE);
     }

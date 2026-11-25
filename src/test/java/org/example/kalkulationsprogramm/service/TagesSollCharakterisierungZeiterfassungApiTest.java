@@ -4,7 +4,6 @@ import org.example.kalkulationsprogramm.mapper.ArbeitsgangMapper;
 import org.example.kalkulationsprogramm.repository.AbwesenheitRepository;
 import org.example.kalkulationsprogramm.repository.ArbeitsgangRepository;
 import org.example.kalkulationsprogramm.repository.ArbeitsgangStundensatzRepository;
-import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.repository.ProduktkategorieRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
@@ -78,7 +77,6 @@ class TagesSollCharakterisierungZeiterfassungApiTest {
     @Mock private ArbeitsgangStundensatzRepository arbeitsgangStundensatzRepository;
     @Mock private ArbeitsgangMapper arbeitsgangMapper;
     @Mock private DateiSpeicherService dateiSpeicherService;
-    @Mock private LieferantenRepository lieferantenRepository;
     @Mock private FeiertagService feiertagService;
     @Mock private ZeitbuchungAuditService auditService;
     @Mock private TagesSollService tagesSollService;
@@ -105,7 +103,7 @@ class TagesSollCharakterisierungZeiterfassungApiTest {
                 projektRepository, mitarbeiterRepository, arbeitsgangRepository,
                 zeitbuchungRepository, abwesenheitRepository, produktkategorieRepository,
                 arbeitsgangStundensatzRepository, arbeitsgangMapper, dateiSpeicherService,
-                lieferantenRepository, feiertagService, auditService, tagesSollService,
+                feiertagService, auditService, tagesSollService,
                 zeitkontoService, urlaubsverfallService, zeitkontoKorrekturService, monatsSaldoService,
                 org.mockito.Mockito.mock(UrlaubskontoService.class), ueberschneidungService);
 

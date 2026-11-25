@@ -31,6 +31,17 @@ describe('ZurueckrufenKnopf', () => {
         window.localStorage.clear();
     });
 
+    it('heißt „anrufen“, wenn man von sich aus wählt (z. B. Ansprechpartner eines Lieferanten)', async () => {
+        stubbe();
+        render(
+            <ToastProvider>
+                <ZurueckrufenKnopf nummer="0171 1234567" wer="Max Mustermann" anrufen />
+            </ToastProvider>,
+        );
+        const knopf = await screen.findByRole('button', { name: 'Max Mustermann anrufen' });
+        expect(knopf).toHaveAttribute('title', 'Anrufen');
+    });
+
     it('fragt beim ersten Klick nach dem Telefon, ruft dann an – beim zweiten Klick ohne Frage', async () => {
         const fetchMock = stubbe();
         zeige();

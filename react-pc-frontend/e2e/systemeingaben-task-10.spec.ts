@@ -68,7 +68,7 @@ test('Finanzen: Kommawerte, Zahlpflicht, eigene Picker und Kassenmeldungen', asy
     await netto.focus();
     await expect(netto).toHaveValue('10');
     await page.getByRole('button', { name: 'Wählen', exact: true }).click();
-    await page.getByPlaceholder('Suche nach Name, Ort, Typ, Vertreter...').fill('Testlieferant');
+    await page.getByPlaceholder('Suche nach Name, Ort, Typ, Ansprechpartner …').fill('Testlieferant');
     await page.keyboard.press('Escape');
     await expect(amount).toHaveValue('12,50');
     await page.getByRole('button', { name: 'Beleg-Datum' }).click();

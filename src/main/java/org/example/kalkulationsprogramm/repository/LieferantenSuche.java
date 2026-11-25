@@ -2,13 +2,17 @@ package org.example.kalkulationsprogramm.repository;
 
 import java.util.Locale;
 
+import org.example.kalkulationsprogramm.domain.LieferantAnsprechpartner;
 import org.example.kalkulationsprogramm.domain.LieferantRolle;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.util.StringUtils;
 
+import jakarta.persistence.criteria.CriteriaBuilder;
+import jakarta.persistence.criteria.CriteriaQuery;
 import jakarta.persistence.criteria.ListJoin;
+import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
 import jakarta.persistence.criteria.Subquery;
 
@@ -30,7 +34,8 @@ public final class LieferantenSuche {
     }
 
     /**
-     * @param freitext sucht in Name, zweitem Namen, Typ, Vertreter, Ort, Straße und Telefonnummern
+     * @param freitext sucht in Name, zweitem Namen, Typ, Ort, Straße und Telefonnummern sowie bei den
+     *                 Ansprechpartnern in Vorname, Nachname, Aufgabe, Telefon, Handy und E-Mail
      * @param email    sucht in den hinterlegten E-Mail-Adressen
      */
     public static Specification<Lieferanten> spezifikation(String freitext, String name, String typ, String ort,
@@ -54,11 +59,11 @@ public final class LieferantenSuche {
                     cb.like(cb.lower(root.get("lieferantenname")), muster),
                     cb.like(cb.lower(cb.coalesce(root.get("aliasName"), "")), muster),
                     cb.like(cb.lower(root.get("lieferantenTyp")), muster),
-                    cb.like(cb.lower(root.get("vertreter")), muster),
                     cb.like(cb.lower(root.get("ort")), muster),
                     cb.like(cb.lower(root.get("strasse")), muster),
                     cb.like(cb.lower(cb.coalesce(root.get("telefon"), "")), muster),
-                    cb.like(cb.lower(cb.coalesce(root.get("mobiltelefon"), "")), muster)));
+                    cb.like(cb.lower(cb.coalesce(root.get("mobiltelefon"), "")), muster),
+                    ansprechpartnerTrifft(root, cq, cb, muster)));
         }
         spec = spec.and(feld("lieferantenname", name));
         spec = spec.and(feld("lieferantenTyp", typ));
@@ -77,6 +82,45 @@ public final class LieferantenSuche {
             spec = spec.and((root, cq, cb) -> cb.isMember(rolle, root.<java.util.Set<LieferantRolle>>get("rollen")));
         }
         return spec;
+    }
+
+    /** Ein Ansprechpartner passt – als {@code EXISTS}, damit keine doppelten Zeilen entstehen. */
+    private static Predicate ansprechpartnerTrifft(Root<Lieferanten> root, CriteriaQuery<?> cq, CriteriaBuilder cb,
+            String muster) {
+        Subquery<Integer> treffer = cq.subquery(Integer.class);
+        Root<LieferantAnsprechpartner> a = treffer.from(LieferantAnsprechpartner.class);
+        treffer.select(cb.literal(1)).where(
+                cb.equal(a.get("lieferant"), root),
+                cb.or(cb.like(cb.lower(cb.coalesce(a.get("vorname"), "")), muster),
+                        cb.like(cb.lower(a.get("nachname")), muster),
+                        cb.like(cb.lower(cb.coalesce(a.get("aufgabe"), "")), muster),
+                        cb.like(cb.lower(cb.coalesce(a.get("telefon"), "")), muster),
+                        cb.like(cb.lower(cb.coalesce(a.get("mobiltelefon"), "")), muster),
+                        cb.like(cb.lower(cb.coalesce(a.get("email"), "")), muster)));
+        return cb.exists(treffer);
+    }
+
+    /**
+     * Suche der Handy-App ({@code GET /api/zeiterfassung/lieferanten?search=}): Name, zweiter Name,
+     * E-Mail-Adressen und Ansprechpartner (Vorname, Nachname, Aufgabe, Telefon, Handy, E-Mail) –
+     * auch inaktive Lieferanten. Ohne Suchwort nur die aktiven.
+     */
+    public static Specification<Lieferanten> handySuche(String suchwort) {
+        if (!StringUtils.hasText(suchwort)) {
+            return (root, cq, cb) -> cb.isTrue(root.get("istAktiv"));
+        }
+        final String muster = muster(suchwort);
+        return (root, cq, cb) -> {
+            Subquery<String> adresse = cq.subquery(String.class);
+            Root<Lieferanten> lieferant = adresse.correlate(root);
+            ListJoin<Lieferanten, String> email = lieferant.joinList("kundenEmails");
+            adresse.select(email).where(cb.like(cb.lower(email), muster));
+            return cb.or(
+                    cb.like(cb.lower(root.get("lieferantenname")), muster),
+                    cb.like(cb.lower(cb.coalesce(root.get("aliasName"), "")), muster),
+                    cb.exists(adresse),
+                    ansprechpartnerTrifft(root, cq, cb, muster));
+        };
     }
 
     private static Specification<Lieferanten> feld(String feld, String wert) {

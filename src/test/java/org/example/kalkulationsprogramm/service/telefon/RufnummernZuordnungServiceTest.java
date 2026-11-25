@@ -11,6 +11,7 @@ import org.example.kalkulationsprogramm.domain.TelefonZuordnung;
 import org.example.kalkulationsprogramm.dto.Telefon.KontaktKurzDto;
 import org.example.kalkulationsprogramm.repository.KontaktRufnummerRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
+import org.example.kalkulationsprogramm.repository.LieferantAnsprechpartnerRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.SteuerberaterKontaktRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,6 +46,7 @@ class RufnummernZuordnungServiceTest {
 
     @Mock KundeRepository kunden;
     @Mock LieferantenRepository lieferanten;
+    @Mock LieferantAnsprechpartnerRepository lieferantenAnsprechpartner;
     @Mock SteuerberaterKontaktRepository steuerberater;
     @Mock KontaktRufnummerRepository gemerkte;
     @Mock TelefonEinstellungenService einstellungen;
@@ -55,7 +57,8 @@ class RufnummernZuordnungServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new RufnummernZuordnungService(kunden, lieferanten, steuerberater, gemerkte, einstellungen, em, clock);
+        service = new RufnummernZuordnungService(kunden, lieferanten, lieferantenAnsprechpartner, steuerberater, gemerkte,
+                einstellungen, em, clock);
         when(einstellungen.landesvorwahl()).thenReturn("49");
         when(einstellungen.ortsvorwahl()).thenReturn("931");
         when(kunden.findeTelefonverzeichnis()).thenReturn(List.of(
@@ -363,6 +366,37 @@ class RufnummernZuordnungServiceTest {
         assertThat(v.mitAnsprechpartner(kunde, erika.getNummerNormalisiert())).isSameAs(kunde);
         assertThat(v.mitAnsprechpartner(null, erika.getNummerNormalisiert())).isNull();
         assertThat(v.mitAnsprechpartner(k.mitAnsprechpartner(null), null).ansprechpartner()).isNull();
+    }
+
+    @Test
+    @DisplayName("Lieferanten-Ansprechpartner: Telefon und Handy erkennen den Lieferanten samt Person, andere Durchwahl nur den Lieferanten")
+    void lieferantenAnsprechpartnerImVerzeichnis() {
+        when(lieferanten.findeTelefonverzeichnis()).thenReturn(List.<Object[]>of(
+                new Object[]{10L, "Stahl Muster KG", "Schweinfurt", "09721 5555-0", null}));
+        when(lieferantenAnsprechpartner.findeTelefonverzeichnis()).thenReturn(List.<Object[]>of(
+                new Object[]{10L, "Stahl Muster KG", "Schweinfurt", "09721 5555-12", "0171 7654321", "Max", "Mustermann"},
+                new Object[]{10L, "Stahl Muster KG", "Schweinfurt", null, "0160 1111111", null, "Musterfrau"},
+                new Object[]{10L, "Stahl Muster KG", "Schweinfurt", "09721 5555-0", null, "Erika", "Zentrale"}));
+        RufnummernZuordnungService.Verzeichnis v = service.frischesVerzeichnis();
+
+        for (String[] fall : new String[][]{{"09721 555512", "Max Mustermann"}, {"0171 7654321", "Max Mustermann"},
+                {"0160 1111111", "Musterfrau"}}) {
+            TelefonAnruf a = anruf(fall[0]);
+            assertThat(service.ordneAutomatischZu(a, v)).as(fall[0]).isTrue();
+            assertThat(a.getLieferant().getId()).as(fall[0]).isEqualTo(10L);
+            assertThat(v.mitAnsprechpartner(RufnummernZuordnungService.kontaktVon(a), a.getNummerNormalisiert())
+                    .ansprechpartner()).as(fall[0]).isEqualTo(fall[1]);
+        }
+
+        TelefonAnruf andereDurchwahl = anruf("09721 555577");
+        service.ordneAutomatischZu(andereDurchwahl, v);
+        assertThat(andereDurchwahl.getLieferant().getId()).isEqualTo(10L);
+        assertThat(v.mitAnsprechpartner(RufnummernZuordnungService.kontaktVon(andereDurchwahl),
+                andereDurchwahl.getNummerNormalisiert()).ansprechpartner()).isNull();
+
+        // Firma und Erika teilen sich die Zentrale – dann ist keine Person gemeint.
+        assertThat(v.finde(service.normalisiere("09721 55550")).kontakte()).singleElement()
+                .extracting(KontaktKurzDto::ansprechpartner).isNull();
     }
 
     private static SteuerberaterAnsprechpartner person(long id, long kanzleiId, String telefon) {

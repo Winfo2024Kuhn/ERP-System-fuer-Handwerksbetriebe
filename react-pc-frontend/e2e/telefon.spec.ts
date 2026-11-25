@@ -292,12 +292,12 @@ test.describe('Telefon – Anruf-Fenster mit Projekten und Anfragen', () => {
         await expect(fenster).toBeHidden();
     });
 
-    test('springt in die Anfrage; Lieferanten zeigen den Vertreter ohne Projekte', async ({ page }) => {
+    test('springt in die Anfrage; Lieferanten zeigen die Ansprechpartner ohne Projekte', async ({ page }) => {
         const stub = await stubbeTelefonApi(page);
         await page.goto('/telefon/anrufe');
         await stub.sendeLive({ verbindungsId: 'l1', status: 'KLINGELT', kontakt: LIEFERANT_GMBH });
         const lieferant = page.getByRole('dialog', { name: 'Mustermann GmbH' });
-        await expect(lieferant.getByText('Vertreter')).toBeVisible();
+        await expect(lieferant.getByText('Ansprechpartner')).toBeVisible();
         await expect(lieferant.getByText('Hans Beispiel')).toBeVisible();
         await expect(lieferant.getByRole('region', { name: 'Projekte' })).toHaveCount(0);
         await page.keyboard.press('Escape');

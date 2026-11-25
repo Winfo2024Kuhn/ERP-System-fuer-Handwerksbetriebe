@@ -501,10 +501,10 @@ Dokumente und Statistiken nur für die Dokumenttypen, die die Abteilung sehen da
 
 | Methode | Pfad | Beschreibung |
 |---|---|---|
-| `GET` | `/` | Lieferanten suchen (`q`, `name`, `typ`, `ort`, `email`, `page`, `size`) |
-| `POST` | `/` | Lieferant anlegen |
+| `GET` | `/` | Lieferanten suchen (`q`, `name`, `typ`, `ort`, `email`, `page`, `size`); `q` sucht auch in den Ansprechpartnern (Name, Aufgabe, Telefon, Handy, E-Mail). Jeder Eintrag hat `ansprechpartnerHinweis` („Max Mustermann +2“, ohne Ansprechpartner `null`) |
+| `POST` | `/` | Lieferant anlegen (ohne Ansprechpartner; die pflegt der Reiter, siehe unten) |
 | `PUT` | `/{id}` | Lieferant ändern |
-| `GET` | `/{id}` | Lieferant mit Details (`nurStammdaten=true` für die schnelle Variante); `emailAnzahl` zählt E-Mail-Verläufe, die Mails selbst: `GET /api/emails/reiter/lieferant/{id}` |
+| `GET` | `/{id}` | Lieferant mit Details (`nurStammdaten=true` für die schnelle Variante); `emailAnzahl` zählt E-Mail-Verläufe, die Mails selbst: `GET /api/emails/reiter/lieferant/{id}`; `ansprechpartnerAnzahl` zählt die Ansprechpartner |
 | `GET` | `/{id}/statistik` | Kennzahlen des Lieferanten |
 | `GET` | `/{id}/artikelpreise` | Artikelpreise des Lieferanten (seitenweise, Suche, Sortierung) |
 | `POST` | `/{id}/emails` | Mail an den Lieferanten senden (multipart, mit Anhängen) |
@@ -528,6 +528,23 @@ Dokumente und Statistiken nur für die Dokumenttypen, die die Abteilung sehen da
 | `GET` | `/bilder/file/{dateiname:.+}/vorschau` | Verkleinerte Vorschau (höchstens 300 px) |
 | `POST` | `/{id}/bilder` | Bild hochladen |
 | `DELETE` | `/{id}/bilder/{bildId}` | Bild löschen |
+
+Das frühere Textfeld `vertreter` gibt es nicht mehr (Migration V450 hat es in die Ansprechpartner übernommen, Aufgabe „Vertreter“). Schickt ein Client es noch mit, wird es ignoriert.
+
+### LieferantAnsprechpartnerController
+
+**Basis-URL:** `/api/lieferanten/{lieferantId}/ansprechpartner`
+
+Ansprechpartner eines Lieferanten (Reiter „Ansprechpartner“). Für angemeldete Büro-Nutzer (Session + CSRF), nicht für die Handy-App. Felder: `id`, `anrede` (Wert von `Anrede` oder `null`), `vorname` (max. 100), `nachname` (Pflicht, max. 255), `aufgabe` (max. 100, freier Text), `telefon`, `mobiltelefon` (je max. 50), `email` (max. 255, gültiges Format), `notiz` (max. 1000). Leere Texte werden `null`. Telefon und Handy kennen Anruferkennung und FRITZ!Box-Telefonbuch.
+
+| Methode | Pfad | Beschreibung |
+|---|---|---|
+| `GET` | `/` | Ansprechpartner, sortiert nach Nachname, Vorname (leer zuerst); höchstens 200 |
+| `POST` | `/` | Ansprechpartner anlegen → 201 (höchstens 200 je Lieferant) |
+| `PUT` | `/{ansprechpartnerId}` | Ansprechpartner ändern (alle Felder, leere werden geleert) |
+| `DELETE` | `/{ansprechpartnerId}` | Ansprechpartner löschen → 204 |
+
+Fehler: 400 „Bitte einen Nachnamen eintragen.“, „Die E-Mail-Adresse ist ungültig.“, „Die Anrede ist ungültig.“, „&lt;Feld&gt; ist zu lang.“, „Höchstens 200 Ansprechpartner je Lieferant.“, ungültige ID (0, negativ); 404 „Lieferant nicht gefunden.“ bzw. „Ansprechpartner nicht gefunden.“ (auch wenn er zu einem anderen Lieferanten gehört). Wird der Lieferant gelöscht, verschwinden seine Ansprechpartner mit.
 
 ### LieferantDokumentController
 
@@ -1103,7 +1120,7 @@ Für die Handy-App; angemeldet wird mit dem Mitarbeiter-Token (siehe Absicherung
 | `GET` | `/kategorien` | Alle Kategorien mit Pfad |
 | `GET` | `/kategorien/{projektId}` | Kategorien eines Projekts |
 | `GET` | `/arbeitsgaenge/{token}` | Arbeitsgänge der Abteilung des Mitarbeiters |
-| `GET` | `/lieferanten` | Aktive Lieferanten (`limit`, `search`) |
+| `GET` | `/lieferanten` | Aktive Lieferanten nach Name, mit `search` auch inaktive Treffer (Name, zweiter Name, E-Mail, Ansprechpartner); `limit` Standard 15, höchstens 50; je Lieferant `ansprechpartner`: Liste aus `{id, name, aufgabe, telefon, mobiltelefon, email}` (`name` = „Vorname Nachname“) |
 | `POST` | `/start` | Zeitbuchung starten |
 | `POST` | `/stop` | Laufende Buchung beenden |
 | `POST` | `/pause` | Pause starten |
@@ -1627,7 +1644,7 @@ Anrufe und Anrufbeantworter der FRITZ!Box. Die meisten Aufrufe verlangen das Abt
 | `DELETE` | `/sprachnachrichten/{id}/zuordnung` | Zuordnung aufheben |
 | `POST` | `/abholen` | Anrufe und Nachrichten jetzt von der Anlage holen |
 | `GET` | `/kontakt-rufnummern` | Weitere Rufnummern eines Kontakts (für alle Angemeldeten) |
-| `GET` | `/kontakt-ueberblick` | Überblick zum Anrufer (Adresse, Projekte, Anfragen) |
+| `GET` | `/kontakt-ueberblick` | Überblick zum Anrufer (Adresse, Projekte, Anfragen); beim Lieferanten ist `ansprechpartner` der erste Ansprechpartner, bei mehreren mit „ +N“ |
 | `GET` | `/steuerberater` | Kanzleien zur Auswahl beim Zuordnen |
 | `DELETE` | `/kontakt-rufnummern/{id}` | Weitere Rufnummer löschen |
 | `GET` | `/telefone` | Telefone, die beim Anrufen aus dem ERP klingeln können |
@@ -1876,7 +1893,7 @@ Digitale Freigabe von Angeboten durch Kunden über die Website.
 
 ## Controller-Gesamtübersicht
 
-100 Controller, alphabetisch. „Endpunkte“ zählt die Handler-Methoden.
+101 Controller, alphabetisch. „Endpunkte“ zählt die Handler-Methoden.
 
 | # | Controller | Basis-URL | Endpunkte | Abschnitt |
 |---|---|---|---|---|
@@ -1932,52 +1949,53 @@ Digitale Freigabe von Angeboten durch Kunden über die Website.
 | 49 | `LangzeitkrankmeldungController` | `/api/langzeitkrankmeldungen` | 10 | 12 |
 | 50 | `LangzeitkrankmeldungMobileController` | `/api/zeiterfassung/langzeitkrankmeldung` | 1 | 10 |
 | 51 | `LeistungController` | `/api/leistungen` | 5 | 8 |
-| 52 | `LieferantDokumentController` | `/api/lieferant-dokumente` | 13 | 7 |
-| 53 | `LieferantDokumentPositionController` | `/api/bestellungen-uebersicht/positionen` | 4 | 7 |
-| 54 | `LieferantDokumentWartungController` | `/api/admin/lieferant-dokumente` | 1 | 7 |
-| 55 | `LieferantenController` | `/api/lieferanten` | 29 | 7 |
-| 56 | `LieferantReklamationController` | `/api/reklamationen` | 7 | 7 |
-| 57 | `LieferantWartungController` | `/api/admin/lieferanten` | 1 | 7 |
-| 58 | `LohnabrechnungController` | `/api/lohnabrechnungen` | 7 | 12 |
-| 59 | `LohnStammdatenController` | `/api/lohn-stammdaten` | 12 | 12 |
-| 60 | `MahnwesenController` | `/api/mahnwesen` | 1 | 5 |
-| 61 | `MietabrechnungController` | `/api/miete/mietobjekte/{mietobjektId}/jahresabrechnung` | 2 | 15 |
-| 62 | `MietobjektController` | `/api/miete` | 8 | 15 |
-| 63 | `MitarbeiterController` | `/api/mitarbeiter` | 17 | 12 |
-| 64 | `MitarbeiterSaldoController` | `/api/zeitverwaltung/mitarbeiter/{mitarbeiterId}/saldo` (ohne Klassen-Mapping) | 1 | 11 |
-| 65 | `MonatsabschlussController` | `/api/zeitverwaltung/monatsabschluesse` | 4 | 11 |
-| 66 | `MonatsabschlussUebersichtController` | `/api/zeitverwaltung/monatsabschluesse` | 4 | 11 |
-| 67 | `NotificationController` | `/api/notifications` | 3 | 13 |
-| 68 | `OffenePostenController` | `/api/offene-posten` | 6 | 6 |
-| 69 | `OutOfOfficeController` | `/api/email/outofoffice` | 4 | 9 |
-| 70 | `PostfachController` | `/api/postfaecher` | 7 | 9 |
-| 71 | `ProduktkategorieController` | `/api/produktkategorien` | 14 | 8 |
-| 72 | `ProjektController` | `/api/projekte` | 50 | 3 |
-| 73 | `ProjektWartungController` | `/api/admin/projekte` | 2 | 3 |
-| 74 | `PushSubscriptionController` | `/api/push` | 3 | 10 |
-| 75 | `RaumVerbrauchController` | `/api/miete` | 13 | 15 |
-| 76 | `RechnungsuebersichtController` | `/api/rechnungsuebersicht` | 5 | 6 |
-| 77 | `SachkontoController` | `/api/buchhaltung` | 5 | 14 |
-| 78 | `SchnittbilderController` | `/api/schnittbilder` | 2 | 8 |
-| 79 | `SpaErrorController` | `/error` | 2 | 19 |
-| 80 | `SpracheingabeController` | `/api/spracheingabe` | 2 | 19 |
-| 81 | `SteuerberaterExportController` | `/api/buchhaltung/steuerberater` | 2 | 14 |
-| 82 | `SystemSettingsController` | `/api/settings` | 17 | 18 |
-| 83 | `SystemUtilityController` | `/api/system` | 1 | 19 |
-| 84 | `TelefonController` | `/api/telefon` | 19 | 16 |
-| 85 | `TelefonEinstellungenController` | `/api/telefon` | 4 | 16 |
-| 86 | `TextbausteinController` | `/api/textbausteine` | 8 | 5 |
-| 87 | `UnifiedEmailController` | `/api/emails` | 53 | 9 |
-| 88 | `UrlaubsantragController` | `/api/langzeitkrankmeldungen`, `/api/urlaub` (ohne Klassen-Mapping) | 8 | 12 |
-| 89 | `UtilsController` | `/api/utils` | 1 | 8 |
-| 90 | `VendorInvoiceController` | `/api/admin/vendor-invoices` | 4 | 7 |
-| 91 | `VerrechnungslohnController` | `/api/verrechnungslohn` | 2 | 8 |
-| 92 | `WebsiteAnalyticsSnapshotController` | `/api/website-analytics` | 2 | 17 |
-| 93 | `ZahlungsartController` | `/api/buchhaltung` | 1 | 14 |
-| 94 | `ZeiterfassungApiController` | `/api/zeiterfassung` | 17 | 10 |
-| 95 | `ZeiterfassungController` | `/zeiterfassung` (ohne Klassen-Mapping) | 2 | 10 |
-| 96 | `ZeiterfassungEinstellungenController` | `/api/settings` | 4 | 18 |
-| 97 | `ZeiterfassungZugangController` | `/api/settings/zeiterfassung-zugang` | 2 | 18 |
-| 98 | `ZeitkontenmodellController` | `/api/zeitverwaltung/zeitkontenmodelle` | 4 | 11 |
-| 99 | `ZeitkontoKorrekturController` | `/api/zeitkonto/korrekturen` | 6 | 11 |
-| 100 | `ZeitverwaltungController` | `/api/zeitverwaltung` | 19 | 11 |
+| 52 | `LieferantAnsprechpartnerController` | `/api/lieferanten/{lieferantId}/ansprechpartner` | 4 | 7 |
+| 53 | `LieferantDokumentController` | `/api/lieferant-dokumente` | 13 | 7 |
+| 54 | `LieferantDokumentPositionController` | `/api/bestellungen-uebersicht/positionen` | 4 | 7 |
+| 55 | `LieferantDokumentWartungController` | `/api/admin/lieferant-dokumente` | 1 | 7 |
+| 56 | `LieferantenController` | `/api/lieferanten` | 29 | 7 |
+| 57 | `LieferantReklamationController` | `/api/reklamationen` | 7 | 7 |
+| 58 | `LieferantWartungController` | `/api/admin/lieferanten` | 1 | 7 |
+| 59 | `LohnabrechnungController` | `/api/lohnabrechnungen` | 7 | 12 |
+| 60 | `LohnStammdatenController` | `/api/lohn-stammdaten` | 12 | 12 |
+| 61 | `MahnwesenController` | `/api/mahnwesen` | 1 | 5 |
+| 62 | `MietabrechnungController` | `/api/miete/mietobjekte/{mietobjektId}/jahresabrechnung` | 2 | 15 |
+| 63 | `MietobjektController` | `/api/miete` | 8 | 15 |
+| 64 | `MitarbeiterController` | `/api/mitarbeiter` | 17 | 12 |
+| 65 | `MitarbeiterSaldoController` | `/api/zeitverwaltung/mitarbeiter/{mitarbeiterId}/saldo` (ohne Klassen-Mapping) | 1 | 11 |
+| 66 | `MonatsabschlussController` | `/api/zeitverwaltung/monatsabschluesse` | 4 | 11 |
+| 67 | `MonatsabschlussUebersichtController` | `/api/zeitverwaltung/monatsabschluesse` | 4 | 11 |
+| 68 | `NotificationController` | `/api/notifications` | 3 | 13 |
+| 69 | `OffenePostenController` | `/api/offene-posten` | 6 | 6 |
+| 70 | `OutOfOfficeController` | `/api/email/outofoffice` | 4 | 9 |
+| 71 | `PostfachController` | `/api/postfaecher` | 7 | 9 |
+| 72 | `ProduktkategorieController` | `/api/produktkategorien` | 14 | 8 |
+| 73 | `ProjektController` | `/api/projekte` | 50 | 3 |
+| 74 | `ProjektWartungController` | `/api/admin/projekte` | 2 | 3 |
+| 75 | `PushSubscriptionController` | `/api/push` | 3 | 10 |
+| 76 | `RaumVerbrauchController` | `/api/miete` | 13 | 15 |
+| 77 | `RechnungsuebersichtController` | `/api/rechnungsuebersicht` | 5 | 6 |
+| 78 | `SachkontoController` | `/api/buchhaltung` | 5 | 14 |
+| 79 | `SchnittbilderController` | `/api/schnittbilder` | 2 | 8 |
+| 80 | `SpaErrorController` | `/error` | 2 | 19 |
+| 81 | `SpracheingabeController` | `/api/spracheingabe` | 2 | 19 |
+| 82 | `SteuerberaterExportController` | `/api/buchhaltung/steuerberater` | 2 | 14 |
+| 83 | `SystemSettingsController` | `/api/settings` | 17 | 18 |
+| 84 | `SystemUtilityController` | `/api/system` | 1 | 19 |
+| 85 | `TelefonController` | `/api/telefon` | 19 | 16 |
+| 86 | `TelefonEinstellungenController` | `/api/telefon` | 4 | 16 |
+| 87 | `TextbausteinController` | `/api/textbausteine` | 8 | 5 |
+| 88 | `UnifiedEmailController` | `/api/emails` | 53 | 9 |
+| 89 | `UrlaubsantragController` | `/api/langzeitkrankmeldungen`, `/api/urlaub` (ohne Klassen-Mapping) | 8 | 12 |
+| 90 | `UtilsController` | `/api/utils` | 1 | 8 |
+| 91 | `VendorInvoiceController` | `/api/admin/vendor-invoices` | 4 | 7 |
+| 92 | `VerrechnungslohnController` | `/api/verrechnungslohn` | 2 | 8 |
+| 93 | `WebsiteAnalyticsSnapshotController` | `/api/website-analytics` | 2 | 17 |
+| 94 | `ZahlungsartController` | `/api/buchhaltung` | 1 | 14 |
+| 95 | `ZeiterfassungApiController` | `/api/zeiterfassung` | 17 | 10 |
+| 96 | `ZeiterfassungController` | `/zeiterfassung` (ohne Klassen-Mapping) | 2 | 10 |
+| 97 | `ZeiterfassungEinstellungenController` | `/api/settings` | 4 | 18 |
+| 98 | `ZeiterfassungZugangController` | `/api/settings/zeiterfassung-zugang` | 2 | 18 |
+| 99 | `ZeitkontenmodellController` | `/api/zeitverwaltung/zeitkontenmodelle` | 4 | 11 |
+| 100 | `ZeitkontoKorrekturController` | `/api/zeitkonto/korrekturen` | 6 | 11 |
+| 101 | `ZeitverwaltungController` | `/api/zeitverwaltung` | 19 | 11 |

@@ -38,7 +38,6 @@ class ZeiterfassungApiServiceZeitkontoTest {
     @Mock private ArbeitsgangStundensatzRepository arbeitsgangStundensatzRepository;
     @Mock private ArbeitsgangMapper arbeitsgangMapper;
     @Mock private DateiSpeicherService dateiSpeicherService;
-    @Mock private LieferantenRepository lieferantenRepository;
     @Mock private FeiertagService feiertagService;
     @Mock private ZeitbuchungAuditService auditService;
     @Mock private TagesSollService tagesSollService;

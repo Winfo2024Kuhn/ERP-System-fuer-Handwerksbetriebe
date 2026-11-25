@@ -8,7 +8,8 @@ export interface LieferantSuchErgebnis {
     ort?: string | null;
     plz?: string | null;
     strasse?: string | null;
-    vertreter?: string | null;
+    /** Fertiger Anzeigetext, z. B. „Max Mustermann +2“; null = keine Ansprechpartner. */
+    ansprechpartnerHinweis?: string | null;
     istAktiv?: boolean | null;
     kundenEmails?: string[] | null;
 }
@@ -26,7 +27,7 @@ interface LieferantSearchModalProps {
 
 /**
  * Modal zur Lieferantensuche via /api/lieferanten?q=...
- * Sucht über Name, Typ, Vertreter, Ort und Straße.
+ * Sucht über Name, Typ, Ansprechpartner, Ort und Straße.
  */
 export function LieferantSearchModal({
     isOpen,
@@ -143,7 +144,7 @@ export function LieferantSearchModal({
                             type="text"
                             value={searchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
-                            placeholder="Suche nach Name, Ort, Typ, Vertreter..."
+                            placeholder="Suche nach Name, Ort, Typ, Ansprechpartner …"
                             className="w-full pl-10 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
                             autoFocus
                         />
@@ -205,8 +206,8 @@ export function LieferantSearchModal({
                                                         {[l.plz, l.ort].filter(Boolean).join(' ')}
                                                     </span>
                                                 )}
-                                                {l.vertreter && (
-                                                    <span className="truncate">· {l.vertreter}</span>
+                                                {l.ansprechpartnerHinweis && (
+                                                    <span className="truncate" title={l.ansprechpartnerHinweis}>· {l.ansprechpartnerHinweis}</span>
                                                 )}
                                             </div>
                                         </div>

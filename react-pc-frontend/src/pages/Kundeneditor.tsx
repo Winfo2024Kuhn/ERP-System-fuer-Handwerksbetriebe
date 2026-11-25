@@ -485,7 +485,7 @@ const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEd
                 {/* Task 11 (Abschnitt 7): dieselbe Luecke wie bei der E-Mail-Zeile
                     unten (Nachtrag Abschnitt 5) -- nacktes <div> ohne min-w-0,
                     Wert-<p> ohne break-words, Icon ohne shrink-0. Gleiches Muster
-                    wie LieferantenEditor.tsx Z. 315/324 und die ganze SideInfo von
+                    wie KontaktZeile in features/lieferanten/LieferantKontaktSpalte.tsx und die ganze SideInfo von
                     MitarbeiterEditor.tsx: min-w-0 flex-1 am umschliessenden <div>,
                     break-words am Wert, shrink-0 am Icon. */}
                 {kunde.ansprechspartner && (

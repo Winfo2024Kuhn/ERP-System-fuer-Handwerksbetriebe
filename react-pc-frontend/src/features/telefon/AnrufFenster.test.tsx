@@ -264,14 +264,24 @@ describe('AnrufFenster', () => {
             expect(screen.getByRole('button', { name: 'Akte öffnen' })).toBeInTheDocument();
         });
 
-        it('zeigt beim Lieferanten den Vertreter, aber keine Projekte', () => {
+        it('zeigt beim Lieferanten die Ansprechpartner, aber keine Projekte', () => {
             zeige(live({ kontakt: LIEFERANT_GMBH }), 0, {
                 status: 'fertig',
-                daten: { ...UEBERBLICK_MAX, typ: 'LIEFERANT', id: 3, nummer: null, ansprechpartner: 'Hans Beispiel', projekte: [], anfragen: [] },
+                daten: { ...UEBERBLICK_MAX, typ: 'LIEFERANT', id: 3, nummer: null, ansprechpartner: 'Hans Beispiel +2', projekte: [], anfragen: [] },
             });
-            expect(screen.getByText('Vertreter')).toBeInTheDocument();
-            expect(screen.getByText('Hans Beispiel')).toBeInTheDocument();
+            expect(screen.getByText('Ansprechpartner')).toBeInTheDocument();
+            expect(screen.queryByText('Vertreter')).toBeNull();
+            expect(screen.getByText('Hans Beispiel +2')).toBeInTheDocument();
             expect(screen.queryByRole('region', { name: 'Projekte' })).toBeNull();
+        });
+
+        it('zeigt beim Lieferanten nur die Person, von deren Nummer angerufen wird', () => {
+            zeige(live({ kontakt: { ...LIEFERANT_GMBH, ansprechpartner: 'Max Mustermann' } }), 0, {
+                status: 'fertig',
+                daten: { ...UEBERBLICK_MAX, typ: 'LIEFERANT', id: 3, nummer: null, ansprechpartner: 'Erika Musterfrau +1', projekte: [], anfragen: [] },
+            });
+            expect(screen.getByText('Max Mustermann')).toBeInTheDocument();
+            expect(screen.queryByText(/Erika Musterfrau/)).toBeNull();
         });
 
         it('nennt bei mehr als 50 Einträgen die Gesamtzahl und verweist auf die Akte', () => {

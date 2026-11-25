@@ -1,522 +1,32 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Loader2, Plus, RefreshCw, X, Mail, Phone, MapPin, Building2, User, ArrowLeft, Edit2, ChevronLeft, ChevronRight, FileText, StickyNote, AlertTriangle, Package, Wallet } from "lucide-react";
+import { ArrowLeft, Building2, ChevronLeft, ChevronRight, Plus, RefreshCw } from "lucide-react";
 import { Button } from "../components/ui/button";
-import { Card } from "../components/ui/card";
-import { Input } from "../components/ui/input";
-import { Label } from "../components/ui/label";
-import { cn } from "../lib/utils";
-import { extractEmailAddress, infoAdresseZuDomain } from "../lib/emailAddress";
-import type { Lieferant, LieferantDetail, LieferantNotiz, LieferantStatistik } from "../types";
-import { EmailsTab } from "../components/EmailsTab";
-import GoogleMapsEmbed from "../components/GoogleMapsEmbed";
-import LieferantDokumenteTab from "../components/LieferantDokumenteTab";
-import { LieferantNotizenTab } from "../components/LieferantNotizenTab";
-
-import { LieferantReklamationenTab } from "../components/LieferantReklamationenTab";
-import { DetailLayout } from "../components/DetailLayout";
 import { PageLayout } from "../components/layout/PageLayout";
-import { Select } from "../components/ui/select-custom";
-import { useToast } from '../components/ui/toast';
-import { InfoAbschnitt, InfoButton } from "../components/ui/info-button";
-import { KostenstelleSelectModal } from "../components/KostenstelleSelectModal";
-import { AddressAutocomplete } from "../components/AddressAutocomplete";
-import { PhoneInput } from "../components/PhoneInput";
-import { ohneReineVorwahl } from "../lib/phoneUtils";
-import { LIEFERANT_ROLLEN, type LieferantRolle } from "../types";
-import { KontaktAnrufeTab } from "../features/telefon/KontaktAnrufeTab";
-import { WeitereRufnummern } from "../features/telefon/WeitereRufnummern";
-import { useKontaktAnrufAnzahl } from "../features/telefon/useKontaktAnrufAnzahl";
-import { useTelefonBerechtigung } from "../features/telefon/useTelefonBerechtigung";
-
-const PAGE_SIZE = 12;
-
-// ==================== DETAIL VIEW ====================
+import { useToast } from "../components/ui/toast";
+import { cn } from "../lib/utils";
+import type { Lieferant, LieferantDetail } from "../types";
+import { LieferantCard } from "../features/lieferanten/LieferantCard";
+import { LieferantDetailView } from "../features/lieferanten/LieferantDetailView";
+import { LieferantenFilterLeiste } from "../features/lieferanten/LieferantenFilterLeiste";
+import { LieferantModal } from "../features/lieferanten/LieferantModal";
+import { istGueltigerTab, type LieferantTab } from "../features/lieferanten/lieferantHilfen";
+import { useLieferantenListe } from "../features/lieferanten/useLieferantenListe";
 
 /**
- * Die Reiter der Lieferanten-Detailansicht stehen in der Adresszeile
- * (`/lieferanten?lieferantId=7&tab=dokumente`).
- *
- * <p>Dadurch landet ein Klick auf "Neuer Lieferschein" in der Glocke direkt
- * bei den Dokumenten statt im E-Mail-Verlauf, ein Link lässt sich teilen,
- * und der Zurück-Knopf des Browsers führt wieder aus der Detailansicht
- * heraus zur Liste.</p>
+ * Seite „Lieferanten“ (/lieferanten): Übersicht mit Filtern oder – mit
+ * `?lieferantId=` in der Adresse – die Detailansicht mit Reitern. Die Seite
+ * setzt nur zusammen; Teile und Logik liegen in `features/lieferanten/`.
  */
-const LIEFERANT_TABS = ['emails', 'anrufe', 'dokumente', 'notizen', 'reklamationen'] as const;
-type LieferantTab = typeof LIEFERANT_TABS[number];
-
-function istGueltigerTab(value: string | null): value is LieferantTab {
-    return value !== null && LIEFERANT_TABS.some((tab) => tab === value);
-}
-
-/**
- * Holt nach dem Öffnen der Detailseite Kennzahlen und Notizen parallel nach (die
- * E-Mails lädt der Reiter selbst seitenweise). Die Seite selbst steht dann schon mit
- * den Stammdaten da; `undefined` heißt „lädt noch“, damit die Reiter einen Ladezustand
- * statt einer leeren Liste zeigen.
- */
-function useLieferantNachladen(lieferantId: number | string, ladeVersion: number) {
-    const toast = useToast();
-    const [statistik, setStatistik] = useState<LieferantStatistik | null | undefined>(undefined);
-    const [notizen, setNotizen] = useState<LieferantNotiz[] | undefined>(undefined);
-
-    // Anderer Lieferant oder neu gespeichert: zurück auf „lädt noch“, bevor der Effekt nachlädt.
-    const ladeSchluessel = `${lieferantId}-${ladeVersion}`;
-    const [geladenFuer, setGeladenFuer] = useState(ladeSchluessel);
-    if (geladenFuer !== ladeSchluessel) {
-        setGeladenFuer(ladeSchluessel);
-        setStatistik(undefined);
-        setNotizen(undefined);
-    }
-
-    useEffect(() => {
-        let abgebrochen = false;
-        const lade = async <T,>(pfad: string, fehlertext: string, setzen: (wert: T) => void, ersatz: T) => {
-            try {
-                const res = await fetch(`/api/lieferanten/${lieferantId}/${pfad}`);
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                const daten = await res.json() as T;
-                if (!abgebrochen) setzen(daten);
-            } catch (err) {
-                console.error(fehlertext, err);
-                if (!abgebrochen) {
-                    setzen(ersatz);
-                    toast.error(fehlertext);
-                }
-            }
-        };
-        void lade<LieferantStatistik | null>('statistik', 'Kennzahlen des Lieferanten konnten nicht geladen werden.', setStatistik, null);
-        void lade<LieferantNotiz[]>('notizen', 'Notizen konnten nicht geladen werden.', setNotizen, []);
-        return () => { abgebrochen = true; };
-        // toast ist stabil; neu laden bei anderem Lieferanten oder nach dem Speichern.
-    }, [lieferantId, ladeVersion, toast]);
-
-    return { statistik, notizen, setNotizen };
-}
-
-/** Platzhalter für eine Kennzahl, solange sie noch lädt. */
-const KennzahlLaedt = () => (
-    <span className="mt-1 block h-6 w-16 rounded bg-slate-200/80 motion-safe:animate-pulse" aria-label="Wird geladen" />
-);
-
-const ReiterLaedt = ({ text }: { text: string }) => (
-    <div className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-10 text-sm text-slate-500">
-        <Loader2 className="h-4 w-4 motion-safe:animate-spin text-rose-600" />
-        {text}
-    </div>
-);
-
-interface LieferantDetailViewProps {
-    lieferant: LieferantDetail;
-    /** Wird nach dem Speichern hochgezählt, damit Kennzahlen und Verlauf neu geladen werden. */
-    ladeVersion: number;
-    activeTab: LieferantTab;
-    onTabChange: (tab: LieferantTab) => void;
-    onBack: () => void;
-    onEdit: () => void;
-}
-
-const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, ladeVersion, activeTab: angefragterTab, onTabChange, onBack, onEdit }) => {
-    const initials = lieferant.lieferantenname?.slice(0, 2).toUpperCase() || "??";
-    // Reiter "Anrufe" nur mit dem Abteilungs-Recht "Anrufe & Anrufbeantworter";
-    // ohne Recht fällt ein ?tab=anrufe auf den E-Mail-Verlauf zurück.
-    const darfTelefon = useTelefonBerechtigung() === true;
-    const nachgeladen = useLieferantNachladen(lieferant.id, ladeVersion);
-    const statistik = nachgeladen.statistik ?? lieferant.statistik;
-    const statistikLaedt = nachgeladen.statistik === undefined && !lieferant.statistik;
-    const anrufAnzahl = useKontaktAnrufAnzahl('LIEFERANT', Number(lieferant.id) || null, darfTelefon);
-    const activeTab: LieferantTab = angefragterTab === 'anrufe' && !darfTelefon ? 'emails' : angefragterTab;
-
-    // Formatter helpers
-    const formatCurrency = (val?: number) => new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(val || 0);
-
-    const header = (
-        <Card className="p-6">
-            {/* Gemeinsame Rezeptur fuer Kopfzeile/Reiterleiste (Abschnitt 4 im Plan,
-                Ergebnis aus dem Abschnitt-3-Review): aeusseres Flex-Element umbricht
-                (flex-wrap), Titelblock ist flex-1 mit Mindestbreite 18rem (der innere
-                Textblock zusaetzlich min-w-0, sonst schrumpft er trotz break-words
-                nicht unter seine Mindestinhaltsbreite), Kennzahlen ohne flex-1/max-w
-                mit min-w-[7rem] je Kasten, Knopfblock shrink-0 ml-auto -- das ml-auto
-                haelt "Bearbeiten" beim Umbruch rechts statt links (Design-Review
-                Abschnitt 3, Projekt-Editor: ohne ml-auto x=89 statt x=961). Vorher
-                liefen "Gesamtkosten" (34px) und "Bestellungen" (29px) aus ihren
-                Kaesten, weil die Kennzahlen-Reihe "flex-1 max-w-4xl" hatte und sich
-                den Platz nahm, den Titelblock und Knopfblock ebenfalls brauchten
-                (Spec-Befund 2, docs/superpowers/specs/2026-09-04-layout-14-zoll.md). */}
-            <div className="flex flex-wrap items-start gap-4">
-                <div className="flex items-start gap-4 flex-1 min-w-[18rem]">
-                    <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2 h-auto py-1 self-start">
-                        <ArrowLeft className="w-5 h-5" />
-                    </Button>
-                    <div className="w-16 h-16 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center text-xl font-bold shrink-0">
-                        {initials}
-                    </div>
-                    <div className="min-w-0">
-                        <div className="flex items-center gap-3 flex-wrap">
-                            {/* min-w-0 zusaetzlich zu break-words: die <h1> ist selbst ein
-                                Flex-Item in "flex items-center gap-3 flex-wrap" und behaelt
-                                ohne min-w-0 ihre volle Mindestinhaltsbreite (min-width: auto)
-                                -- bei einem einzigen langen Wort ohne Leerzeichen quetscht
-                                sich diese Breite dann quer ueber die Kennzahlen (Nachbesserung
-                                1, Befund 1 aus dem Abschnitt-4-Design-Review: 999px <h1>,
-                                davon 411px ausserhalb des Titelblocks beim Projekt-Editor).
-                                break-words (overflow-wrap: break-word) senkt die
-                                Mindestbreite eines Flex-Items nicht, das erledigt erst
-                                min-w-0. Das min-w-0 am umschliessenden Textblock (Zeile 89)
-                                reicht dafuer nicht, weil die <h1> ein eigenes Flex-Item ist. */}
-                            <h1 className="text-2xl font-bold text-slate-900 break-words min-w-0">{lieferant.lieferantenname}</h1>
-                            {lieferant.rollen && lieferant.rollen.length > 0 ? (
-                                lieferant.rollen.map(rolle => (
-                                    <span key={rolle} className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-medium border border-slate-200">
-                                        {LIEFERANT_ROLLEN.find(r => r.value === rolle)?.label || rolle}
-                                    </span>
-                                ))
-                            ) : (
-                                <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-medium border border-slate-200">
-                                    {lieferant.lieferantenTyp || "Lieferant"}
-                                </span>
-                            )}
-                            {lieferant.vorauskasse && (
-                                <span
-                                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 text-xs font-medium border border-amber-200"
-                                    title="Rechnungen dieser Firma gelten sofort als bezahlt und stehen nicht unter Offene Posten."
-                                >
-                                    <Wallet className="w-3 h-3" />
-                                    Zahlung im Voraus
-                                </span>
-                            )}
-                        </div>
-                        {/* min-w-0/break-words (Nacharbeit Abschnitt 9, Code-Review Abschnitt 8,
-                            Fundstelle 9): dasselbe Muster, das Task 12 bei Projekt, Anfrage und
-                            Kunde schon geschlossen hat, hier vom Agenten uebersehen. aliasName ist
-                            ein reiner Block-<p> (kein Flex-Item) -- braucht nur break-words.
-                            vertreter/Adresse sind nackte Textknoten in "<p className='flex ...'>"
-                            und damit anonyme Flex-Items, die kein className tragen koennen -- erst
-                            der umschliessende <span min-w-0 break-words> macht sie pruefbar UND
-                            umbrechbar. */}
-                        <div className="mt-1 text-slate-500 space-y-0.5">
-                            {lieferant.aliasName && <p className="text-slate-600 break-words">auch: {lieferant.aliasName}</p>}
-                            {lieferant.vertreter && <p className="flex items-center gap-2"><User className="w-4 h-4 shrink-0" /> <span className="min-w-0 break-words">{lieferant.vertreter}</span></p>}
-                            <p className="flex items-center gap-2"><MapPin className="w-4 h-4 shrink-0" /> <span className="min-w-0 break-words">{lieferant.strasse}, {lieferant.plz} {lieferant.ort}</span></p>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Bento Stats Grid -- kein "flex-1 max-w-4xl" mehr (das zwang die
-                    Kaesten auf 34px/29px, siehe Kommentar oben); min-w-[7rem] je
-                    Kasten haelt die Beschriftung lesbar, flex-wrap laesst die Reihe
-                    umbrechen statt sich zu quetschen. Farben (slate/purple/blue/
-                    emerald) sind Bestand und bleiben unveraendert -- siehe Plan,
-                    "Bewusst nicht in diesem Vorhaben". */}
-                <div className="flex flex-wrap gap-4 shrink-0" data-testid="lieferant-kennzahlen">
-                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 min-w-[7rem]">
-                        <p className="text-xs text-slate-500 uppercase tracking-wide">Gesamtkosten</p>
-                        {statistikLaedt ? <KennzahlLaedt /> : <p className="text-lg font-semibold text-slate-900">{formatCurrency(statistik?.gesamtKosten)}</p>}
-                    </div>
-                    <div className="bg-purple-50 p-3 rounded-xl border border-purple-100 min-w-[7rem]">
-                        <p className="text-xs text-purple-600 uppercase tracking-wide">Bestellungen</p>
-                        {statistikLaedt ? <KennzahlLaedt /> : <p className="text-lg font-semibold text-purple-900">{statistik?.bestellungAnzahl || 0}</p>}
-                    </div>
-                    <div className="bg-blue-50 p-3 rounded-xl border border-blue-100 min-w-[7rem]">
-                        <p className="text-xs text-blue-600 uppercase tracking-wide">Artikel</p>
-                        {statistikLaedt ? <KennzahlLaedt /> : <p className="text-lg font-semibold text-blue-900">{statistik?.artikelAnzahl || 0}</p>}
-                    </div>
-                    <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-100 min-w-[7rem]">
-                        <p className="text-xs text-emerald-600 uppercase tracking-wide">Lieferzeit Ø</p>
-                        {statistikLaedt ? <KennzahlLaedt /> : <p className="text-lg font-semibold text-emerald-900">{statistik?.lieferzeit || lieferant.lieferzeit || 0} Tage</p>}
-                    </div>
-                </div>
-
-                <div className="shrink-0 ml-auto flex flex-wrap items-start gap-2">
-                    <Button variant="outline" onClick={onEdit}>
-                        <Edit2 className="w-4 h-4 mr-2" /> Bearbeiten
-                    </Button>
-                </div>
-            </div>
-        </Card>
-    );
-
-    const mainContent = (
-        <>
-            {/* Tab Navigation — der offene Reiter steht in der URL, nicht im lokalen State.
-                flex-wrap + min-w-0 statt overflow-x-auto: eine versteckt scrollende
-                Reiterleiste ist keine Loesung, lieber umbrechen lassen. */}
-            <div role="tablist" aria-label="Bereiche des Lieferanten" className="flex items-center gap-1 mb-6 border-b border-slate-200 flex-wrap min-w-0">
-                <button
-                    role="tab"
-                    aria-selected={activeTab === 'emails'}
-                    onClick={() => onTabChange('emails')}
-                    className={cn(
-                        "flex items-center gap-2 px-3 py-2.5 text-sm font-medium transition-colors -mb-px",
-                        activeTab === 'emails'
-                            ? "text-rose-600 border-b-2 border-rose-500"
-                            : "text-slate-500 hover:text-slate-700"
-                    )}
-                >
-                    <Mail className="w-4 h-4" />
-                    E-Mail-Verlauf
-                    <span className="text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">
-                        {lieferant.emailAnzahl ?? 0}
-                    </span>
-                </button>
-                {darfTelefon && (
-                    <button
-                        role="tab"
-                        aria-selected={activeTab === 'anrufe'}
-                        onClick={() => onTabChange('anrufe')}
-                        className={cn(
-                            "flex items-center gap-2 px-3 py-2.5 text-sm font-medium transition-colors -mb-px",
-                            activeTab === 'anrufe'
-                                ? "text-rose-600 border-b-2 border-rose-500"
-                                : "text-slate-500 hover:text-slate-700"
-                        )}
-                    >
-                        <Phone className="w-4 h-4" />
-                        Anrufe
-                        <span className="text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">
-                            {anrufAnzahl}
-                        </span>
-                    </button>
-                )}
-                <button
-                    role="tab"
-                    aria-selected={activeTab === 'dokumente'}
-                    onClick={() => onTabChange('dokumente')}
-                    className={cn(
-                        "flex items-center gap-2 px-3 py-2.5 text-sm font-medium transition-colors -mb-px",
-                        activeTab === 'dokumente'
-                            ? "text-rose-600 border-b-2 border-rose-500"
-                            : "text-slate-500 hover:text-slate-700"
-                    )}
-                >
-                    <FileText className="w-4 h-4" />
-                    Dokumente
-                    <span className="text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">
-                        {lieferant.dokumenteAnzahl ?? lieferant.dokumente?.length ?? 0}
-                    </span>
-                </button>
-                <button
-                    role="tab"
-                    aria-selected={activeTab === 'notizen'}
-                    onClick={() => onTabChange('notizen')}
-                    className={cn(
-                        "flex items-center gap-2 px-3 py-2.5 text-sm font-medium transition-colors -mb-px",
-                        activeTab === 'notizen'
-                            ? "text-rose-600 border-b-2 border-rose-500"
-                            : "text-slate-500 hover:text-slate-700"
-                    )}
-                >
-                    <StickyNote className="w-4 h-4" />
-                    Notizen
-                    <span className="text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">
-                        {nachgeladen.notizen?.length ?? lieferant.notizenAnzahl ?? 0}
-                    </span>
-                </button>
-
-                <button
-                    role="tab"
-                    aria-selected={activeTab === 'reklamationen'}
-                    onClick={() => onTabChange('reklamationen')}
-                    className={cn(
-                        "flex items-center gap-2 px-3 py-2.5 text-sm font-medium transition-colors -mb-px",
-                        activeTab === 'reklamationen'
-                            ? "text-rose-600 border-b-2 border-rose-500"
-                            : "text-slate-500 hover:text-slate-700"
-                    )}
-                >
-                    <AlertTriangle className="w-4 h-4" />
-                    Reklamationen
-                </button>
-            </div>
-
-            {/* Tab Content */}
-            <div className="flex-1 min-h-0 relative">
-                {activeTab === 'emails' && (
-                    <div className="absolute inset-0 overflow-y-auto pr-2">
-                        <EmailsTab
-                            bezug="lieferant"
-                            bezugId={Number(lieferant.id)}
-                            showComposeButton={false}
-                            showReplyButton={false}
-                        />
-                    </div>
-                )}
-                {activeTab === 'anrufe' && lieferant.id && (
-                    <div className="absolute inset-0 overflow-y-auto pr-2">
-                        <KontaktAnrufeTab typ="LIEFERANT" kontaktId={Number(lieferant.id)} />
-                    </div>
-                )}
-                {activeTab === 'dokumente' && (
-                    <div className="absolute inset-0 overflow-y-auto pr-2">
-                        <LieferantDokumenteTab
-                            lieferantId={lieferant.id}
-                            lieferantName={lieferant.lieferantenname}
-                            dokumente={lieferant.dokumente}
-                        />
-                    </div>
-                )}
-                {activeTab === 'notizen' && (
-                    <div className="absolute inset-0 overflow-y-auto pr-2">
-                        {nachgeladen.notizen === undefined ? <ReiterLaedt text="Notizen werden geladen…" /> : <LieferantNotizenTab
-                            lieferantId={lieferant.id as number}
-                            notizen={nachgeladen.notizen}
-                            onNotizenChange={nachgeladen.setNotizen}
-                        />}
-                    </div>
-                )}
-
-                {activeTab === 'reklamationen' && (
-                    <div className="absolute inset-0 overflow-y-auto pr-2">
-                        <LieferantReklamationenTab
-                            lieferantId={lieferant.id as number}
-                            lieferantName={lieferant.lieferantenname}
-                            lieferantEmails={lieferant.kundenEmails}
-                        />
-                    </div>
-                )}
-            </div>
-        </>
-    );
-
-
-    const sideContent = (
-        <>
-            <h2 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
-                <Phone className="w-5 h-5 text-rose-500" />
-                Kontaktdaten
-            </h2>
-            <div className="space-y-4">
-                {/* Task 11 (Abschnitt 7): dieselbe Luecke wie bei der E-Mail-Zeile
-                    unten -- nacktes <div> ohne min-w-0, Wert-<p> ohne break-words,
-                    Icon ohne shrink-0. Gleiches Muster wie Z. 315/324 hier in
-                    dieser Datei bzw. die ganze SideInfo von MitarbeiterEditor.tsx. */}
-                <div className="p-3 bg-slate-50 rounded-lg flex items-center gap-3">
-                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400 shrink-0">
-                        <Phone className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                        <p className="text-xs text-slate-500">Telefon</p>
-                        <p className="font-medium text-slate-900 break-words">{lieferant.telefon || '-'}</p>
-                    </div>
-                </div>
-                <div className="p-3 bg-slate-50 rounded-lg flex items-center gap-3">
-                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400 shrink-0">
-                        <Building2 className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                        <p className="text-xs text-slate-500">Mobil / Fax</p>
-                        <p className="font-medium text-slate-900 break-words">{lieferant.mobiltelefon || '-'}</p>
-                    </div>
-                </div>
-                {/* Beim Zuordnen von Anrufen gemerkte Nummern (erscheint nur, wenn es welche gibt). */}
-                {lieferant.id && <WeitereRufnummern typ="LIEFERANT" kontaktId={Number(lieferant.id)} darfLoeschen={darfTelefon} />}
-                <div className="p-3 bg-slate-50 rounded-lg flex items-center gap-3">
-                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400 shrink-0">
-                        <Mail className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                        <p className="text-xs text-slate-500">E-Mail</p>
-                        <div className="flex flex-col">
-                            {lieferant.kundenEmails && lieferant.kundenEmails.length > 0 ? (
-                                lieferant.kundenEmails.map(email => (
-                                    // break-words statt truncate: eine Firmen-E-Mail-Adresse ist
-                                    // keine Ueberschrift, die man kuerzen darf -- lieber umbrechen
-                                    // lassen, als sie in der schmalen Kontaktdaten-Spalte abzuschneiden
-                                    // (keinTextLaeuftUeber() fand hier vor dem Fix 49px Ueberstand).
-                                    <a key={email} href={`mailto:${email}`} className="font-medium text-rose-600 hover:underline break-words block">{email}</a>
-                                ))
-                            ) : (
-                                <span className="text-slate-400">-</span>
-                            )}
-                        </div>
-                    </div>
-                </div>
-                <div className="p-3 bg-slate-50 rounded-lg flex items-center gap-3">
-                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400 shrink-0">
-                        <User className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                        <p className="text-xs text-slate-500">Vertreter</p>
-                        <p className="font-medium text-slate-900 break-words">{lieferant.vertreter || '-'}</p>
-                    </div>
-                </div>
-                <div className="p-3 bg-slate-50 rounded-lg flex items-center gap-3">
-                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400 shrink-0">
-                        <Package className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                        <p className="text-xs text-slate-500">Standard-Kostenstelle</p>
-                        <p className="font-medium text-slate-900 break-words">
-                            {lieferant.standardKostenstelleName || <span className="text-slate-400">Keine zugewiesen</span>}
-                        </p>
-                    </div>
-                </div>
-                {/* shrink-0/min-w-0 flex-1/break-words (Nacharbeit Abschnitt 9, Code-Review
-                    Abschnitt 8, Fundstelle 10): einzige Kontaktdaten-Zeile ohne die Rezeptur --
-                    Task 12 hat sie nur gemeldet. Der Text selbst ist statisch (kein Nutzerwert),
-                    trotzdem dieselbe Bauweise wie die fuenf Zeilen darueber, fuer den Fall
-                    langer, individueller Zahlungsbedingungen. */}
-                <div className="p-3 bg-slate-50 rounded-lg flex items-center gap-3">
-                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400 shrink-0">
-                        <Wallet className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                        <p className="text-xs text-slate-500">Bezahlung</p>
-                        <p className="font-medium text-slate-900 break-words">
-                            {lieferant.vorauskasse
-                                ? "Im Voraus — Rechnungen sind beim Eintreffen schon bezahlt"
-                                : "Auf Rechnung — Rechnungen landen in den Offenen Posten"}
-                        </p>
-                    </div>
-                </div>
-            </div>
-
-            <div className="mt-8 pt-6 border-t border-slate-100 flex-1 flex flex-col min-h-0">
-                <h3 className="text-sm font-medium text-slate-900 mb-3 flex items-center gap-2 shrink-0">
-                    <MapPin className="w-4 h-4 text-slate-400" /> Standort
-                </h3>
-                <div className="flex-1 min-h-[200px] rounded-lg overflow-hidden border border-slate-200">
-                    <GoogleMapsEmbed
-                        strasse={lieferant.strasse}
-                        plz={lieferant.plz}
-                        ort={lieferant.ort}
-                        className="w-full h-full"
-                    />
-                </div>
-            </div>
-        </>
-    );
-
-    return (
-        <DetailLayout
-            header={header}
-            mainContent={mainContent}
-            sideContent={sideContent}
-        />
-    );
-};
-
-// ==================== MAIN COMPONENT ====================
+const DETAIL_LADEFEHLER = 'Lieferant konnte nicht geladen werden. Bitte Seite neu laden.';
 
 export default function LieferantenEditor() {
     const toast = useToast();
     const [searchParams, setSearchParams] = useSearchParams();
     const [viewMode, setViewMode] = useState<'list' | 'detail'>('list');
-    const [lieferanten, setLieferanten] = useState<Lieferant[]>([]);
     const [selectedLieferant, setSelectedLieferant] = useState<LieferantDetail | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [total, setTotal] = useState(0);
-    const [page, setPage] = useState(0);
-
-    // Filters
-    const [filters, setFilters] = useState({
-        q: "",
-        name: "",
-        rolle: "",
-        ort: "",
-        email: "",
-    });
+    const liste = useLieferantenListe(viewMode === 'list');
+    const { setLoading } = liste;
 
     const [editingLieferant, setEditingLieferant] = useState<Lieferant | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -577,88 +87,12 @@ export default function LieferantenEditor() {
                 setViewMode('detail');
             } catch (err) {
                 console.error('Deep-link load error', err);
+                toast.error(DETAIL_LADEFEHLER);
             } finally {
                 setLoading(false);
             }
         })();
-    }, [searchParams]);
-
-    // Laufende Ladevorgänge durchnummerieren: Beim schnellen Tippen in den Filterfeldern
-    // starten mehrere Requests gleichzeitig. Ohne diesen Zähler kann eine späte Antwort
-    // auf eine alte Filter-/Seiten-Kombination die aktuelle Liste überschreiben.
-    const ladeVorgangRef = useRef(0);
-
-    // Andere Seite, andere Filter oder zurück in der Liste: Ladeanzeige an, bevor der Effekt neu lädt.
-    const [geladeneAbfrage, setGeladeneAbfrage] = useState({ page, filters, viewMode });
-    if (geladeneAbfrage.page !== page || geladeneAbfrage.filters !== filters || geladeneAbfrage.viewMode !== viewMode) {
-        setGeladeneAbfrage({ page, filters, viewMode });
-        if (viewMode === 'list') setLoading(true);
-    }
-
-    // Fetch List (Promise-Kette: Zustand wird erst gesetzt, wenn die Antwort da ist)
-    const loadLieferanten = useCallback(() => {
-        const ladeVorgang = ++ladeVorgangRef.current;
-        const istAktuell = () => ladeVorgangRef.current === ladeVorgang;
-        const params = new URLSearchParams();
-        params.set("page", String(page));
-        params.set("size", String(PAGE_SIZE));
-        if (filters.q) params.set("q", filters.q);
-        if (filters.name) params.set("name", filters.name);
-        if (filters.rolle) params.set("rolle", filters.rolle);
-        if (filters.ort) params.set("ort", filters.ort);
-        if (filters.email) params.set("email", filters.email);
-
-        return fetch(`/api/lieferanten?${params.toString()}`)
-            .then(async (res) => {
-                if (!res.ok) throw new Error("Fehler beim Laden");
-                const data = await res.json();
-                if (!istAktuell()) return;
-
-                setLieferanten(Array.isArray(data.lieferanten) ? data.lieferanten : []);
-                setTotal(typeof data.gesamt === "number" ? data.gesamt : 0);
-            })
-            .catch((err) => {
-                console.error(err);
-                if (!istAktuell()) return;
-                setLieferanten([]);
-                setTotal(0);
-            })
-            .finally(() => {
-                if (istAktuell()) setLoading(false);
-            });
-    }, [page, filters]);
-
-    const neuLaden = () => {
-        setLoading(true);
-        void loadLieferanten();
-    };
-
-    useEffect(() => {
-        if (viewMode === 'list') {
-            void loadLieferanten();
-        }
-    }, [loadLieferanten, viewMode]);
-
-    // Handlers
-    // Jede Filter-Änderung springt zurück auf Seite 1: Sonst bliebe man z.B. auf
-    // Seite 5 stehen, während die gefilterte Liste nur noch zwei Seiten hat – die
-    // Treffer wären da, aber unsichtbar.
-    const handleFilterChange = (key: string, value: string) => {
-        setFilters((prev) => ({ ...prev, [key]: value }));
-        setPage(0);
-    };
-
-    // Gefiltert wird bereits live beim Tippen/Auswählen. Der Button ist nur noch
-    // die vertraute Bestätigung – er darf keinen zweiten, konkurrierenden Request starten.
-    const handleFilterSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        setPage(0);
-    };
-
-    const handleResetFilters = () => {
-        setFilters({ q: "", name: "", rolle: "", ort: "", email: "" });
-        setPage(0);
-    };
+    }, [searchParams, setLoading, toast]);
 
     const handleCreate = () => {
         setEditingLieferant({
@@ -689,6 +123,7 @@ export default function LieferantenEditor() {
             setSelectedLieferant(await res.json() as LieferantDetail);
         } catch (err) {
             console.error("Detail reload error", err);
+            toast.error(DETAIL_LADEFEHLER);
         } finally {
             setLoading(false);
         }
@@ -720,6 +155,7 @@ export default function LieferantenEditor() {
             oeffne(data, data.id);
         } catch (err) {
             console.error("Detail load error", err);
+            toast.error(DETAIL_LADEFEHLER);
             oeffne(lieferant as LieferantDetail, lieferant.id);
         } finally {
             setLoading(false);
@@ -754,7 +190,7 @@ export default function LieferantenEditor() {
                 await aktualisiereDetail(data.id);
                 setLadeVersion(v => v + 1);
             } else {
-                neuLaden();
+                liste.neuLaden();
             }
         } catch (err) {
             console.error(err);
@@ -770,24 +206,6 @@ export default function LieferantenEditor() {
     const zurueckZurListe = useCallback(() => {
         setSearchParams({});
     }, [setSearchParams]);
-
-    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-
-    // Zeigt die Seitenzahl hinter das Ergebnis (z.B. nachdem der letzte Eintrag einer
-    // Seite gelöscht wurde), springen wir auf die letzte gültige Seite zurück – sonst
-    // stünde man vor einer leeren Liste. Erst nach dem Laden, denn währenddessen ist
-    // `total` noch der alte Wert.
-    if (!loading && page > totalPages - 1) {
-        setPage(totalPages - 1);
-    }
-
-    const statusText = useMemo(() => {
-        if (loading) return 'Lieferanten werden geladen...';
-        if (total === 0) return 'Keine Lieferanten gefunden.';
-        const start = page * PAGE_SIZE + 1;
-        const end = Math.min(start + lieferanten.length - 1, total);
-        return `Zeige ${start}-${end} von ${total} Lieferanten`;
-    }, [loading, total, page, lieferanten.length]);
 
     if (viewMode === 'detail' && selectedLieferant) {
         return (
@@ -827,75 +245,35 @@ export default function LieferantenEditor() {
             subtitle="Übersicht und Verwaltung Ihrer Lieferanten."
             actions={
                 <>
-                    <Button size="sm" onClick={handleCreate} className="bg-rose-600 hover:bg-rose-700 text-white">
+                    <Button size="sm" onClick={handleCreate}>
                         <Plus className="w-4 h-4 mr-2" />
                         Neuer Lieferant
                     </Button>
-                    <Button variant="outline" size="sm" onClick={neuLaden}>
-                        <RefreshCw className={cn("w-4 h-4 mr-2", loading && "animate-spin")} />
+                    <Button variant="outline" size="sm" onClick={liste.neuLaden}>
+                        <RefreshCw className={cn("w-4 h-4 mr-2", liste.loading && "animate-spin")} />
                         Aktualisieren
                     </Button>
                 </>
             }
         >
-            {/* Filter - volle Breite */}
-            <div className="bg-white p-6 rounded-2xl shadow-lg border border-slate-100">
-                <form onSubmit={handleFilterSubmit} className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700">Freitext</label>
-                        <input type="text" className="filter-input w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500" placeholder="Name, zweiter Name, Telefon, Ort..." value={filters.q} onChange={e => handleFilterChange('q', e.target.value)} />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700">Name</label>
-                        <input type="text" className="filter-input w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500" placeholder="Lieferantenname" value={filters.name} onChange={e => handleFilterChange('name', e.target.value)} />
-                    </div>
-                    <div>
-                        <div className="flex items-center gap-1">
-                            <label className="block text-sm font-medium text-gray-700">Rolle</label>
-                            <InfoButton titel="Rolle">
-                                <InfoAbschnitt titel="Was passiert im Hintergrund?">
-                                    <p>Jeder Lieferant hat eine oder mehrere Rollen, z. B. Stahlhandel oder Verzinkerei.</p>
-                                </InfoAbschnitt>
-                                <InfoAbschnitt titel="Was bewirkt das?">
-                                    <p>Der Filter zeigt nur Lieferanten mit dieser Rolle. Die Rollen steuern auch, welche Lieferanten beim Eintragen von Artikelpreisen vorgeschlagen werden.</p>
-                                </InfoAbschnitt>
-                            </InfoButton>
-                        </div>
-                        <Select
-                            value={filters.rolle}
-                            onChange={(value) => handleFilterChange("rolle", value)}
-                            options={[
-                                { value: "", label: "Alle Rollen" },
-                                ...LIEFERANT_ROLLEN
-                            ]}
-                            placeholder="Rolle filtern"
-                            className="mt-1"
-                            aria-label="Rolle"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700">Ort</label>
-                        <input type="text" className="filter-input w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500" placeholder="Ort" value={filters.ort} onChange={e => handleFilterChange('ort', e.target.value)} />
-                    </div>
-                    {/* Kein Filtern-Button: Gefiltert wird live bei jeder Eingabe. */}
-                    <div className="flex items-end">
-                        <button type="button" className="btn-secondary flex-1 px-4 py-2 border rounded-lg hover:bg-slate-50" onClick={handleResetFilters}>Filter zurücksetzen</button>
-                    </div>
-                </form>
-                <p className="text-xs text-gray-500 mt-3">Für Performance werden immer nur {PAGE_SIZE} Einträge auf einmal geladen.</p>
-            </div>
+            <LieferantenFilterLeiste
+                filters={liste.filters}
+                onAendern={liste.filterAendern}
+                onZuruecksetzen={liste.filterZuruecksetzen}
+                onAbschicken={() => liste.setPage(0)}
+            />
 
             {/* Grid Content */}
-            {loading ? (
+            {liste.loading ? (
                 <div className="text-center py-8 text-slate-500">Lieferanten werden geladen...</div>
-            ) : lieferanten.length === 0 ? (
+            ) : liste.lieferanten.length === 0 ? (
                 <div className="bg-white p-8 rounded-2xl text-center text-slate-500 border-dashed border-2">
                     <Building2 className="w-10 h-10 mx-auto mb-2 text-rose-200" />
                     Keine Lieferanten gefunden.
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
-                    {lieferanten.map((lieferant) => (
+                    {liste.lieferanten.map((lieferant) => (
                         <LieferantCard
                             key={lieferant.id}
                             lieferant={lieferant}
@@ -911,12 +289,12 @@ export default function LieferantenEditor() {
 
             {/* Pagination */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-                <p className="text-sm text-gray-600">{statusText}</p>
+                <p className="text-sm text-slate-600">{liste.statusText}</p>
                 <div className="flex gap-2 justify-end">
-                    <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(p => Math.max(0, p - 1))}>
-                        <ChevronLeft className="w-4 h-4" /> zurück
+                    <Button variant="outline" size="sm" disabled={liste.page === 0} onClick={() => liste.setPage(p => Math.max(0, p - 1))}>
+                        <ChevronLeft className="w-4 h-4" /> Zurück
                     </Button>
-                    <Button variant="outline" size="sm" disabled={page >= totalPages - 1} onClick={() => setPage(p => p + 1)}>
+                    <Button variant="outline" size="sm" disabled={liste.page >= liste.totalPages - 1} onClick={() => liste.setPage(p => p + 1)}>
                         Weiter <ChevronRight className="w-4 h-4" />
                     </Button>
                 </div>
@@ -933,400 +311,3 @@ export default function LieferantenEditor() {
         </PageLayout>
     );
 }
-
-function LieferantCard({ lieferant, onClick, onEdit }: { lieferant: Lieferant; onClick: () => void; onEdit: (e: React.MouseEvent) => void }) {
-    const adresse = [lieferant.strasse, [lieferant.plz, lieferant.ort].filter(Boolean).join(" ")].filter(Boolean).join(", ");
-    const kontakt = [lieferant.telefon, lieferant.mobiltelefon].filter(Boolean).join(" / ");
-
-    return (
-        <Card
-            className="group relative cursor-pointer hover:shadow-md transition-all border-slate-200 bg-white overflow-hidden h-full flex flex-col"
-            onClick={onClick}
-        >
-            {/* Gemeinsame Rezeptur (Abschnitt 4 im Plan): line-clamp-2 statt truncate
-                haelt den vollen Namen im title-Attribut lesbar, kein min-h-[3rem] --
-                das riss bei kurzen Namen eine 24px-Luecke zum Meta-Block (Design-
-                Review Abschnitt 3). Gleich hohe Karten stattdessen ueber h-full
-                flex-col an der Karte und mt-auto am Meta-Block (Kontaktblock unten). */}
-            <div className="p-4 flex flex-col h-full gap-3">
-                <div className="min-w-0">
-                    <div className="flex flex-wrap gap-1">
-                        {lieferant.rollen && lieferant.rollen.length > 0 ? (
-                            lieferant.rollen.map(rolle => (
-                                <span key={rolle} className="text-xs font-semibold tracking-wider text-rose-600 uppercase bg-rose-50 px-2 py-0.5 rounded-full">
-                                    {LIEFERANT_ROLLEN.find(r => r.value === rolle)?.label || rolle}
-                                </span>
-                            ))
-                        ) : (
-                            <span className="text-xs font-semibold tracking-wider text-rose-600 uppercase bg-rose-50 px-2 py-0.5 rounded-full">
-                                {lieferant.lieferantenTyp || "Ohne Rolle"}
-                            </span>
-                        )}
-                        {lieferant.vorauskasse && (
-                            <span
-                                className="inline-flex items-center gap-1 text-xs font-semibold tracking-wider text-amber-800 uppercase bg-amber-50 px-2 py-0.5 rounded-full"
-                                title="Rechnungen dieser Firma gelten sofort als bezahlt und stehen nicht unter Offene Posten."
-                            >
-                                <Wallet className="w-3 h-3" />
-                                Vorkasse
-                            </span>
-                        )}
-                    </div>
-                    <h3 className="font-semibold text-slate-900 mt-2 line-clamp-2 text-base" title={lieferant.lieferantenname} data-kuerzung-erlaubt>
-                        {lieferant.lieferantenname || "Unbenannt"}
-                    </h3>
-                    {lieferant.aliasName && (
-                        <p className="text-sm text-slate-600 truncate" title={lieferant.aliasName}>
-                            auch: {lieferant.aliasName}
-                        </p>
-                    )}
-                    <p className="text-sm text-slate-500 truncate">{lieferant.ort || "Kein Ort"}</p>
-                </div>
-
-                <div className="space-y-1 pt-2 border-t border-slate-50 mt-auto">
-                    <div className="flex items-start gap-2 text-sm text-slate-600">
-                        <MapPin className="w-4 h-4 mt-0.5 text-slate-400 shrink-0" />
-                        <span className="line-clamp-2">{adresse || "-"}</span>
-                    </div>
-                    {(lieferant.telefon || lieferant.mobiltelefon) && (
-                        <div className="flex items-center gap-2 text-sm text-slate-600">
-                            <Phone className="w-4 h-4 text-slate-400 shrink-0" />
-                            <span className="truncate">{kontakt}</span>
-                        </div>
-                    )}
-                    {lieferant.vertreter && (
-                        <div className="flex items-center gap-2 text-sm text-slate-600">
-                            <User className="w-4 h-4 text-slate-400 shrink-0" />
-                            <span className="truncate">{lieferant.vertreter}</span>
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            <button
-                onClick={onEdit}
-                className="absolute top-3 right-3 p-1.5 rounded-full bg-white/90 text-slate-400 opacity-0 group-hover:opacity-100 hover:text-rose-600 hover:bg-rose-50 transition-all shadow-sm border border-transparent hover:border-rose-100"
-                title="Bearbeiten"
-            >
-                <Edit2 className="w-4 h-4" />
-            </button>
-        </Card>
-    );
-}
-
-/**
- * Ergänzt die Adressliste um eine neue Adresse – und hängt die allgemeine
- * `info@`-Adresse derselben Domain mit an, falls sie noch fehlt.
- *
- * Trägt jemand also `bestellung@meier.de` ein, steht danach auch `info@meier.de`
- * zur Auswahl. Grund: An die Zentrale gehen Reklamationen und allgemeine Post,
- * und im Alltag denkt beim Anlegen eines Lieferanten niemand daran, sie separat
- * nachzutragen. Sichtbar als Chip in der Liste – wer sie nicht will, entfernt sie.
- *
- * Die eingetragene Adresse bleibt bewusst vorn: Die erste Adresse der Liste wird
- * an anderer Stelle als Standard-Empfänger vorbelegt, und das soll die Adresse
- * sein, die der Benutzer selbst gewählt hat – nicht die automatisch ergänzte.
- */
-function mitInfoAdresse(vorhandene: string[] | undefined, neueAdresse: string): string[] {
-    const liste = [...(vorhandene || [])];
-    const bereitsEnthalten = (adresse: string) =>
-        liste.some(e => extractEmailAddress(e).toLowerCase() === adresse.toLowerCase());
-
-    const neu = neueAdresse.trim();
-    if (!neu) return liste;
-
-    if (!bereitsEnthalten(extractEmailAddress(neu))) {
-        liste.push(neu);
-    }
-    const infoAdresse = infoAdresseZuDomain(neu);
-    if (infoAdresse && !bereitsEnthalten(infoAdresse)) {
-        liste.push(infoAdresse);
-    }
-    return liste;
-}
-
-export function LieferantModal({ lieferant, onClose, onSave }: { lieferant: Lieferant; onClose: () => void; onSave: (l: Lieferant) => void }) {
-    const [formData, setFormData] = useState<Lieferant>({ ...lieferant });
-    const [newEmail, setNewEmail] = useState("");
-    const [showKostenstelleModal, setShowKostenstelleModal] = useState(false);
-    const [nameFehler, setNameFehler] = useState<string | null>(null);
-    const nameRef = useRef<HTMLInputElement>(null);
-    const toast = useToast();
-
-    const handleChange = (field: keyof Lieferant, value: Lieferant[keyof Lieferant]) => {
-        setFormData(prev => ({ ...prev, [field]: value }));
-        if (field === "lieferantenname" && nameFehler) setNameFehler(null);
-    };
-
-    const addEmail = () => {
-        if (!newEmail.trim()) return;
-        setFormData(prev => ({ ...prev, kundenEmails: mitInfoAdresse(prev.kundenEmails, newEmail) }));
-        setNewEmail("");
-    };
-
-    const removeEmail = (email: string) => {
-        setFormData(prev => ({
-            ...prev,
-            kundenEmails: (prev.kundenEmails || []).filter(e => e !== email)
-        }));
-    };
-
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-in fade-in duration-200">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col" onClick={e => e.stopPropagation()}>
-                <div className="flex items-center justify-between p-6 border-b border-slate-100">
-                    <h3 className="text-xl font-semibold text-slate-900">
-                        {lieferant.id ? "Lieferant bearbeiten" : "Neuer Lieferant"}
-                    </h3>
-                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
-                        <X className="w-5 h-5" />
-                    </button>
-                </div>
-
-                <div className="p-6 space-y-4 overflow-y-auto flex-1">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="space-y-1.5">
-                            <Label htmlFor="lieferant-name">Name *</Label>
-                            <Input
-                                id="lieferant-name"
-                                ref={nameRef}
-                                value={formData.lieferantenname || ""}
-                                onChange={(e) => handleChange("lieferantenname", e.target.value)}
-                                required
-                                aria-invalid={nameFehler ? true : undefined}
-                                aria-describedby={nameFehler ? "lieferant-name-fehler" : undefined}
-                                className={cn(nameFehler && "border-red-500 focus-visible:ring-red-500")}
-                            />
-                            {nameFehler && (
-                                <p id="lieferant-name-fehler" className="text-sm text-red-600">{nameFehler}</p>
-                            )}
-                        </div>
-                        <div className="space-y-1.5">
-                            <Label htmlFor="lieferant-alias">Zweiter Name (optional)</Label>
-                            <Input
-                                id="lieferant-alias"
-                                value={formData.aliasName || ""}
-                                onChange={(e) => handleChange("aliasName", e.target.value)}
-                                placeholder="z.B. Kfz Meier"
-                            />
-                            <p className="text-xs text-slate-400">
-                                Wie die Firma bei euch im Betrieb genannt wird. Damit wird sie auch gefunden.
-                            </p>
-                        </div>
-                    </div>
-
-                    <div className="space-y-1.5 border-t border-slate-100 pt-4">
-                        <Label>Rollen (was liefert dieser Lieferant?)</Label>
-                        <p className="text-xs text-slate-400 -mt-1">
-                            Steuert, bei welchen Artikel-Kategorien dieser Lieferant beim Preis-Eintragen vorgeschlagen wird.
-                        </p>
-                        <div className="flex flex-wrap gap-2">
-                            {LIEFERANT_ROLLEN.map(rolle => {
-                                const active = (formData.rollen || []).includes(rolle.value);
-                                return (
-                                    <button
-                                        key={rolle.value}
-                                        type="button"
-                                        onClick={() => {
-                                            const current = formData.rollen || [];
-                                            const next: LieferantRolle[] = active
-                                                ? current.filter(r => r !== rolle.value)
-                                                : [...current, rolle.value];
-                                            handleChange("rollen", next);
-                                        }}
-                                        className={cn(
-                                            "px-3 py-1.5 rounded-full text-sm font-medium border transition-colors",
-                                            active
-                                                ? "bg-rose-600 text-white border-rose-600"
-                                                : "border-rose-300 text-rose-700 hover:bg-rose-50"
-                                        )}
-                                    >
-                                        {rolle.label}
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="md:col-span-2 space-y-1.5">
-                            <Label>Eigene Kundennummer (beim Lieferanten)</Label>
-                            <Input
-                                value={formData.eigeneKundennummer || ""}
-                                onChange={(e) => handleChange("eigeneKundennummer", e.target.value)}
-                                placeholder="z.B. K-123456"
-                            />
-                        </div>
-                        <div className="md:col-span-2 space-y-1.5">
-                            <Label>Standard-Kostenstelle</Label>
-                            <p className="text-xs text-slate-400 -mt-1">
-                                Wird bei neuen Bestellungen / Eingangsrechnungen automatisch vorgeschlagen.
-                            </p>
-                            <div className="flex items-center gap-2">
-                                <div className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 flex items-center gap-2">
-                                    <Package className="w-4 h-4 text-slate-400 shrink-0" />
-                                    {formData.standardKostenstelleName ? (
-                                        <span>{formData.standardKostenstelleName}</span>
-                                    ) : (
-                                        <span className="text-slate-400">Keine zugewiesen</span>
-                                    )}
-                                </div>
-                                <Button type="button" variant="outline" onClick={() => setShowKostenstelleModal(true)}>
-                                    {formData.standardKostenstelleName ? "Ändern" : "Auswählen"}
-                                </Button>
-                                {formData.standardKostenstelleId != null && (
-                                    <Button
-                                        type="button"
-                                        variant="ghost"
-                                        onClick={() => setFormData(prev => ({ ...prev, standardKostenstelleId: null, standardKostenstelleName: undefined }))}
-                                        title="Kostenstelle entfernen"
-                                    >
-                                        <X className="w-4 h-4" />
-                                    </Button>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="border-t border-slate-100 pt-4">
-                        <label className="flex items-start gap-3 cursor-pointer p-3 rounded-lg hover:bg-slate-50 transition-colors">
-                            <input
-                                type="checkbox"
-                                checked={!!formData.vorauskasse}
-                                onChange={(e) => handleChange("vorauskasse", e.target.checked)}
-                                className="w-5 h-5 mt-0.5 shrink-0 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
-                            />
-                            <div>
-                                <span className="flex items-center gap-2 text-sm font-medium text-slate-800">
-                                    <Wallet className="w-4 h-4 text-slate-400" />
-                                    Wird immer im Voraus bezahlt
-                                </span>
-                                <p className="text-xs text-slate-500 mt-1">
-                                    Anhaken, wenn hier per Vorkasse, Lastschrift oder Kreditkarte gezahlt wird.
-                                    Rechnungen dieser Firma sind dann schon beglichen, wenn sie per E-Mail
-                                    ankommen — sie werden automatisch als bezahlt eingetragen und stehen nicht
-                                    unter „Offene Posten“. So wird nichts versehentlich doppelt überwiesen.
-                                </p>
-                            </div>
-                        </label>
-                    </div>
-
-                    <AddressAutocomplete
-                        value={{
-                            strasse: formData.strasse || "",
-                            plz: formData.plz || "",
-                            ort: formData.ort || ""
-                        }}
-                        onChange={(next) => setFormData(prev => ({
-                            ...prev,
-                            strasse: next.strasse,
-                            plz: next.plz,
-                            ort: next.ort
-                        }))}
-                    />
-
-                    <div className="space-y-1.5">
-                        <Label>Lieferzeit Ø (Tage)</Label>
-                        <div className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-600">
-                            {formData.lieferzeit || "—"}
-                        </div>
-                        <p className="text-xs text-slate-400">Wird automatisch aus Auftragsbestätigungen berechnet</p>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-slate-100 pt-4">
-                        <div className="space-y-1.5">
-                            <Label>Telefon</Label>
-                            <PhoneInput
-                                value={formData.telefon || ""}
-                                onChange={(v) => handleChange("telefon", v)}
-                                variant="festnetz"
-                                autoPrefillAreaCode
-                                plz={formData.plz}
-                                ort={formData.ort}
-                            />
-                        </div>
-                        <div className="space-y-1.5">
-                            <Label>Mobil</Label>
-                            <PhoneInput
-                                value={formData.mobiltelefon || ""}
-                                onChange={(v) => handleChange("mobiltelefon", v)}
-                                variant="mobil"
-                            />
-                        </div>
-                        <div className="space-y-1.5">
-                            <Label>Vertreter</Label>
-                            <Input
-                                value={formData.vertreter || ""}
-                                onChange={(e) => handleChange("vertreter", e.target.value)}
-                            />
-                        </div>
-                    </div>
-
-                    <div className="space-y-2 border-t border-slate-100 pt-4">
-                        <Label>E-Mail-Adressen</Label>
-                        <div className="flex gap-2">
-                            <Input
-                                value={newEmail}
-                                onChange={e => setNewEmail(e.target.value)}
-                                placeholder="neue@adresse.de"
-                                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addEmail(); } }}
-                            />
-                            <Button type="button" onClick={addEmail} variant="outline">Hinzufügen</Button>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                            {(formData.kundenEmails || []).map(email => (
-                                <span key={email} className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 text-sm border border-slate-200">
-                                    <Mail className="w-3 h-3 text-slate-400" />
-                                    {email}
-                                    <button type="button" onClick={() => removeEmail(email)} className="ml-1 text-slate-400 hover:text-red-600">
-                                        <X className="w-3 h-3" />
-                                    </button>
-                                </span>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-
-                <div className="p-6 border-t border-slate-100 bg-slate-50 flex justify-end gap-3 rounded-b-xl">
-                    <Button variant="ghost" onClick={onClose}>Abbrechen</Button>
-                    <Button onClick={() => {
-                        // Ohne Namen lässt sich der Lieferant später nicht wiederfinden –
-                        // gar nicht erst ans Backend schicken.
-                        if (!formData.lieferantenname?.trim()) {
-                            const meldung = "Bitte einen Namen für den Lieferanten eingeben.";
-                            setNameFehler(meldung);
-                            toast.error(meldung);
-                            nameRef.current?.focus();
-                            return;
-                        }
-                        // Wenn noch Text im E-Mail-Feld steht, diesen automatisch hinzufügen
-                        const finalData = {
-                            ...formData,
-                            // Die vorgeschlagene Ortsvorwahl allein ist keine Telefonnummer.
-                            telefon: ohneReineVorwahl(formData.telefon),
-                            mobiltelefon: ohneReineVorwahl(formData.mobiltelefon),
-                        };
-                        if (newEmail.trim()) {
-                            finalData.kundenEmails = mitInfoAdresse(finalData.kundenEmails, newEmail);
-                        }
-                        onSave(finalData);
-                    }} className="bg-rose-600 hover:bg-rose-700 text-white">Speichern</Button>
-                </div>
-            </div>
-            {showKostenstelleModal && (
-                <KostenstelleSelectModal
-                    onClose={() => setShowKostenstelleModal(false)}
-                    onSelect={(k) => {
-                        setFormData(prev => ({
-                            ...prev,
-                            standardKostenstelleId: k.id,
-                            standardKostenstelleName: k.bezeichnung,
-                        }));
-                        setShowKostenstelleModal(false);
-                    }}
-                />
-            )}
-        </div>
-    );
-}
-
